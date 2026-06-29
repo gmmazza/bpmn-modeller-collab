@@ -46,4 +46,18 @@ describe("renderLayersPanel", () => {
     docs.dispatchEvent(new Event("change", { bubbles: true }));
     expect(onToggleAnnotation).toHaveBeenCalledWith("docs", true);
   });
+
+  it("renders a 'Gestionar capas' button wired to onManage", () => {
+    const c = document.createElement("div");
+    const onManage = vi.fn();
+    renderLayersPanel(
+      c,
+      { layers: { version: 1, dimensions: [] }, activeColorId: null, annotationsOn: [], selectedId: null },
+      { onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign: vi.fn(), onManage },
+    );
+    const btn = c.querySelector(".lm-open") as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    btn.click();
+    expect(onManage).toHaveBeenCalledOnce();
+  });
 });
