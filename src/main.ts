@@ -23,7 +23,12 @@ import { createFsClient, type FsClient } from "./fsClient";
 import { createLayersClient } from "./layers/layersClient";
 import { createLayerView, type LayerView } from "./layers/layerView";
 import { renderLayersPanel } from "./layers/layersPanel";
-import type { LayerFile } from "./layers/layerModel";
+import { renderLayersModal, type LayersModalHandlers } from "./layers/layersModal";
+import { createTemplatesClient, type TemplatesClient } from "./layers/layerTemplates";
+import {
+  addColorDimension, addAnnotationDimension, renameDimension, deleteDimension,
+  addCategory, updateCategory, deleteCategory, mergeTemplate, type LayerFile,
+} from "./layers/layerModel";
 import { loadSavedDir, pickDir } from "./folder";
 import { createEditor, createBpmnModeler, type ModelerLike } from "./editor";
 import { getName, setName } from "./identity";
@@ -83,6 +88,8 @@ async function bootstrap() {
   let activeColorId: string | null = null;
   let annotationsOn: string[] = [];
   let selectedId: string | null = null;
+  let templatesClient: TemplatesClient | null = null;
+  let layersModalEl: HTMLElement | null = null;
   let inspector: Inspector;
   let expanded = new Set<string>();
   let treeVersions = new Map<string, string>();
@@ -382,6 +389,9 @@ async function bootstrap() {
         onAssign: (dimId, elementId, value) => {
           void assignLayer(dimId, elementId, value).catch(onError);
         },
+        onManage: () => {
+          void openLayersManager().catch(onError);
+        },
       },
     );
   }
@@ -398,6 +408,94 @@ async function bootstrap() {
     reapplyLayers();
     renderLayers();
     await layersClient.save(state.fileId, layerFile);
+  }
+
+  const layersModalHandlers: LayersModalHandlers = {
+    onAddColorDim: () => void applyLayerEdit((lf) => addColorDimension(lf, "Nueva capa").lf),
+    onAddAnnotationDim: () => void applyLayerEdit((lf) => addAnnotationDimension(lf, "Nueva anotación").lf),
+    onRenameDim: (id, label) => void applyLayerEdit((lf) => renameDimension(lf, id, label)),
+    onDeleteDim: (id) => void applyLayerEdit((lf) => deleteDimension(lf, id)),
+    onAddCategory: (dimId) => void applyLayerEdit((lf) => addCategory(lf, dimId, "Nueva categoría", "#AED6F1").lf),
+    onUpdateCategory: (dimId, catId, patch) => void applyLayerEdit((lf) => updateCategory(lf, dimId, catId, patch)),
+    onDeleteCategory: (dimId, catId) => void applyLayerEdit((lf) => deleteCategory(lf, dimId, catId)),
+    onApplyTemplate: (slug) => void applyTemplate(slug),
+    onSaveTemplate: (name) => void saveTemplate(name),
+    onDeleteTemplate: (slug) => void deleteTemplate(slug),
+  };
+
+  // Apply a structural edit: mutate → reconcile active state → re-color (never gated
+  // on the disk write) → re-render panel + modal → persist the sidecar last.
+  async function applyLayerEdit(mutate: (lf: LayerFile) => LayerFile): Promise<void> {
+    if (!layerFile || state.kind !== "editing") return;
+    layerFile = mutate(layerFile);
+    if (activeColorId && !layerFile.dimensions.some((d) => d.id === activeColorId && d.type === "color")) {
+      activeColorId = null;
+    }
+    annotationsOn = annotationsOn.filter((id) =>
+      layerFile!.dimensions.some((d) => d.id === id && d.type === "annotation"),
+    );
+    reapplyLayers();
+    renderLayers();
+    await refreshLayersModal();
+    await layersClient.save(state.fileId, layerFile);
+  }
+
+  async function applyTemplate(slug: string): Promise<void> {
+    if (!templatesClient) return;
+    const t = await templatesClient.load(slug);
+    if (!t) return;
+    await applyLayerEdit((lf) => mergeTemplate(lf, t.dimensions));
+  }
+
+  async function saveTemplate(name: string): Promise<void> {
+    if (!templatesClient || !layerFile || !name.trim()) return;
+    await templatesClient.save(name.trim(), layerFile.dimensions);
+    await refreshLayersModal();
+  }
+
+  async function deleteTemplate(slug: string): Promise<void> {
+    if (!templatesClient) return;
+    await templatesClient.remove(slug);
+    await refreshLayersModal();
+  }
+
+  async function openLayersManager(): Promise<void> {
+    if (layersModalEl || !layerFile || state.kind !== "editing") return;
+    templatesClient = createTemplatesClient(api);
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.id = "layers-modal";
+    overlay.innerHTML = `
+      <div class="lm-box" role="dialog" aria-modal="true" aria-label="Gestionar capas">
+        <div class="lm-head">
+          <h2>Gestionar capas</h2>
+          <button class="btn icon-only lm-close" type="button" title="Cerrar">${icon("close")}</button>
+        </div>
+        <div class="lm-body"></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    layersModalEl = overlay;
+    const close = (): void => {
+      overlay.remove();
+      layersModalEl = null;
+      document.removeEventListener("keydown", onKey);
+    };
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") close();
+    }
+    overlay.querySelector(".lm-close")!.addEventListener("click", close);
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) close();
+    });
+    document.addEventListener("keydown", onKey);
+    await refreshLayersModal();
+  }
+
+  async function refreshLayersModal(): Promise<void> {
+    if (!layersModalEl || !layerFile || !templatesClient) return;
+    const body = layersModalEl.querySelector(".lm-body") as HTMLElement;
+    const templates = await templatesClient.list();
+    renderLayersModal(body, { layers: layerFile, templates }, layersModalHandlers);
   }
 
   // ---- App shell ----
