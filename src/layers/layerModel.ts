@@ -123,3 +123,122 @@ export function normalizeLayerFile(raw: unknown): LayerFile {
     .filter((d): d is Dimension => d !== null);
   return { version: 1, dimensions: dims };
 }
+
+const DEFAULT_FILL = "#AED6F1";
+
+export function baseSlug(label: string): string {
+  return (
+    label
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "capa"
+  );
+}
+
+export function slugId(label: string, existingIds: string[]): string {
+  const base = baseSlug(label);
+  let id = base;
+  let n = 2;
+  while (existingIds.includes(id)) id = `${base}-${n++}`;
+  return id;
+}
+
+export function deriveStroke(fill: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(fill.trim());
+  if (!m) return fill;
+  const n = parseInt(m[1], 16);
+  const f = 0.62; // darken ~38%
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((x) => Math.round(x * f));
+  return "#" + ch.map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+function dimIds(lf: LayerFile): string[] {
+  return lf.dimensions.map((d) => d.id);
+}
+function catIds(dim: ColorDimension): string[] {
+  return dim.categories.map((c) => c.id);
+}
+
+export function addColorDimension(lf: LayerFile, label: string): { lf: LayerFile; id: string } {
+  const id = slugId(label, dimIds(lf));
+  const dim: ColorDimension = {
+    id,
+    label,
+    type: "color",
+    categories: [{ id: "categoria-1", label: "Categoría 1", fill: DEFAULT_FILL, stroke: deriveStroke(DEFAULT_FILL) }],
+    assignments: {},
+  };
+  return { lf: { ...lf, dimensions: [...lf.dimensions, dim] }, id };
+}
+
+export function addAnnotationDimension(lf: LayerFile, label: string): { lf: LayerFile; id: string } {
+  const id = slugId(label, dimIds(lf));
+  const dim: AnnotationDimension = { id, label, type: "annotation", assignments: {} };
+  return { lf: { ...lf, dimensions: [...lf.dimensions, dim] }, id };
+}
+
+export function renameDimension(lf: LayerFile, id: string, label: string): LayerFile {
+  return { ...lf, dimensions: lf.dimensions.map((d) => (d.id === id ? { ...d, label } : d)) };
+}
+
+export function deleteDimension(lf: LayerFile, id: string): LayerFile {
+  return { ...lf, dimensions: lf.dimensions.filter((d) => d.id !== id) };
+}
+
+export function addCategory(lf: LayerFile, dimId: string, label: string, fill: string): { lf: LayerFile; id: string } {
+  let id = "";
+  const dimensions = lf.dimensions.map((d) => {
+    if (d.id !== dimId || d.type !== "color") return d;
+    id = slugId(label, catIds(d));
+    return { ...d, categories: [...d.categories, { id, label, fill, stroke: deriveStroke(fill) }] };
+  });
+  return { lf: { ...lf, dimensions }, id };
+}
+
+export function updateCategory(
+  lf: LayerFile,
+  dimId: string,
+  catId: string,
+  patch: { label?: string; fill?: string },
+): LayerFile {
+  return {
+    ...lf,
+    dimensions: lf.dimensions.map((d) => {
+      if (d.id !== dimId || d.type !== "color") return d;
+      return {
+        ...d,
+        categories: d.categories.map((c) => {
+          if (c.id !== catId) return c;
+          const next: Category = { ...c };
+          if (patch.label !== undefined) next.label = patch.label;
+          if (patch.fill !== undefined) {
+            next.fill = patch.fill;
+            next.stroke = deriveStroke(patch.fill);
+          }
+          return next;
+        }),
+      };
+    }),
+  };
+}
+
+export function deleteCategory(lf: LayerFile, dimId: string, catId: string): LayerFile {
+  return {
+    ...lf,
+    dimensions: lf.dimensions.map((d) => {
+      if (d.id !== dimId || d.type !== "color") return d;
+      const assignments = Object.fromEntries(Object.entries(d.assignments).filter(([, v]) => v !== catId));
+      return { ...d, categories: d.categories.filter((c) => c.id !== catId), assignments };
+    }),
+  };
+}
+
+export function mergeTemplate(lf: LayerFile, templateDims: Dimension[]): LayerFile {
+  const existing = new Set(dimIds(lf));
+  const toAdd = templateDims
+    .filter((d) => !existing.has(d.id))
+    .map((d) => ({ ...d, assignments: {} as Record<string, string> }));
+  return { ...lf, dimensions: [...lf.dimensions, ...toAdd] };
+}
