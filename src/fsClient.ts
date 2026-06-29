@@ -296,6 +296,29 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     async writeSidecar(id: string, suffix: string, text: string): Promise<void> {
       await writeTextAt(`${baseName(id)}.${suffix}`, text);
     },
+    async readPath(rel: string): Promise<string | null> {
+      try {
+        return await readTextAt(rel);
+      } catch {
+        return null;
+      }
+    },
+    async writePath(rel: string, text: string): Promise<void> {
+      await writeTextAt(rel, text);
+    },
+    async deletePath(rel: string): Promise<void> {
+      await removeFileAt(rel);
+    },
+    async listDir(rel: string): Promise<{ name: string; kind: "file" | "directory" }[]> {
+      try {
+        const d = await getDir(rel, false);
+        const out: { name: string; kind: "file" | "directory" }[] = [];
+        for await (const [name, h] of (d as any).entries()) out.push({ name, kind: (h as any).kind });
+        return out;
+      } catch {
+        return [];
+      }
+    },
     // ---- history API (covered by Task 5 tests) ----
     async listRevisions(id: string): Promise<Revision[]> {
       let hdir: FileSystemDirectoryHandle;
@@ -328,7 +351,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       const out: TreeEntry[] = [];
       async function walk(d: FileSystemDirectoryHandle, prefix: string): Promise<void> {
         for await (const [name, handle] of (d as any).entries()) {
-          if (name === HISTORY_DIR) continue;
+          if (name === HISTORY_DIR || name === ".layer-templates") continue;
           const rel = prefix ? `${prefix}/${name}` : name;
           if ((handle as any).kind === "directory") {
             out.push({ path: rel, kind: "dir" });
