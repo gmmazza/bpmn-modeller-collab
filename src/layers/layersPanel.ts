@@ -10,6 +10,7 @@ export interface LayersPanelHandlers {
   onPickColor(dimId: string | null): void;
   onToggleAnnotation(dimId: string, on: boolean): void;
   onAssign(dimId: string, elementId: string, value: string | null): void;
+  onManage(): void;
 }
 
 function colorDims(lf: LayerFile): ColorDimension[] {
@@ -129,4 +130,12 @@ export function renderLayersPanel(
       container.appendChild(inp);
     }
   }
+
+  // --- manage (CRUD + templates) ---
+  const manage = document.createElement("button");
+  manage.type = "button";
+  manage.className = "btn lm-open";
+  manage.textContent = "Gestionar capas…";
+  manage.addEventListener("click", () => handlers.onManage());
+  container.appendChild(manage);
 }
