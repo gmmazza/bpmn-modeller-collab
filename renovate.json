@@ -1,0 +1,20 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "matchPackageNames": ["bpmn-js", "bpmn-moddle", "diagram-js", "heatmap-ts", "bpmnlint", "bpmn-js-bpmnlint"],
+      "matchPackagePrefixes": ["bpmn-js-", "diagram-js-", "@bpmn-io/"],
+      "groupName": "bpmn-io ecosystem",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "matchPackageNames": ["bpmn-js", "bpmn-moddle", "diagram-js", "heatmap-ts", "bpmnlint", "bpmn-js-bpmnlint"],
+      "matchPackagePrefixes": ["bpmn-js-", "diagram-js-", "@bpmn-io/"],
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ]
+}

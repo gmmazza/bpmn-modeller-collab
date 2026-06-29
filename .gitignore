@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.local
+
+# Vite / logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Env / secrets (OAuth client IDs, API keys go in env, never committed)
+.env
+.env.*
+!.env.example
+
+release/
+
+# CDP / E2E scratch artifacts
+.playwright-mcp/
+build/_preview*.png

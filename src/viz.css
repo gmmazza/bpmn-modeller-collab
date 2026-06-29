@@ -1,0 +1,12 @@
+header button { margin-right: 6px; }
+.viz-settings { background: #f3f4f6; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
+.viz-settings label { display: block; margin: 4px 0; font-size: 14px; }
+.viz-settings .hint { font-size: 12px; color: #6b7280; margin: 6px 0 0; }
+.props-panel { width: 320px; overflow: auto; border-left: 1px solid #e5e7eb; }
+main { display: flex; }
+#canvas { flex: 1; }
+.viz-version { font-size: 13px; margin-top: 8px; }
+.viz-version button { margin: 0 6px; }
+.viz-version #bpmnjs-status { color: #6b7280; }
+.appupdate-bar { background: #dbeafe; color: #1e3a8a; padding: 6px 10px; font-size: 13px; }
+.appupdate-bar button { margin-left: 8px; }

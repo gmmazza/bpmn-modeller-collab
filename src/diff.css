@@ -1,0 +1,11 @@
+.diff-added .djs-visual > :nth-child(1) { stroke: #16a34a !important; stroke-width: 3px !important; }
+.diff-removed .djs-visual > :nth-child(1) { stroke: #dc2626 !important; stroke-width: 3px !important; stroke-dasharray: 4 !important; }
+.diff-changed .djs-visual > :nth-child(1) { stroke: #d97706 !important; stroke-width: 3px !important; }
+.sync-warning { background: #fde68a; color: #92400e; padding: 6px 10px; font-size: 13px; }
+.conflict-bar { background: #fee2e2; color: #991b1b; padding: 6px 10px; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { background: var(--surface); color: var(--text); border: 1px solid var(--border); padding: 16px; border-radius: var(--radius); min-width: 300px; box-shadow: var(--shadow); font-family: inherit; }
+.modal-msg { margin: 0 0 8px; }
+.modal-input { width: 100%; box-sizing: border-box; margin: 0 0 12px; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
