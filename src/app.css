@@ -150,3 +150,26 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 .fp-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 #files { overflow: auto; }
+
+/* Gestionar capas (modal) */
+.lm-box { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 560px; max-width: 92vw; max-height: 82vh; display: flex; flex-direction: column; }
+.lm-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.lm-head h2 { margin: 0; font-size: 17px; }
+.lm-body { padding: 12px 16px; overflow: auto; }
+.lm-body h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 16px 0 8px; }
+.lm-body h3:first-child { margin-top: 0; }
+.lm-templates { display: flex; flex-direction: column; gap: 4px; }
+.lm-template-row { display: flex; align-items: center; gap: 8px; }
+.lm-template-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-save-row { display: flex; gap: 8px; margin-top: 8px; }
+.lm-save-name { flex: 1; }
+.lm-dim { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; }
+.lm-dim-head { display: flex; align-items: center; gap: 8px; }
+.lm-dim-name { flex: 1; font-weight: 600; }
+.lm-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; }
+.lm-cat { display: flex; align-items: center; gap: 8px; margin: 6px 0 0 8px; }
+.lm-cat-color { width: 34px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
+.lm-cat-name { flex: 1; }
+.lm-add-cat { margin: 6px 0 0 8px; font-size: 12px; }
+.lm-actions { display: flex; gap: 8px; margin-top: 8px; }
+.lm-box input[type="text"] { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }

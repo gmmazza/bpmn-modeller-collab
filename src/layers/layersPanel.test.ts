@@ -9,7 +9,7 @@ function baseState(over: Partial<Parameters<typeof renderLayersPanel>[1]> = {}) 
 describe("renderLayersPanel", () => {
   it("renders Original + a radio per color dimension", () => {
     const el = document.createElement("div");
-    renderLayersPanel(el, baseState(), { onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign: vi.fn() });
+    renderLayersPanel(el, baseState(), { onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign: vi.fn(), onManage: vi.fn() });
     const radios = el.querySelectorAll<HTMLInputElement>('input[name="layer-color"]');
     // Original + madurez + actores = 3
     expect(radios.length).toBe(3);
@@ -18,7 +18,7 @@ describe("renderLayersPanel", () => {
   it("picking a color radio fires onPickColor with the dim id", () => {
     const el = document.createElement("div");
     const onPickColor = vi.fn();
-    renderLayersPanel(el, baseState(), { onPickColor, onToggleAnnotation: vi.fn(), onAssign: vi.fn() });
+    renderLayersPanel(el, baseState(), { onPickColor, onToggleAnnotation: vi.fn(), onAssign: vi.fn(), onManage: vi.fn() });
     const madurez = el.querySelector<HTMLInputElement>('input[name="layer-color"][value="madurez"]')!;
     madurez.checked = true;
     madurez.dispatchEvent(new Event("change", { bubbles: true }));
@@ -29,7 +29,7 @@ describe("renderLayersPanel", () => {
     const el = document.createElement("div");
     const onAssign = vi.fn();
     renderLayersPanel(el, baseState({ activeColorId: "madurez", selectedId: "t1" }), {
-      onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign,
+      onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign, onManage: vi.fn(),
     });
     const sel = el.querySelector<HTMLSelectElement>("select.assign-color")!;
     sel.value = "manual";
@@ -40,7 +40,7 @@ describe("renderLayersPanel", () => {
   it("toggling an annotation checkbox fires onToggleAnnotation", () => {
     const el = document.createElement("div");
     const onToggleAnnotation = vi.fn();
-    renderLayersPanel(el, baseState(), { onPickColor: vi.fn(), onToggleAnnotation, onAssign: vi.fn() });
+    renderLayersPanel(el, baseState(), { onPickColor: vi.fn(), onToggleAnnotation, onAssign: vi.fn(), onManage: vi.fn() });
     const docs = el.querySelector<HTMLInputElement>('input[data-annot="docs"]')!;
     docs.checked = true;
     docs.dispatchEvent(new Event("change", { bubbles: true }));
