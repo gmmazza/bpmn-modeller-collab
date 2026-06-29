@@ -74,4 +74,20 @@ describe("renderLayersModal", () => {
     (c.querySelector(".lm-save-btn") as HTMLButtonElement).click();
     expect(h.onSaveTemplate).toHaveBeenCalledWith("Nueva");
   });
+
+  it("emits onDeleteTemplate with the template slug", () => {
+    const c = document.createElement("div");
+    const h = noopHandlers();
+    renderLayersModal(c, sampleState(), h);
+    (c.querySelector(".lm-template-row .lm-del-template") as HTMLButtonElement).click();
+    expect(h.onDeleteTemplate).toHaveBeenCalledWith("base");
+  });
+
+  it("emits onAddCategory with the dimension id", () => {
+    const c = document.createElement("div");
+    const h = noopHandlers();
+    renderLayersModal(c, sampleState(), h);
+    (c.querySelector(".lm-add-cat") as HTMLButtonElement).click();
+    expect(h.onAddCategory).toHaveBeenCalledWith("madurez");
+  });
 });
