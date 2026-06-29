@@ -1,0 +1,302 @@
+import { describe, it, expect, beforeEach } from "vitest";
+import { createFsClient } from "./fsClient";
+import { createFakeDir, seedFile } from "./testHelpers/fakeDir";
+
+let dir: ReturnType<typeof createFakeDir>;
+let fs: ReturnType<typeof createFsClient>;
+
+beforeEach(async () => {
+  dir = createFakeDir();
+  fs = createFsClient(dir);
+  await seedFile(dir, "proceso.bpmn", "<a/>");
+});
+
+describe("fsClient files/meta/locks", () => {
+  it("lists only .bpmn files (not locks, not history)", async () => {
+    await seedFile(dir, "proceso.bpmn.lock", "{}");
+    const files = await fs.listFiles();
+    expect(files.map((f) => f.id)).toEqual(["proceso.bpmn"]);
+  });
+
+  it("getXml returns contents; getMeta exposes mtime as version", async () => {
+    expect(await fs.getXml("proceso.bpmn")).toBe("<a/>");
+    const meta = await fs.getMeta("proceso.bpmn");
+    expect(meta.version).toBe(meta.headRevisionId);
+    expect(meta.version).toMatch(/^\d+$/);
+  });
+
+  it("setLock writes a .lock; listFiles surfaces it via appProperties", async () => {
+    await fs.setLock("proceso.bpmn", {
+      lockedBy: "Ana",
+      lockedByEmail: "Ana",
+      lockedByName: "Ana",
+      lockedAt: "2026-06-26T00:00:00Z",
+    });
+    const files = await fs.listFiles();
+    expect(files[0].appProperties?.lockedByName).toBe("Ana");
+  });
+
+  it("setLock with empty strings deletes the lock", async () => {
+    await fs.setLock("proceso.bpmn", { lockedBy: "Ana", lockedByEmail: "Ana", lockedByName: "Ana", lockedAt: "t" });
+    await fs.setLock("proceso.bpmn", { lockedBy: "", lockedByEmail: "", lockedByName: "", lockedAt: "" });
+    const meta = await fs.getMeta("proceso.bpmn");
+    expect(meta.appProperties?.lockedByEmail ?? "").toBe("");
+  });
+
+  it("putXml writes content and records lastWrite version", async () => {
+    const res = await fs.putXml("proceso.bpmn", "<b/>", "Ana");
+    expect(await fs.getXml("proceso.bpmn")).toBe("<b/>");
+    expect(res.version).toBe(res.headRevisionId);
+    expect(fs.lastWriteVersion("proceso.bpmn")).toBe(res.version);
+  });
+
+  it("createFile appends .bpmn when missing", async () => {
+    const f = await fs.createFile("nuevo", "<c/>");
+    expect(f.id).toBe("nuevo.bpmn");
+    expect(await fs.getXml("nuevo.bpmn")).toBe("<c/>");
+  });
+});
+
+describe("fsClient history + retention", () => {
+  it("putXml creates a revision readable by listRevisions/getRevisionXml", async () => {
+    const res = await fs.putXml("proceso.bpmn", "<v1/>", "Ana");
+    const revs = await fs.listRevisions("proceso.bpmn");
+    expect(revs).toHaveLength(1);
+    expect(revs[0].lastModifyingUser?.displayName).toBe("Ana");
+    expect(await fs.getRevisionXml("proceso.bpmn", revs[0].id)).toBe("<v1/>");
+    expect(res.version).toMatch(/^\d+$/);
+  });
+
+  it("setKeepForever toggles the keep flag (and survives renaming)", async () => {
+    await fs.putXml("proceso.bpmn", "<v1/>", "Ana");
+    const [rev] = await fs.listRevisions("proceso.bpmn");
+    await fs.setKeepForever("proceso.bpmn", rev.id, true);
+    expect((await fs.listRevisions("proceso.bpmn"))[0].keepForever).toBe(true);
+    expect(await fs.getRevisionXml("proceso.bpmn", rev.id)).toBe("<v1/>");
+    await fs.setKeepForever("proceso.bpmn", rev.id, false);
+    expect((await fs.listRevisions("proceso.bpmn"))[0].keepForever).toBe(false);
+  });
+
+  it("prune deletes decayed revisions but keeps pinned and newest", async () => {
+    // Fixed clock so retention is deterministic; seed old + recent rids by hand.
+    const fixedNow = 10_000_000_000_000; // far future epoch ms
+    const f2 = createFsClient(dir, () => fixedNow);
+    const hdir = await dir.getDirectoryHandle(".history", { create: true });
+    const sub = await hdir.getDirectoryHandle("proceso", { create: true });
+    // three ancient revisions (will decay) + one pinned ancient
+    for (const rid of ["1000", "2000", "3000"]) await seedFile(sub, `${rid}~Ana.bpmn`, "<old/>");
+    await seedFile(sub, `500~Ana.keep.bpmn`, "<pinned/>");
+    // a save triggers prune; the just-written rid (≈fixedNow) is newest and kept
+    await f2.putXml("proceso.bpmn", "<new/>", "Ana");
+    const ids = (await f2.listRevisions("proceso.bpmn")).map((r) => r.id).sort();
+    expect(ids).toContain("500"); // pinned survives
+    expect(ids).toContain(String(fixedNow)); // newest survives
+    expect(ids).not.toContain("1000"); // decayed away
+    expect(ids).not.toContain("2000");
+  });
+});
+
+describe("fsClient sidecars", () => {
+  it("readSidecar returns null when absent, then round-trips after write", async () => {
+    expect(await fs.readSidecar("proceso.bpmn", "layers.json")).toBeNull();
+    await fs.writeSidecar("proceso.bpmn", "layers.json", '{"version":1}');
+    expect(await fs.readSidecar("proceso.bpmn", "layers.json")).toBe('{"version":1}');
+  });
+
+  it("sidecar name strips .bpmn and is not listed by listFiles", async () => {
+    await fs.writeSidecar("proceso.bpmn", "layers.json", "{}");
+    // stored as proceso.layers.json (not a .bpmn), so listFiles ignores it
+    expect((await fs.listFiles()).map((f) => f.id)).toEqual(["proceso.bpmn"]);
+  });
+});
+
+describe("fsClient nested paths", () => {
+  it("writes and reads a file inside a subfolder", async () => {
+    await fs.createFile("Ventas/B2B.bpmn", "<b/>");
+    expect(await fs.getXml("Ventas/B2B.bpmn")).toBe("<b/>");
+    const meta = await fs.getMeta("Ventas/B2B.bpmn");
+    expect(meta.id).toBe("Ventas/B2B.bpmn");
+    expect(meta.version).toMatch(/^\d+$/);
+  });
+});
+
+describe("fsClient nested history", () => {
+  it("stores history under .history/<dirs>/<base>", async () => {
+    await fs.createFile("Ventas/B2B.bpmn", "<b/>");
+    await fs.putXml("Ventas/B2B.bpmn", "<b2/>", "Ana");
+    const revs = await fs.listRevisions("Ventas/B2B.bpmn");
+    expect(revs.length).toBe(1);
+    const xml = await fs.getRevisionXml("Ventas/B2B.bpmn", revs[0].id);
+    expect(xml).toBe("<b2/>");
+  });
+});
+
+describe("fsClient listTree", () => {
+  it("returns folders and .bpmn recursively, excluding history/sidecars", async () => {
+    await fs.createFile("RRHH.bpmn", "<r/>");
+    await fs.createFile("Ventas/B2B.bpmn", "<b/>");
+    await fs.writeSidecar("Ventas/B2B.bpmn", "layers.json", "{}");
+    await fs.setLock("Ventas/B2B.bpmn", { lockedBy: "Ana", lockedByEmail: "Ana", lockedByName: "Ana", lockedAt: "t" });
+    await fs.putXml("Ventas/B2B.bpmn", "<b2/>", "Ana"); // creates .history/Ventas/B2B
+    const tree = await fs.listTree();
+    const paths = tree.map((e) => `${e.kind}:${e.path}`).sort();
+    expect(paths).toContain("file:RRHH.bpmn");
+    expect(paths).toContain("dir:Ventas");
+    expect(paths).toContain("file:Ventas/B2B.bpmn");
+    expect(paths.some((p) => p.includes(".history"))).toBe(false);
+    expect(paths.some((p) => p.includes("layers.json"))).toBe(false);
+    expect(paths.some((p) => p.includes(".lock"))).toBe(false);
+    const b2b = tree.find((e) => e.path === "Ventas/B2B.bpmn");
+    expect(b2b?.appProperties?.lockedByName).toBe("Ana");
+  });
+});
+
+describe("fsClient delete + createFolder", () => {
+  it("createFolder makes a subfolder", async () => {
+    await fs.createFolder("", "Ventas");
+    const tree = await fs.listTree();
+    expect(tree).toContainEqual(expect.objectContaining({ path: "Ventas", kind: "dir" }));
+  });
+  it("deleteFile removes the bpmn, its sidecar, lock and history", async () => {
+    await fs.createFile("Ventas/B2B.bpmn", "<b/>");
+    await fs.writeSidecar("Ventas/B2B.bpmn", "layers.json", "{}");
+    await fs.setLock("Ventas/B2B.bpmn", { lockedBy: "A", lockedByEmail: "A", lockedByName: "A", lockedAt: "t" });
+    await fs.putXml("Ventas/B2B.bpmn", "<b2/>", "A");
+    await fs.deleteFile("Ventas/B2B.bpmn");
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path === "Ventas/B2B.bpmn")).toBe(false);
+    expect(await fs.readSidecar("Ventas/B2B.bpmn", "layers.json")).toBeNull();
+    expect(await fs.listRevisions("Ventas/B2B.bpmn")).toEqual([]);
+  });
+});
+
+describe("fsClient move/rename/copy/duplicate", () => {
+  beforeEach(async () => {
+    await fs.createFile("A.bpmn", "<a/>");
+    await fs.writeSidecar("A.bpmn", "layers.json", "{\"v\":1}");
+    await fs.putXml("A.bpmn", "<a2/>", "Ana"); // 1 revision
+    await fs.createFolder("", "Sub");
+  });
+  it("moveFile carries sidecar + history, frees lock, removes source", async () => {
+    await fs.setLock("A.bpmn", { lockedBy: "Ana", lockedByEmail: "Ana", lockedByName: "Ana", lockedAt: "t" });
+    const newId = await fs.moveFile("A.bpmn", "Sub");
+    expect(newId).toBe("Sub/A.bpmn");
+    expect(await fs.getXml("Sub/A.bpmn")).toBe("<a2/>");
+    expect(await fs.readSidecar("Sub/A.bpmn", "layers.json")).toBe("{\"v\":1}");
+    expect((await fs.listRevisions("Sub/A.bpmn")).length).toBe(1);
+    expect(await fs.listRevisions("A.bpmn")).toEqual([]);
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path === "A.bpmn")).toBe(false);
+    expect((await fs.getMeta("Sub/A.bpmn")).appProperties?.lockedByName ?? "").toBe("");
+  });
+  it("renameFile keeps folder, carries bundle", async () => {
+    const newId = await fs.renameFile("A.bpmn", "Renombrado");
+    expect(newId).toBe("Renombrado.bpmn");
+    expect(await fs.getXml("Renombrado.bpmn")).toBe("<a2/>");
+    expect((await fs.listRevisions("Renombrado.bpmn")).length).toBe(1);
+  });
+  it("copyFile carries sidecar but not history/lock", async () => {
+    const newId = await fs.copyFile("A.bpmn", "Sub");
+    expect(newId).toBe("Sub/A.bpmn");
+    expect(await fs.getXml("Sub/A.bpmn")).toBe("<a2/>");
+    expect(await fs.readSidecar("Sub/A.bpmn", "layers.json")).toBe("{\"v\":1}");
+    expect(await fs.listRevisions("Sub/A.bpmn")).toEqual([]);
+    expect(await fs.getXml("A.bpmn")).toBe("<a2/>"); // original kept
+  });
+  it("duplicateFile makes ' copia' in same folder", async () => {
+    const newId = await fs.duplicateFile("A.bpmn");
+    expect(newId).toBe("A copia.bpmn");
+    expect(await fs.getXml("A copia.bpmn")).toBe("<a2/>");
+  });
+});
+
+describe("fsClient folder ops", () => {
+  beforeEach(async () => {
+    await fs.createFile("Grupo/X.bpmn", "<x/>");
+    await fs.putXml("Grupo/X.bpmn", "<x2/>", "Ana"); // history at .history/Grupo/X
+    await fs.createFolder("", "Destino");
+  });
+  it("moveFolder relocates files and their history", async () => {
+    const np = await fs.moveFolder("Grupo", "Destino");
+    expect(np).toBe("Destino/Grupo");
+    expect(await fs.getXml("Destino/Grupo/X.bpmn")).toBe("<x2/>");
+    expect((await fs.listRevisions("Destino/Grupo/X.bpmn")).length).toBe(1);
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path === "Grupo")).toBe(false);
+  });
+  it("deleteFolder removes the folder and its history", async () => {
+    await fs.deleteFolder("Grupo");
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path.startsWith("Grupo"))).toBe(false);
+    expect(await fs.listRevisions("Grupo/X.bpmn")).toEqual([]);
+  });
+  it("copyFolder copies files (no history)", async () => {
+    const np = await fs.copyFolder("Grupo", "Destino");
+    expect(np).toBe("Destino/Grupo");
+    expect(await fs.getXml("Destino/Grupo/X.bpmn")).toBe("<x2/>");
+    expect(await fs.listRevisions("Destino/Grupo/X.bpmn")).toEqual([]);
+    expect(await fs.getXml("Grupo/X.bpmn")).toBe("<x2/>"); // original kept
+  });
+  it("renameFolder keeps parent, carries history, removes source", async () => {
+    const np = await fs.renameFolder("Grupo", "GrupoRenombrado");
+    expect(np).toBe("GrupoRenombrado");
+    expect(await fs.getXml("GrupoRenombrado/X.bpmn")).toBe("<x2/>");
+    expect((await fs.listRevisions("GrupoRenombrado/X.bpmn")).length).toBe(1);
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path === "Grupo" || e.path.startsWith("Grupo/"))).toBe(false);
+    expect(tree.some((e) => e.path === "GrupoRenombrado")).toBe(true);
+  });
+  it("renameFolder nested keeps parent dir, carries history", async () => {
+    await fs.createFile("Destino/Sub/Y.bpmn", "<y/>");
+    await fs.putXml("Destino/Sub/Y.bpmn", "<y2/>", "Ana");
+    const np = await fs.renameFolder("Destino/Sub", "SubRen");
+    expect(np).toBe("Destino/SubRen");
+    expect(await fs.getXml("Destino/SubRen/Y.bpmn")).toBe("<y2/>");
+    expect((await fs.listRevisions("Destino/SubRen/Y.bpmn")).length).toBe(1);
+    const tree = await fs.listTree();
+    expect(tree.some((e) => e.path === "Destino/Sub" || e.path.startsWith("Destino/Sub/"))).toBe(false);
+  });
+});
+
+describe("fsClient data-safety fixes", () => {
+  beforeEach(async () => {
+    await fs.createFolder("", "Grupo");
+    await fs.createFolder("", "Destino");
+  });
+
+  it("copyFolder does NOT copy .lock sidecars", async () => {
+    await fs.createFile("Grupo/X.bpmn", "<x/>");
+    await fs.setLock("Grupo/X.bpmn", {
+      lockedBy: "Ana",
+      lockedByEmail: "ana@example.com",
+      lockedByName: "Ana",
+      lockedAt: "2026-06-29T00:00:00Z",
+    });
+    await fs.copyFolder("Grupo", "Destino");
+    // copied file exists with correct content
+    expect(await fs.getXml("Destino/Grupo/X.bpmn")).toBe("<x/>");
+    // lock was NOT carried to the copy
+    const meta = await fs.getMeta("Destino/Grupo/X.bpmn");
+    expect(meta.appProperties?.lockedByName ?? "").toBe("");
+    // original lock still present
+    const origMeta = await fs.getMeta("Grupo/X.bpmn");
+    expect(origMeta.appProperties?.lockedByName).toBe("Ana");
+  });
+
+  it("moveFile throws on existing target and does NOT overwrite victim", async () => {
+    await fs.createFile("A.bpmn", "<a/>");
+    await fs.createFile("Sub/A.bpmn", "<keep/>");
+    await expect(fs.moveFile("A.bpmn", "Sub")).rejects.toThrow();
+    // victim intact
+    expect(await fs.getXml("Sub/A.bpmn")).toBe("<keep/>");
+    // source still exists
+    expect(await fs.getXml("A.bpmn")).toBe("<a/>");
+  });
+
+  it("renameFile throws on existing target and does NOT overwrite victim", async () => {
+    await fs.createFile("A.bpmn", "<a/>");
+    await fs.createFile("B.bpmn", "<keep/>");
+    await expect(fs.renameFile("A.bpmn", "B")).rejects.toThrow();
+    expect(await fs.getXml("B.bpmn")).toBe("<keep/>");
+  });
+});

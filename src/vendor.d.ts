@@ -1,0 +1,46 @@
+// Type stubs for bpmn-js plugin packages that ship no TypeScript declarations.
+declare module "bpmn-js-color-picker" {
+  const module: object;
+  export default module;
+}
+declare module "bpmn-js-properties-panel" {
+  export const BpmnPropertiesPanelModule: object;
+  export const BpmnPropertiesProviderModule: object;
+}
+declare module "diagram-js-minimap" {
+  const module: object;
+  export default module;
+}
+declare module "diagram-js-grid" {
+  const module: object;
+  export default module;
+}
+declare module "bpmn-js-token-simulation" {
+  const module: object;
+  export default module;
+}
+declare module "bpmn-js-token-simulation/lib/simulation-support" {
+  const module: object;
+  export default module;
+}
+declare module "bpmn-js-sketchy" {
+  const module: object;
+  export default module;
+}
+
+declare module "bpmn-js-bpmnlint";
+declare module "bpmnlint";
+declare module "./linting/bpmnlintConfig.js";
+declare module "*/bpmnlintConfig.js";
+
+declare const __BPMN_JS_VERSION__: string;
+declare const __APP_BUILD__: string;
+
+interface Window {
+  versionApi?: { latestBpmnJs(): Promise<string | null> };
+  appUpdate?: {
+    currentVersion(): Promise<string>;
+    checkFeed(): Promise<unknown | null>;
+    openDownload(url: string): void;
+  };
+}

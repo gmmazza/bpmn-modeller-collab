@@ -1,0 +1,57 @@
+import { describe, it, expect } from "vitest";
+import { buildTree, renderFileTree } from "./fileTree";
+import type { TreeEntry } from "./types";
+
+describe("renderFileTree", () => {
+  const me = { name: "Ana", email: "Ana" };
+  const entries: TreeEntry[] = [
+    { path: "Ventas", kind: "dir" },
+    { path: "Ventas/B2B.bpmn", kind: "file", appProperties: {} },
+    { path: "RRHH.bpmn", kind: "file", appProperties: {} },
+  ];
+  it("renders folders collapsed by default; expands when in expanded set", () => {
+    const el = document.createElement("div");
+    renderFileTree(el, entries, { expanded: new Set(), selectedId: null, me }, {
+      onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {},
+    });
+    // collapsed: child file not rendered
+    expect(el.querySelector('[data-path="Ventas/B2B.bpmn"]')).toBeNull();
+    expect(el.querySelector('[data-path="Ventas"]')).not.toBeNull();
+    expect(el.querySelector('[data-path="RRHH.bpmn"]')).not.toBeNull();
+
+    const el2 = document.createElement("div");
+    renderFileTree(el2, entries, { expanded: new Set(["Ventas"]), selectedId: null, me }, {
+      onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {},
+    });
+    expect(el2.querySelector('[data-path="Ventas/B2B.bpmn"]')).not.toBeNull();
+  });
+  it("clicking a file row calls onOpen; ⋯ calls onMenu", () => {
+    const el = document.createElement("div");
+    let opened = ""; let menued = "";
+    renderFileTree(el, entries, { expanded: new Set(), selectedId: null, me }, {
+      onOpen: (id) => { opened = id; }, onMenu: (t) => { menued = t.path; },
+      onToggle() {}, onNewFile() {}, onNewFolder() {},
+    });
+    (el.querySelector('[data-path="RRHH.bpmn"] .ft-name') as HTMLElement).click();
+    expect(opened).toBe("RRHH.bpmn");
+    (el.querySelector('[data-path="RRHH.bpmn"] .ft-menu') as HTMLElement).click();
+    expect(menued).toBe("RRHH.bpmn");
+  });
+});
+
+describe("buildTree", () => {
+  it("nests by path, folders first then alphabetical", () => {
+    const entries: TreeEntry[] = [
+      { path: "RRHH.bpmn", kind: "file" },
+      { path: "Ventas", kind: "dir" },
+      { path: "Ventas/B2C.bpmn", kind: "file" },
+      { path: "Ventas/B2B.bpmn", kind: "file" },
+      { path: "Compras", kind: "dir" },
+    ];
+    const roots = buildTree(entries);
+    expect(roots.map((n) => n.name)).toEqual(["Compras", "Ventas", "RRHH.bpmn"]);
+    const ventas = roots.find((n) => n.name === "Ventas")!;
+    expect(ventas.children.map((c) => c.name)).toEqual(["B2B.bpmn", "B2C.bpmn"]);
+    expect(ventas.children[0].path).toBe("Ventas/B2B.bpmn");
+  });
+});

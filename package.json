@@ -1,0 +1,69 @@
+{
+  "name": "bpmn-compartida",
+  "private": true,
+  "version": "0.1.0",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "electron:dev": "npm run build && electron .",
+    "pack:win": "npm run build && node scripts/pack.cjs",
+    "dist:win": "npm run build && electron-builder --win portable",
+    "dist:win:installer": "npm run build && electron-builder --win nsis",
+    "update:bpmn": "node scripts/update-bpmn.mjs",
+    "lint:pack": "bpmnlint-pack-config -c .bpmnlintrc -t es -o src/linting/bpmnlintConfig.js"
+  },
+  "dependencies": {
+    "@bpmn-io/properties-panel": "^3.46.0",
+    "bpmn-js": "^18.19.0",
+    "bpmn-js-bpmnlint": "^0.24.0",
+    "bpmn-js-color-picker": "^0.7.2",
+    "bpmn-js-differ": "^3.2.0",
+    "bpmn-js-properties-panel": "^5.60.0",
+    "bpmn-js-sketchy": "^0.8.0",
+    "bpmn-js-token-simulation": "^0.39.4",
+    "bpmn-moddle": "^10.0.0",
+    "bpmnlint": "^11.12.1",
+    "diagram-js-grid": "^2.0.1",
+    "diagram-js-minimap": "^5.3.0",
+    "heatmap-ts": "^0.0.5"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.1",
+    "@types/node": "^22.20.0",
+    "@types/wicg-file-system-access": "^2023.10.7",
+    "bpmnlint-pack-config": "^0.9.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "electron-updater": "^6.8.9",
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^15.11.6",
+    "npm-check-updates": "^17.1.18",
+    "png-to-ico": "^3.0.1",
+    "sharp": "^0.35.2",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.bpmncompartida.app",
+    "productName": "BPMN compartida",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "build/icon.ico"
+    },
+    "directories": {
+      "output": "release"
+    }
+  }
+}
