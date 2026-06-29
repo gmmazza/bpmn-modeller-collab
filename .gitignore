@@ -25,3 +25,6 @@ release/
 # CDP / E2E scratch artifacts
 .playwright-mcp/
 build/_preview*.png
+
+# SDD scratch (briefs/reports/ledger)
+.superpowers/
