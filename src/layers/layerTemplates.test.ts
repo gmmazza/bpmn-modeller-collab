@@ -36,4 +36,27 @@ describe("templates client", () => {
     await t.remove("mi-plantilla");
     expect(await t.list()).toEqual([]);
   });
+
+  it("strips assignments when loading a template written directly (bypassing save)", async () => {
+    const dir = createFakeDir();
+    const fs = createFsClient(dir as unknown as FileSystemDirectoryHandle);
+    const t = createTemplatesClient(fs);
+
+    // Build a dimension with assignments
+    const lf = addColorDimension({ version: 1, dimensions: [] }, "Categoría");
+    const dimWithAssign = {
+      ...(lf.lf.dimensions[0] as any),
+      assignments: { E1: "categoria-1" },
+    };
+
+    // Write directly to storage, bypassing save (which would strip)
+    const payload = { version: 1, name: "External Template", dimensions: [dimWithAssign] };
+    await fs.writePath(".layer-templates/external.json", JSON.stringify(payload));
+
+    // Load should strip assignments even though they're in the file
+    const loaded = await t.load("external");
+    expect(loaded).not.toBeNull();
+    expect(loaded?.name).toBe("External Template");
+    expect(loaded?.dimensions[0].assignments).toEqual({}); // must be stripped on load
+  });
 });
