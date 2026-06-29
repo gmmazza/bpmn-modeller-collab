@@ -46,7 +46,7 @@ export function createTemplatesClient(api: TemplatesApi) {
       try {
         const j = JSON.parse(txt);
         const name = typeof j.name === "string" && j.name.trim() ? j.name : slug;
-        const dimensions = normalizeLayerFile({ version: 1, dimensions: j.dimensions }).dimensions;
+        const dimensions = stripAssignments(normalizeLayerFile({ version: 1, dimensions: j.dimensions }).dimensions);
         return { name, dimensions };
       } catch {
         return null;
