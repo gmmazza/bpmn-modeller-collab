@@ -38,9 +38,7 @@ describe("notePanelController", () => {
     const { docs, mount, ctrl } = setup([A], A);
     await ctrl.refresh();
     (mount.querySelector('[data-mode="edit"]') as HTMLElement).click();
-    const ta = mount.querySelector("textarea[data-note-edit]") as HTMLTextAreaElement;
-    ta.value = "texto nuevo";
-    ta.dispatchEvent(new Event("input"));
+    ctrl._setEditorDocForTest("texto nuevo");
     (mount.querySelector("[data-note-save]") as HTMLButtonElement).click();
     await Promise.resolve(); await Promise.resolve();
     const saved = await docs.readNote("x.bpmn", "Activity_1");
@@ -55,5 +53,20 @@ describe("notePanelController", () => {
     const { mount, ctrl } = setup([A], null);
     await ctrl.refresh();
     expect(mount.textContent).toContain("Seleccioná un paso");
+  });
+
+  it("edits through the CM6 editor and saves the editor's document", async () => {
+    const { docs, mount, ctrl } = setup([A], A); // existing helper
+    await ctrl.refresh();
+    (mount.querySelector('[data-mode="edit"]') as HTMLElement).click();
+    // CM6 mounts into the edit host
+    const host = mount.querySelector("[data-note-edit-host] .cm-editor");
+    expect(host).not.toBeNull();
+    // simulate typing by setting the editor doc through the controller's test seam
+    ctrl._setEditorDocForTest("texto via cm6");
+    (mount.querySelector("[data-note-save]") as HTMLButtonElement).click();
+    await Promise.resolve(); await Promise.resolve();
+    const saved = await docs.readNote("x.bpmn", "Activity_1");
+    expect(saved).toContain("texto via cm6");
   });
 });

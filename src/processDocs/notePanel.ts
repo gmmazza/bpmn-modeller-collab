@@ -17,6 +17,7 @@ export interface NotePanelHandlers {
   onBodyInput(body: string): void;
   onSave(): void;
   onCreateNote(): void;
+  onEditHostReady?(host: HTMLElement): void;
 }
 
 function tabButton(tab: NoteTab, active: NoteTab, label: string, on: (t: NoteTab) => void): HTMLButtonElement {
@@ -93,14 +94,15 @@ export function renderNotePanel(container: HTMLElement, state: NotePanelState, h
     return;
   }
 
-  const ta = document.createElement("textarea");
-  ta.dataset.noteEdit = "true";
-  ta.className = "note-edit";
-  ta.value = state.body;
-  ta.addEventListener("input", () => h.onBodyInput(ta.value));
+  // edit mode
+  const host = document.createElement("div");
+  host.dataset.noteEditHost = "true";
+  host.className = "note-edit-host";
   const save = document.createElement("button");
   save.dataset.noteSave = "true";
   save.textContent = "Guardar";
   save.addEventListener("click", h.onSave);
-  container.append(ta, save);
+  container.append(host, save);
+  // Let the controller mount the CM6 editor into the host after render.
+  h.onEditHostReady?.(host);
 }

@@ -13,15 +13,14 @@ describe("renderNotePanel", () => {
     expect(c.textContent).toContain("Validar factura");
   });
 
-  it("in edit mode shows a textarea bound to onBodyInput and a Save button", () => {
+  it("in edit mode renders a host div and a Save button, calls onEditHostReady and onSave", () => {
     const c = document.createElement("div");
     const h = handlers();
-    renderNotePanel(c, { tab: "step", mode: "edit", stepLabel: "X", body: "abc", hasNote: true }, h);
-    const ta = c.querySelector("textarea[data-note-edit]") as HTMLTextAreaElement;
-    expect(ta.value).toBe("abc");
-    ta.value = "nuevo";
-    ta.dispatchEvent(new Event("input"));
-    expect(h.onBodyInput).toHaveBeenCalledWith("nuevo");
+    const onEditHostReady = vi.fn();
+    renderNotePanel(c, { tab: "step", mode: "edit", stepLabel: "X", body: "abc", hasNote: true }, { ...h, onEditHostReady });
+    const host = c.querySelector("[data-note-edit-host]") as HTMLElement;
+    expect(host).not.toBeNull();
+    expect(onEditHostReady).toHaveBeenCalledWith(host);
     (c.querySelector("[data-note-save]") as HTMLButtonElement).click();
     expect(h.onSave).toHaveBeenCalled();
   });
