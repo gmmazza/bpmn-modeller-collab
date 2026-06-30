@@ -191,3 +191,10 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 :root[data-theme="dark"] #canvas .djs-element[data-element-id$="_label"] text {
   fill: var(--text) !important;
 }
+
+/* Dark mode: bpmn-js floating overlays keep a LIGHT background, so they must not
+   inherit the theme's light foreground (var(--text)) or their content vanishes on
+   white. Force a dark foreground on the context pad icons and the label
+   direct-editing box. (The left palette already renders dark icons.) */
+:root[data-theme="dark"] .djs-context-pad .entry { color: #1f2937; }
+:root[data-theme="dark"] .djs-direct-editing-content { color: #1f2937 !important; }
