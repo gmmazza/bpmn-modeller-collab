@@ -232,3 +232,20 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .note-read.markdown-body img { max-width: 100%; }
 .note-read.markdown-body iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; }
 .note-empty { color: var(--muted, #888); flex: none; }
+
+/* CodeMirror live-preview editor */
+.note-edit-host { flex: 1 1 auto; min-height: 120px; overflow: auto; }
+.note-edit-host .cm-editor { height: 100%; background: transparent; color: inherit; }
+.note-edit-host .cm-editor.cm-focused { outline: none; }
+.note-edit-host .cm-scroller { font: inherit; line-height: 1.5; }
+.cm-heading-1 { font-size: 1.5em; font-weight: 700; }
+.cm-heading-2 { font-size: 1.3em; font-weight: 700; }
+.cm-heading-3 { font-size: 1.15em; font-weight: 700; }
+.cm-heading-4, .cm-heading-5, .cm-heading-6 { font-weight: 700; }
+.cm-strong { font-weight: 700; }
+.cm-em { font-style: italic; }
+.cm-inline-code { font-family: monospace; background: var(--surface-2, rgba(127,127,127,.15)); padding: 0 3px; border-radius: 3px; }
+.cm-quote { color: var(--muted, #888); border-left: 3px solid var(--border); padding-left: 8px; }
+.cm-md-widget { display: block; margin: 4px 0; }
+.cm-md-image { max-width: 100%; }
+.cm-md-video { width: 100%; aspect-ratio: 16 / 9; border: 0; }
