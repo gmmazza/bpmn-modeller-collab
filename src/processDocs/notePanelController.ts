@@ -2,6 +2,7 @@
 import { parseFrontmatter, serializeFrontmatter } from "./frontmatter";
 import { buildIndexMarkdown, type IndexElement } from "./docsIndex";
 import { renderNotePanel, type NoteMode, type NoteTab, type NotePanelState } from "./notePanel";
+import { createMarkdownEditor, type MarkdownEditor } from "./cmEditor";
 import type { DocsClient } from "./docsClient";
 
 export interface DiagramElement {
@@ -27,6 +28,9 @@ export function createNotePanelController(api: NoteControllerApi) {
   let mode: NoteMode = "read";
   let body = "";
   let hasNote = false;
+  let editor: MarkdownEditor | null = null;
+
+  function destroyEditor(): void { editor?.destroy(); editor = null; }
 
   async function regenerateIndex(): Promise<void> {
     const documented = new Set(await api.docs.listDocumentedIds(api.diagramId()));
@@ -71,12 +75,14 @@ export function createNotePanelController(api: NoteControllerApi) {
   function render(): void {
     renderNotePanel(api.mount, state(), {
       onTabChange: async (t) => {
+        destroyEditor();
         tab = t;
         mode = "read";
         await loadBody();
         render();
       },
       onModeChange: (m) => {
+        if (m !== "edit") destroyEditor();
         mode = m;
         render();
       },
@@ -85,6 +91,7 @@ export function createNotePanelController(api: NoteControllerApi) {
       },
       onSave: async () => {
         await save();
+        destroyEditor();
         mode = "read";
         render();
       },
@@ -94,28 +101,35 @@ export function createNotePanelController(api: NoteControllerApi) {
         body = tab === "process" ? PROCESS_TEMPLATE : "";
         render();
       },
+      onEditHostReady: (host) => {
+        destroyEditor();
+        editor = createMarkdownEditor(host, { doc: body, onChange: (d) => { body = d; } });
+        editor.focus();
+      },
     });
   }
 
   async function save(): Promise<void> {
+    const text = editor ? editor.getDoc() : body;
     if (tab === "process") {
-      await api.docs.writeProcessNote(api.diagramId(), body);
+      await api.docs.writeProcessNote(api.diagramId(), text);
       hasNote = true;
       return;
     }
     const sel = api.getSelected();
     if (!sel) return;
-    const text = serializeFrontmatter(
+    const serialized = serializeFrontmatter(
       { element: sel.id, name: sel.name, type: sel.type, diagram: api.diagramId() },
-      body,
+      text,
     );
-    await api.docs.writeNote(api.diagramId(), sel.id, text);
+    await api.docs.writeNote(api.diagramId(), sel.id, serialized);
     hasNote = true;
     await regenerateIndex();
   }
 
   api.onSelectionChange(async () => {
     if (tab !== "step") return;
+    destroyEditor();
     mode = "read";
     await loadBody();
     render();
@@ -126,5 +140,9 @@ export function createNotePanelController(api: NoteControllerApi) {
     render();
   }
 
-  return { refresh, setSelected: refresh };
+  function _setEditorDocForTest(s: string): void {
+    if (editor) editor.setDoc(s); else body = s;
+  }
+
+  return { refresh, setSelected: refresh, _setEditorDocForTest };
 }
