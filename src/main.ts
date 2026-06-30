@@ -267,6 +267,10 @@ async function bootstrap() {
     // re-apply the active layer after a modeler rebuild
     selectedId = null;
     if (layerFile) reapplyLayers();
+    tagPools();
+    // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
+    modeler.get("eventBus").on("import.done", () => tagPools());
+    modeler.get("eventBus").on("commandStack.changed", () => tagPools());
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -361,12 +365,31 @@ async function bootstrap() {
     }
   }
 
+  // bpmn-js renders pools (Participant) and lanes with the same DOM class as any
+  // shape, so there is no CSS hook to give them a distinct dark-mode fill. Tag their
+  // graphics with "bpmn-pool" by BPMN type so the dark theme can style only them.
+  function tagPools(): void {
+    try {
+      const reg = modeler.get("elementRegistry");
+      const canvas = modeler.get("canvas");
+      reg.forEach((el: { businessObject?: { $type?: string } }) => {
+        const t = el.businessObject?.$type;
+        if (t !== "bpmn:Participant" && t !== "bpmn:Lane") return;
+        const gfx = canvas.getGraphics(el);
+        if (gfx && !gfx.classList.contains("bpmn-pool")) gfx.classList.add("bpmn-pool");
+      });
+    } catch {
+      /* modeler/registry not ready */
+    }
+  }
+
   // Re-importing XML (editor.load) rebuilds every element's graphics, which drops
   // the diagram-js markers that implement layer coloring. Any reload/restore/rebuild
   // path must re-apply the active layer afterwards, or colors silently disappear.
   async function loadIntoEditor(xml: string): Promise<void> {
     await editor.load(xml);
     if (layerFile) reapplyLayers();
+    tagPools();
   }
 
   function renderLayers(): void {

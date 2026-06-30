@@ -198,3 +198,14 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
    direct-editing box. (The left palette already renders dark icons.) */
 :root[data-theme="dark"] .djs-context-pad .entry { color: #1f2937; }
 :root[data-theme="dark"] .djs-direct-editing-content { color: #1f2937 !important; }
+
+/* Dark mode: diagram readability for bpmn-js (no native dark theme). */
+/* Connections (sequence/message flows) — dark stroke on dark canvas → lighten. */
+:root[data-theme="dark"] #canvas .djs-connection .djs-visual path { stroke: #9aa4b2 !important; }
+/* Pools & lanes (tagged .bpmn-pool by type): dark-gray fill to differentiate from
+   the white task shapes, with a lighter border and a light name label. */
+:root[data-theme="dark"] #canvas .bpmn-pool .djs-visual > :first-child { fill: #1e293b !important; stroke: #475569 !important; }
+:root[data-theme="dark"] #canvas .bpmn-pool .djs-visual text { fill: var(--text) !important; }
+/* Minimap: match the app surface and make its toggle icon visible on dark. */
+:root[data-theme="dark"] .djs-minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; }
+:root[data-theme="dark"] .djs-minimap .toggle { filter: invert(0.9); }
