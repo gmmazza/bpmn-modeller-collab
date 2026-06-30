@@ -17,5 +17,16 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     globals: true,
+    environmentOptions: {
+      happyDOM: {
+        settings: {
+          navigation: {
+            disableMainFrameNavigation: true,
+            disableChildFrameNavigation: true,
+            disableChildPageNavigation: true,
+          },
+        },
+      },
+    },
   },
 });
