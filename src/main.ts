@@ -20,6 +20,10 @@ import { createInspector, type Inspector } from "./inspector";
 import { BUNDLED_BPMN_JS_VERSION, checkLatestBpmnJs } from "./version";
 import { evaluateUpdate } from "./appUpdate";
 import { createFsClient, type FsClient } from "./fsClient";
+import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
+import { createNotePanelController } from "./processDocs/notePanelController";
+import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
+import { ensureAgentsFile } from "./processDocs/agentsFile";
 import { createLayersClient } from "./layers/layersClient";
 import { createLayerView, type LayerView } from "./layers/layerView";
 import { renderLayersPanel } from "./layers/layersPanel";
@@ -83,6 +87,10 @@ async function bootstrap() {
   let heatmap: { start(): void; stop(): void } | null = null;
   let applyingViz = false;
   let layersClient: ReturnType<typeof createLayersClient>;
+  let docsClient: DocsClient;
+  let docsController: ReturnType<typeof createNotePanelController> | null = null;
+  let docsFileId = "";
+  const docsSelectionCbs: Array<() => void> = [];
   let layerView: LayerView | null = null;
   let layerFile: LayerFile | null = null;
   let activeColorId: string | null = null;
@@ -178,6 +186,8 @@ async function bootstrap() {
           rootHandle = dir;
           api = createFsClient(dir);
           layersClient = createLayersClient(api);
+          docsClient = createDocsClient(api);
+          void ensureAgentsFile(api);
           await ensureNameThenApp();
         } else {
           showToast("No se eligió una carpeta usable");
@@ -214,6 +224,8 @@ async function bootstrap() {
         rootHandle = dir;
         api = createFsClient(dir);
         layersClient = createLayersClient(api);
+        docsClient = createDocsClient(api);
+        void ensureAgentsFile(api);
         await ensureNameThenApp();
       })().catch(onError);
     });
@@ -274,6 +286,7 @@ async function bootstrap() {
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
+      docsSelectionCbs.forEach((cb) => cb());
     });
     editor.onDirtyChange((dirty) => {
       dispatch({ type: "dirtyChanged", dirty });
@@ -354,6 +367,12 @@ async function bootstrap() {
     selectedId = null;
     reapplyLayers();
     renderLayers();
+  }
+
+  // ---- Docs ----
+  async function loadDocs(fileId: string): Promise<void> {
+    docsFileId = fileId;
+    await docsController?.refresh();
   }
 
   function reapplyLayers(): void {
@@ -548,6 +567,7 @@ async function bootstrap() {
         <div class="tgroup">
           <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
           <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
+          <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("help")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Ajustes">${icon("settings")}</button>
             <div id="vizsettings" class="popover" hidden></div>
@@ -578,6 +598,7 @@ async function bootstrap() {
       { id: "capas", label: "Capas" },
       { id: "propiedades", label: "Propiedades" },
       { id: "historial", label: "Historial" },
+      { id: "documentacion", label: "Documentación" },
     ]);
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
     inspector.paneEl("propiedades").id = "propspanel";
@@ -587,6 +608,19 @@ async function bootstrap() {
     inspector.hide();
 
     await mountModeler();
+
+    docsController = createNotePanelController({
+      docs: docsClient,
+      mount: inspector.paneEl("documentacion"),
+      diagramId: () => docsFileId,
+      processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
+      listElements: () => (modeler ? listDocumentableElements(modeler) : []),
+      getSelected: () => {
+        const sel = (modeler?.get("selection")?.get?.() ?? []) as Array<{ id: string; businessObject?: { name?: string; $type?: string } }>;
+        return sel[0] ? toDiagramElement(sel[0]) : null;
+      },
+      onSelectionChange: (cb) => docsSelectionCbs.push(cb),
+    });
 
     const $ = (id: string) => document.getElementById(id)!;
     $("folderchip").innerHTML = `${icon("folder")} <span class="folder-path"></span>`;
@@ -688,6 +722,7 @@ async function bootstrap() {
     };
     $("tab-capas").addEventListener("click", () => openInspector("capas"));
     $("tab-props").addEventListener("click", () => openInspector("propiedades"));
+    $("tab-docs").addEventListener("click", () => { inspector.setTab("documentacion"); void docsController?.refresh(); reflectInspectorToggle(); });
     $("toggle-inspector").addEventListener("click", () => {
       if (inspector.isVisible()) inspector.hide();
       else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); }
@@ -830,6 +865,7 @@ async function bootstrap() {
     dispatch({ type: "openedFile", fileId, lock: lockKind });
     await loadHistory(fileId);
     await loadLayers(fileId);
+    await loadDocs(fileId);
   }
 
 
@@ -1086,6 +1122,8 @@ async function bootstrap() {
     rootHandle = saved;
     api = createFsClient(saved);
     layersClient = createLayersClient(api);
+    docsClient = createDocsClient(api);
+    void ensureAgentsFile(api);
     await ensureNameThenApp();
   } else {
     showFolderGate();
