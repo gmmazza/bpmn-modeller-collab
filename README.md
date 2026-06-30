@@ -148,6 +148,16 @@ comprimí la carpeta resultante en un `.zip`.
   bpmn-io tras CI verde + cooldown; los major llegan como PR) y
   `.github/workflows/ci.yml`.
 
+## 🚀 Actualización de la app y versiones
+
+- Los cambios por versión se registran en **[CHANGELOG.md](CHANGELOG.md)**.
+- Cada versión se publica como **GitHub Release** con el `.zip` portable adjunto.
+- La app trae un **chequeo de actualización in-app**: compara su versión con el
+  último Release (`APP_UPDATE_FEED_URL` en `electron/main.cjs`) y muestra un
+  banner "Versión X disponible — Descargar". Requiere que el repositorio sea
+  **público** (se consulta sin autenticación); mientras es privado el chequeo es
+  un no-op silencioso.
+
 ---
 
 ## ✅ Validación de flujo (bpmnlint)

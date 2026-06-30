@@ -97,10 +97,12 @@ function createWindow() {
   win.loadURL(pathToFileURL(indexPath).href);
 }
 
-// Empty by default → app-update check is a silent no-op until a feed is published.
-// Point this at GitHub Releases (.../releases/latest as JSON) or a static JSON
-// returning { version, url, notes? } to enable the in-app update banner.
-const APP_UPDATE_FEED_URL = "";
+// GitHub Releases "latest" API for this repo. The handler below maps its JSON
+// (tag_name/html_url) to the { version, url } shape the renderer expects.
+// NOTE: this is fetched UNAUTHENTICATED, so it only returns data while the repo
+// is PUBLIC. While the repo is private GitHub answers 404 and the update check is
+// a silent no-op (no banner) — it activates automatically once the repo is public.
+const APP_UPDATE_FEED_URL = "https://api.github.com/repos/gmmazza/bpmn-modeller-collab/releases/latest";
 
 ipcMain.handle("version:latestBpmnJs", async () => {
   try {
@@ -117,8 +119,13 @@ ipcMain.handle("app:version", () => app.getVersion());
 ipcMain.handle("app:checkUpdate", async () => {
   if (!APP_UPDATE_FEED_URL) return null;
   try {
-    const res = await fetch(APP_UPDATE_FEED_URL);
-    return await res.json();
+    const res = await fetch(APP_UPDATE_FEED_URL, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return null; // 404 while the repo is private, or rate-limited
+    const j = await res.json();
+    // Map the GitHub release shape to the renderer's { version, url } contract.
+    const version = typeof j.tag_name === "string" ? j.tag_name.replace(/^v/, "") : null;
+    if (!version) return null;
+    return { version, url: typeof j.html_url === "string" ? j.html_url : "" };
   } catch {
     return null;
   }
