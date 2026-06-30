@@ -249,6 +249,22 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     }
     await removeDirAt(src);
   }
+  async function moveDocs(id: string, newId: string): Promise<void> {
+    const src = `${baseName(id)}.docs`;
+    const dst = `${baseName(newId)}.docs`;
+    if (!(await dirExists(src))) return;
+    if (native) {
+      await native.rename(src, dst);
+      return;
+    }
+    await copySubtree(src, dst, true);
+    await removeDirAt(src);
+  }
+  async function copyDocs(id: string, newId: string): Promise<void> {
+    const src = `${baseName(id)}.docs`;
+    if (!(await dirExists(src))) return;
+    await copySubtree(src, `${baseName(newId)}.docs`, true);
+  }
 
   return {
     async listFiles(): Promise<DriveFile[]> {
@@ -372,6 +388,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     async deleteFile(id: string): Promise<void> {
       await removeFileAt(id);
       await removeFileAt(`${baseName(id)}.layers.json`);
+      await removeDirAt(`${baseName(id)}.docs`);
       await removeFileAt(`${id}.lock`);
       await removeDirAt(`${HISTORY_DIR}/${baseName(id)}`);
     },
@@ -381,6 +398,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       if (await exists(newId)) throw new Error("Ya existe «" + baseFileName(newId) + "»");
       await moveFileContent(id, newId);
       if (await exists(`${baseName(id)}.layers.json`)) await moveFileContent(`${baseName(id)}.layers.json`, `${baseName(newId)}.layers.json`);
+      await moveDocs(id, newId);
       await moveHistory(id, newId);
       await removeFileAt(`${id}.lock`);
       return newId;
@@ -391,6 +409,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       if (await exists(newId)) throw new Error("Ya existe «" + baseFileName(newId) + "» en el destino");
       await moveFileContent(id, newId);
       if (await exists(`${baseName(id)}.layers.json`)) await moveFileContent(`${baseName(id)}.layers.json`, `${baseName(newId)}.layers.json`);
+      await moveDocs(id, newId);
       await moveHistory(id, newId);
       await removeFileAt(`${id}.lock`);
       return newId;
@@ -401,6 +420,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       const newId = join(destFolder, finalName);
       await copyFileContent(id, newId);
       if (await exists(`${baseName(id)}.layers.json`)) await copyFileContent(`${baseName(id)}.layers.json`, `${baseName(newId)}.layers.json`);
+      await copyDocs(id, newId);
       return newId;
     },
     async duplicateFile(id: string): Promise<string> {
