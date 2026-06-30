@@ -210,3 +210,12 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
    (a .toggle::before) already inherits the theme's light --text, so it is
    readable on the dark surface — no icon recolor needed. */
 :root[data-theme="dark"] .djs-minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; }
+
+/* Documentation panel */
+.note-panel { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.note-header { display: flex; justify-content: space-between; gap: 8px; }
+.note-tabs button.active, .note-modes button.active { font-weight: bold; text-decoration: underline; }
+.note-edit { width: 100%; min-height: 200px; font-family: inherit; }
+.note-read.markdown-body img { max-width: 100%; }
+.note-read.markdown-body iframe { width: 100%; aspect-ratio: 16 / 9; border: 0; }
+.note-empty { color: var(--muted, #888); }
