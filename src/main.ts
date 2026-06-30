@@ -27,7 +27,7 @@ import { renderLayersModal, type LayersModalHandlers } from "./layers/layersModa
 import { createTemplatesClient, type TemplatesClient } from "./layers/layerTemplates";
 import {
   addColorDimension, addAnnotationDimension, renameDimension, deleteDimension,
-  addCategory, updateCategory, deleteCategory, mergeTemplate, type LayerFile,
+  addCategory, updateCategory, deleteCategory, mergeTemplate, reorderCategory, type LayerFile,
 } from "./layers/layerModel";
 import { loadSavedDir, pickDir } from "./folder";
 import { createEditor, createBpmnModeler, type ModelerLike } from "./editor";
@@ -418,6 +418,7 @@ async function bootstrap() {
     onAddCategory: (dimId) => void applyLayerEdit((lf) => addCategory(lf, dimId, "Nueva categoría", "#AED6F1").lf),
     onUpdateCategory: (dimId, catId, patch) => void applyLayerEdit((lf) => updateCategory(lf, dimId, catId, patch)),
     onDeleteCategory: (dimId, catId) => void applyLayerEdit((lf) => deleteCategory(lf, dimId, catId)),
+    onReorderCategory: (dimId, from, to) => void applyLayerEdit((lf) => reorderCategory(lf, dimId, from, to)),
     onApplyTemplate: (slug) => void applyTemplate(slug),
     onSaveTemplate: (name) => void saveTemplate(name),
     onDeleteTemplate: (slug) => void deleteTemplate(slug),

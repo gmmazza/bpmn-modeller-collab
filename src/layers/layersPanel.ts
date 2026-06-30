@@ -97,11 +97,19 @@ export function renderLayersPanel(
     container.appendChild(assignH);
 
     if (active) {
+      // The active layer's name is shown as a title above the selector (not as the
+      // first option). The selector's empty value reads "No definido" = element not
+      // assigned to any category of this layer.
+      const layerTitle = document.createElement("div");
+      layerTitle.className = "assign-layer-title";
+      layerTitle.textContent = active.label;
+      container.appendChild(layerTitle);
+
       const sel = document.createElement("select");
       sel.className = "assign-color";
       const none = document.createElement("option");
       none.value = "";
-      none.textContent = `— ${active.label} —`;
+      none.textContent = "No definido";
       sel.appendChild(none);
       for (const c of active.categories) {
         const o = document.createElement("option");

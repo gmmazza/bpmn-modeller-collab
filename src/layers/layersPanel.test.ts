@@ -37,6 +37,20 @@ describe("renderLayersPanel", () => {
     expect(onAssign).toHaveBeenCalledWith("madurez", "t1", "manual");
   });
 
+  it("shows the active layer name as a title and 'No definido' as the empty option", () => {
+    const el = document.createElement("div");
+    renderLayersPanel(el, baseState({ activeColorId: "madurez", selectedId: "t1" }), {
+      onPickColor: vi.fn(), onToggleAnnotation: vi.fn(), onAssign: vi.fn(), onManage: vi.fn(),
+    });
+    const title = el.querySelector(".assign-layer-title")!;
+    expect(title.textContent).toBe("Automatización (madurez)");
+    const opts = Array.from(el.querySelectorAll<HTMLOptionElement>("select.assign-color option"));
+    expect(opts[0].value).toBe("");
+    expect(opts[0].textContent).toBe("No definido");
+    // the layer name must NOT appear as a selectable option
+    expect(opts.some((o) => o.textContent === "Automatización (madurez)")).toBe(false);
+  });
+
   it("toggling an annotation checkbox fires onToggleAnnotation", () => {
     const el = document.createElement("div");
     const onToggleAnnotation = vi.fn();
