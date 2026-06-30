@@ -62,7 +62,7 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
         const raw = text.slice(from, to);
         const m = raw.match(/^!\[([^\]]*)\]\(([^)]*)\)$/);
         if (m) specs.push({ kind: "widget", from, to, widget: { type: "image", src: m[2], alt: m[1] } });
-        return;
+        return false;
       }
     },
   });

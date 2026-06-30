@@ -36,4 +36,10 @@ describe("computeMarkdownDecorations", () => {
     expect(hides("> cita").length).toBeGreaterThan(0);
     expect(hides("- item").length).toBeGreaterThan(0);
   });
+
+  it("treats an image atomically: one widget spec, no hide specs inside it", () => {
+    const specs = computeMarkdownDecorations("![a](b)");
+    expect(specs.filter((s) => s.kind === "hide")).toHaveLength(0);
+    expect(specs.filter((s) => s.kind === "widget")).toHaveLength(1);
+  });
 });
