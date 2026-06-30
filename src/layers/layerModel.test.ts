@@ -6,7 +6,7 @@ import {
   cssForDimension,
   baseSlug, slugId, deriveStroke,
   addColorDimension, addAnnotationDimension, renameDimension, deleteDimension,
-  addCategory, updateCategory, deleteCategory, mergeTemplate,
+  addCategory, updateCategory, deleteCategory, mergeTemplate, reorderCategory,
   type ColorDimension,
   type LayerFile,
 } from "./layerModel";
@@ -153,5 +153,30 @@ describe("layer mutations", () => {
     expect(merged.dimensions.map((d) => d.id)).toEqual(["madurez", "actores"]);
     expect(merged.dimensions[0].label).toBe("Madurez"); // existing not overwritten
     expect(merged.dimensions[1].assignments).toEqual({}); // template assignments dropped
+  });
+});
+
+describe("reorderCategory", () => {
+  const threeCats = (): LayerFile => {
+    let lf = addColorDimension({ version: 1, dimensions: [] }, "Madurez").lf; // categoria-1
+    lf = addCategory(lf, "madurez", "B", "#111111").lf; // b
+    lf = addCategory(lf, "madurez", "C", "#222222").lf; // c
+    return lf;
+  };
+  const ids = (lf: LayerFile) => (lf.dimensions[0] as ColorDimension).categories.map((c) => c.id);
+
+  it("moves a category to a new index within the color dimension", () => {
+    const lf = threeCats();
+    expect(ids(lf)).toEqual(["categoria-1", "b", "c"]);
+    expect(ids(reorderCategory(lf, "madurez", 2, 0))).toEqual(["c", "categoria-1", "b"]);
+    expect(ids(reorderCategory(lf, "madurez", 0, 2))).toEqual(["b", "c", "categoria-1"]);
+  });
+
+  it("is a no-op for equal or out-of-range indices, and leaves other dims untouched", () => {
+    const lf = threeCats();
+    expect(ids(reorderCategory(lf, "madurez", 1, 1))).toEqual(["categoria-1", "b", "c"]);
+    expect(ids(reorderCategory(lf, "madurez", 5, 0))).toEqual(["categoria-1", "b", "c"]);
+    expect(ids(reorderCategory(lf, "madurez", 0, -1))).toEqual(["categoria-1", "b", "c"]);
+    expect(reorderCategory(lf, "nope", 0, 1)).toEqual(lf);
   });
 });

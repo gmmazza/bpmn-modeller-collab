@@ -13,6 +13,7 @@ export interface LayersModalHandlers {
   onAddCategory(dimId: string): void;
   onUpdateCategory(dimId: string, catId: string, patch: { label?: string; fill?: string }): void;
   onDeleteCategory(dimId: string, catId: string): void;
+  onReorderCategory(dimId: string, fromIndex: number, toIndex: number): void;
   onApplyTemplate(slug: string): void;
   onSaveTemplate(name: string): void;
   onDeleteTemplate(slug: string): void;
@@ -31,6 +32,11 @@ export function renderLayersModal(
   handlers: LayersModalHandlers,
 ): void {
   container.innerHTML = "";
+
+  // Tracks the category being dragged during a reorder. Lives for the lifetime of
+  // this render (a drag starts and ends without a re-render), so a plain closure
+  // var is enough and avoids dataTransfer quirks across browsers.
+  let dragFrom: { dimId: string; index: number } | null = null;
 
   // ---- Templates ----
   const tplH = el("h3", undefined, "Plantillas");
@@ -83,8 +89,11 @@ export function renderLayersModal(
 
     if (dim.type === "color") {
       const cd = dim as ColorDimension;
-      for (const cat of cd.categories) {
+      cd.categories.forEach((cat, index) => {
         const row = el("div", "lm-cat");
+        row.draggable = true;
+        const grip = el("span", "lm-grip", "⠿");
+        grip.title = "Arrastrar para reordenar";
         const color = el("input", "lm-cat-color");
         color.type = "color";
         color.value = cat.fill;
@@ -97,9 +106,26 @@ export function renderLayersModal(
         cdel.type = "button";
         cdel.title = "Borrar categoría";
         cdel.addEventListener("click", () => handlers.onDeleteCategory(dim.id, cat.id));
-        row.append(color, label, cdel);
+        // --- drag to reorder within this dimension ---
+        row.addEventListener("dragstart", (e) => {
+          dragFrom = { dimId: dim.id, index };
+          row.classList.add("lm-dragging");
+          e.dataTransfer?.setData("text/plain", String(index));
+        });
+        row.addEventListener("dragend", () => row.classList.remove("lm-dragging"));
+        row.addEventListener("dragover", (e) => {
+          if (dragFrom && dragFrom.dimId === dim.id) e.preventDefault(); // allow drop within same layer
+        });
+        row.addEventListener("drop", (e) => {
+          e.preventDefault();
+          if (dragFrom && dragFrom.dimId === dim.id && dragFrom.index !== index) {
+            handlers.onReorderCategory(dim.id, dragFrom.index, index);
+          }
+          dragFrom = null;
+        });
+        row.append(grip, color, label, cdel);
         block.appendChild(row);
-      }
+      });
       const addCat = el("button", "btn lm-add-cat", "+ categoría");
       addCat.type = "button";
       addCat.addEventListener("click", () => handlers.onAddCategory(dim.id));

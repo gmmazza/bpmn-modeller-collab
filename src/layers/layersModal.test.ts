@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderLayersModal, type LayersModalHandlers } from "./layersModal";
-import { addColorDimension, addAnnotationDimension, type LayerFile } from "./layerModel";
+import { addColorDimension, addAnnotationDimension, addCategory, type LayerFile } from "./layerModel";
 
 function sampleState() {
   let lf: LayerFile = { version: 1, dimensions: [] };
@@ -13,8 +13,8 @@ function noopHandlers(): LayersModalHandlers {
   return {
     onAddColorDim: vi.fn(), onAddAnnotationDim: vi.fn(), onRenameDim: vi.fn(),
     onDeleteDim: vi.fn(), onAddCategory: vi.fn(), onUpdateCategory: vi.fn(),
-    onDeleteCategory: vi.fn(), onApplyTemplate: vi.fn(), onSaveTemplate: vi.fn(),
-    onDeleteTemplate: vi.fn(),
+    onDeleteCategory: vi.fn(), onReorderCategory: vi.fn(), onApplyTemplate: vi.fn(),
+    onSaveTemplate: vi.fn(), onDeleteTemplate: vi.fn(),
   };
 }
 
@@ -89,5 +89,20 @@ describe("renderLayersModal", () => {
     renderLayersModal(c, sampleState(), h);
     (c.querySelector(".lm-add-cat") as HTMLButtonElement).click();
     expect(h.onAddCategory).toHaveBeenCalledWith("madurez");
+  });
+
+  it("category rows are draggable and reorder via drag-and-drop", () => {
+    const c = document.createElement("div");
+    const h = noopHandlers();
+    // a color dim with two categories so there is something to reorder
+    let lf: LayerFile = addColorDimension({ version: 1, dimensions: [] }, "Madurez").lf;
+    lf = addCategory(lf, "madurez", "Segunda", "#222222").lf;
+    renderLayersModal(c, { layers: lf, templates: [] }, h);
+    const rows = c.querySelectorAll<HTMLElement>(".lm-cat");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].draggable).toBe(true);
+    rows[0].dispatchEvent(new Event("dragstart"));
+    rows[1].dispatchEvent(new Event("drop"));
+    expect(h.onReorderCategory).toHaveBeenCalledWith("madurez", 0, 1);
   });
 });

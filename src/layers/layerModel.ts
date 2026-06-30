@@ -242,3 +242,23 @@ export function mergeTemplate(lf: LayerFile, templateDims: Dimension[]): LayerFi
     .map((d) => ({ ...d, assignments: {} as Record<string, string> }));
   return { ...lf, dimensions: [...lf.dimensions, ...toAdd] };
 }
+
+export function reorderCategory(lf: LayerFile, dimId: string, fromIndex: number, toIndex: number): LayerFile {
+  return {
+    ...lf,
+    dimensions: lf.dimensions.map((d) => {
+      if (d.id !== dimId || d.type !== "color") return d;
+      const cats = [...d.categories];
+      if (
+        fromIndex < 0 || fromIndex >= cats.length ||
+        toIndex < 0 || toIndex >= cats.length ||
+        fromIndex === toIndex
+      ) {
+        return d;
+      }
+      const [moved] = cats.splice(fromIndex, 1);
+      cats.splice(toIndex, 0, moved);
+      return { ...d, categories: cats };
+    }),
+  };
+}

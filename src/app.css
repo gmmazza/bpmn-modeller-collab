@@ -173,3 +173,12 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 .lm-add-cat { margin: 6px 0 0 8px; font-size: 12px; }
 .lm-actions { display: flex; gap: 8px; margin-top: 8px; }
 .lm-box input[type="text"] { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; }
+
+/* Assign section: active layer name as a title above the selector */
+.inspector .assign-layer-title { font-size: 12px; font-weight: 600; color: var(--muted); margin: 6px 0 2px; }
+
+/* Gestionar capas: drag-to-reorder categories */
+.lm-cat[draggable="true"] { cursor: default; }
+.lm-grip { cursor: grab; color: var(--muted); user-select: none; padding: 0 2px; }
+.lm-grip:active { cursor: grabbing; }
+.lm-cat.lm-dragging { opacity: .5; }
