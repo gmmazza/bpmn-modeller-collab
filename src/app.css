@@ -206,6 +206,7 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
    the white task shapes, with a lighter border and a light name label. */
 :root[data-theme="dark"] #canvas .bpmn-pool .djs-visual > :first-child { fill: #1e293b !important; stroke: #475569 !important; }
 :root[data-theme="dark"] #canvas .bpmn-pool .djs-visual text { fill: var(--text) !important; }
-/* Minimap: match the app surface and make its toggle icon visible on dark. */
+/* Minimap: give it the app surface + border. Its "Open minimap" toggle text
+   (a .toggle::before) already inherits the theme's light --text, so it is
+   readable on the dark surface — no icon recolor needed. */
 :root[data-theme="dark"] .djs-minimap { background: var(--surface) !important; border: 1px solid var(--border) !important; }
-:root[data-theme="dark"] .djs-minimap .toggle { filter: invert(0.9); }
