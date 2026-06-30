@@ -20,6 +20,7 @@ export default defineConfig({
     environmentOptions: {
       happyDOM: {
         settings: {
+          disableJavaScriptEvaluation: true,
           navigation: {
             disableMainFrameNavigation: true,
             disableChildFrameNavigation: true,
