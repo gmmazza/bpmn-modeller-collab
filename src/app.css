@@ -182,3 +182,12 @@ main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 .lm-grip { cursor: grab; color: var(--muted); user-select: none; padding: 0 2px; }
 .lm-grip:active { cursor: grabbing; }
 .lm-cat.lm-dragging { opacity: .5; }
+
+/* Dark mode: bpmn-js renders all label text near-black (#22242a). Internal shape
+   labels sit on the (light) shape fill and stay readable, but EXTERNAL labels
+   (events, gateways, sequence flows — element id ends in "_label") sit directly
+   on the dark canvas and become invisible. Lighten only those. */
+:root[data-theme="dark"] #canvas .djs-element[data-element-id$="_label"] .djs-label,
+:root[data-theme="dark"] #canvas .djs-element[data-element-id$="_label"] text {
+  fill: var(--text) !important;
+}
