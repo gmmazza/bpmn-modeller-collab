@@ -29,4 +29,12 @@ describe("renderMarkdown", () => {
     const html = renderMarkdown("- [ ] pendiente\n- [x] hecha");
     expect(html).toContain('type="checkbox"');
   });
+
+  it("keeps an allowlisted iframe even when a non-allowlisted one precedes it", () => {
+    const html = renderMarkdown(
+      '<iframe src="https://evil.example.com/x"></iframe>\n\nhttps://www.youtube.com/watch?v=keepME12345',
+    );
+    expect(html).not.toContain("evil.example.com");
+    expect(html).toContain("https://www.youtube.com/embed/keepME12345");
+  });
 });

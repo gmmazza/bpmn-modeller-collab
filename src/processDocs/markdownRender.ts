@@ -14,6 +14,8 @@ const md = new MarkdownIt({ html: true, linkify: true, breaks: true });
 // (which would make DOMPurify's subsequent _forceRemove throw on a null parent).
 DOMPurify.addHook("uponSanitizeElement", (node, data) => {
   if (data.tagName !== "iframe") return;
+  // Reset per-element: a prior disallowed iframe must not affect later allowed ones.
+  (data.allowedTags as Record<string, boolean>)["iframe"] = true;
   const src = (node as Element).getAttribute("src") || "";
   let host = "";
   try { host = new URL(src).host; } catch { host = ""; }
