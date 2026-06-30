@@ -39,7 +39,9 @@ function modeButton(mode: NoteMode, active: NoteMode, label: string, on: (m: Not
 
 export function renderNotePanel(container: HTMLElement, state: NotePanelState, h: NotePanelHandlers): void {
   container.innerHTML = "";
-  container.className = "note-panel";
+  // Use classList (not className=) so the host's "inspector-pane" class — which
+  // carries the [hidden] hide-when-inactive rule — is preserved on the pane.
+  container.classList.add("note-panel");
 
   const tabs = document.createElement("div");
   tabs.className = "note-tabs";

@@ -375,6 +375,43 @@ async function bootstrap() {
     await docsController?.refresh();
   }
 
+  // Drag the inspector's left edge to resize its width (persisted). Width drives
+  // both the panel and its collapsed offset via the --inspector-width CSS var.
+  function setupInspectorResize(): void {
+    const insp = document.getElementById("inspector");
+    if (!insp || insp.querySelector(".inspector-resizer")) return;
+    const MIN = 220, MAX = 760;
+    const saved = Number(localStorage.getItem("inspectorWidth"));
+    if (saved >= MIN && saved <= MAX) insp.style.setProperty("--inspector-width", `${saved}px`);
+    const resizer = document.createElement("div");
+    resizer.className = "inspector-resizer";
+    resizer.title = "Arrastrá para ajustar el ancho";
+    insp.appendChild(resizer);
+    let startX = 0, startW = 0, dragging = false;
+    const onMove = (e: MouseEvent): void => {
+      if (!dragging) return;
+      const w = Math.min(MAX, Math.max(MIN, startW + (startX - e.clientX)));
+      insp.style.setProperty("--inspector-width", `${w}px`);
+    };
+    const onUp = (): void => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("col-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem("inspectorWidth", String(Math.round(insp.getBoundingClientRect().width))); } catch { /* ignore */ }
+    };
+    resizer.addEventListener("mousedown", (e) => {
+      dragging = true;
+      startX = e.clientX;
+      startW = insp.getBoundingClientRect().width;
+      document.body.classList.add("col-resizing");
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
   function reapplyLayers(): void {
     if (!layerView || !layerFile) return;
     const colorDim = layerFile.dimensions.find((d) => d.id === activeColorId && d.type === "color");
@@ -606,6 +643,7 @@ async function bootstrap() {
     inspector.paneEl("capas").classList.add("layers-panel");
     inspector.paneEl("historial").id = "history";
     inspector.hide();
+    setupInspectorResize();
 
     await mountModeler();
 
