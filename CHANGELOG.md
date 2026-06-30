@@ -4,7 +4,7 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
-## [Sin publicar]
+## [0.1.1] — 2026-06-30
 
 ### Agregado
 - Chequeo de actualización in-app apuntado a los GitHub Releases del repo: la
