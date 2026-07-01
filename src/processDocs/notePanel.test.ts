@@ -64,4 +64,17 @@ describe("renderNotePanel", () => {
     renderNotePanel(c, { tab: "ideas", mode: "read", stepLabel: null, body: "", hasNote: false }, h);
     expect(c.querySelector("[data-ideas-host]")).not.toBeNull();
   });
+
+  it("hides mode buttons on the ideas tab but keeps all three tab buttons", () => {
+    const c = document.createElement("div");
+    renderNotePanel(c, { tab: "ideas", mode: "read", stepLabel: null, body: "", hasNote: false }, handlers());
+    expect(c.querySelectorAll("[data-mode]").length).toBe(0);
+    expect(c.querySelectorAll("[data-tab]").length).toBe(3);
+  });
+
+  it("shows mode buttons on the step tab (no over-suppression)", () => {
+    const c = document.createElement("div");
+    renderNotePanel(c, { tab: "step", mode: "read", stepLabel: "X", body: "", hasNote: true }, handlers());
+    expect(c.querySelectorAll("[data-mode]").length).toBe(2);
+  });
 });
