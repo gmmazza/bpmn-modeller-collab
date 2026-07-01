@@ -750,11 +750,6 @@ async function bootstrap() {
           docsController?.openIdeasTab?.();
         }
       },
-      ideasOverlays: {
-        add: (elementId: string, html: HTMLElement) =>
-          modeler.get("overlays").add(elementId, "ideas", { position: { top: -12, right: 12 }, html }),
-        remove: (id: string) => modeler.get("overlays").remove(id),
-      },
       identity: () => me.name,
       today: () => new Date().toISOString().slice(0, 10),
       ideasClient: ideasClientV2,
