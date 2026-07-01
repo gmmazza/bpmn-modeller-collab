@@ -1,4 +1,4 @@
-import { docsDir, notePath, processNotePath, indexPath, assetsDir } from "./docsPaths";
+import { docsDir, notePath, processNotePath, indexPath, assetsDir, ideasPath } from "./docsPaths";
 
 export interface DocsFsApi {
   readPath(rel: string): Promise<string | null>;
@@ -28,6 +28,12 @@ export function createDocsClient(api: DocsFsApi) {
     },
     writeIndex(diagramId: string, text: string): Promise<void> {
       return api.writePath(indexPath(diagramId), text);
+    },
+    readIdeas(diagramId: string): Promise<string | null> {
+      return api.readPath(ideasPath(diagramId));
+    },
+    writeIdeas(diagramId: string, md: string): Promise<void> {
+      return api.writePath(ideasPath(diagramId), md);
     },
     async listDocumentedIds(diagramId: string): Promise<string[]> {
       const entries = await api.listDir(docsDir(diagramId));
