@@ -29,9 +29,27 @@ export function buildWidgetDom(w: ImageWidget | VideoWidget): HTMLElement {
 }
 
 export class ImageWidgetType extends WidgetType {
-  constructor(readonly src: string, readonly alt: string) { super(); }
+  readonly resolve?: (ref: string) => Promise<string | null>;
+  constructor(readonly src: string, readonly alt: string, resolve?: (ref: string) => Promise<string | null>) {
+    super();
+    this.resolve = resolve;
+  }
   eq(other: ImageWidgetType): boolean { return other.src === this.src && other.alt === this.alt; }
-  toDOM(): HTMLElement { return buildWidgetDom({ type: "image", src: this.src, alt: this.alt }); }
+  toDOM(): HTMLElement {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-widget";
+    const img = document.createElement("img");
+    img.setAttribute("alt", this.alt);
+    img.className = "cm-md-image";
+    if (this.resolve) {
+      img.setAttribute("src", "");
+      this.resolve(this.src).then((url) => { if (url) img.setAttribute("src", url); });
+    } else {
+      img.setAttribute("src", this.src);
+    }
+    wrap.appendChild(img);
+    return wrap;
+  }
 }
 
 export class VideoWidgetType extends WidgetType {

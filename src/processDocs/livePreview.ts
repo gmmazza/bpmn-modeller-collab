@@ -27,7 +27,7 @@ function activeLineRanges(view: EditorView): ActiveRange[] {
   return ranges;
 }
 
-function buildDecorations(view: EditorView): DecorationSet {
+function buildDecorations(view: EditorView, resolveAsset?: (ref: string) => Promise<string | null>): DecorationSet {
   const text = view.state.doc.toString();
   const specs = visibleSpecs(computeMarkdownDecorations(text), activeLineRanges(view));
 
@@ -45,7 +45,7 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (s.to > s.from) decoRanges.push(Decoration.mark({ class: s.cls }).range(s.from, s.to));
     } else if (s.kind === "widget" && s.widget) {
       const w = s.widget.type === "image"
-        ? new ImageWidgetType(s.widget.src, s.widget.alt)
+        ? new ImageWidgetType(s.widget.src, s.widget.alt, resolveAsset)
         : new VideoWidgetType(s.widget.src);
       if (s.to > s.from) decoRanges.push(Decoration.replace({ widget: w }).range(s.from, s.to));
     }
@@ -54,13 +54,13 @@ function buildDecorations(view: EditorView): DecorationSet {
   return Decoration.set(decoRanges, /* sort */ true);
 }
 
-export function livePreview(): Extension {
+export function livePreview(resolveAsset?: (ref: string) => Promise<string | null>): Extension {
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
-      constructor(view: EditorView) { this.decorations = buildDecorations(view); }
+      constructor(view: EditorView) { this.decorations = buildDecorations(view, resolveAsset); }
       update(u: ViewUpdate): void {
-        if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = buildDecorations(u.view);
+        if (u.docChanged || u.selectionSet || u.viewportChanged) this.decorations = buildDecorations(u.view, resolveAsset);
       }
     },
     { decorations: (v) => v.decorations },
