@@ -199,8 +199,9 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     return candidate;
   }
   const native = (dir as any).__native as
-    | { rename(from: string, to: string): Promise<void>; copyFile(from: string, to: string): Promise<void> }
+    | { rename(from: string, to: string): Promise<void>; copyFile(from: string, to: string): Promise<void>; writeBinary?(rel: string, base64: string): Promise<void>; readBinary?(rel: string): Promise<string | null> }
     | undefined;
+  const nativeBin = native;
   async function copyFileContent(srcRel: string, dstRel: string): Promise<void> {
     if (native) return native.copyFile(srcRel, dstRel);
     await writeTextAt(dstRel, await readTextAt(srcRel));
@@ -470,6 +471,32 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
         }
       }
       return newPath;
+    },
+    async writeBinary(rel: string, data: Uint8Array): Promise<void> {
+      if (nativeBin?.writeBinary) {
+        const { bytesToBase64 } = await import("./processDocs/base64");
+        await nativeBin.writeBinary(rel, bytesToBase64(data));
+        return;
+      }
+      const { parent, name } = await resolveParent(rel, true);
+      const fh = await parent.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(data as any);
+      await w.close();
+    },
+    async readBinary(rel: string): Promise<Uint8Array | null> {
+      try {
+        if (nativeBin?.readBinary) {
+          const b64 = await nativeBin.readBinary(rel);
+          if (b64 == null) return null;
+          const { base64ToBytes } = await import("./processDocs/base64");
+          return base64ToBytes(b64);
+        }
+        const f = await statAt(rel);
+        return new Uint8Array(await f.arrayBuffer());
+      } catch {
+        return null;
+      }
     },
     lastWrites,
     lastWriteVersion: (id: string) => lastWrites.get(id),
