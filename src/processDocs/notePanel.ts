@@ -18,6 +18,7 @@ export interface NotePanelHandlers {
   onSave(): void;
   onCreateNote(): void;
   onEditHostReady?(host: HTMLElement): void;
+  onReadHostReady?(readEl: HTMLElement): void;
 }
 
 function tabButton(tab: NoteTab, active: NoteTab, label: string, on: (t: NoteTab) => void): HTMLButtonElement {
@@ -91,6 +92,7 @@ export function renderNotePanel(container: HTMLElement, state: NotePanelState, h
     view.className = "note-read markdown-body";
     view.innerHTML = renderMarkdown(state.body);
     container.append(view);
+    h.onReadHostReady?.(view);
     return;
   }
 

@@ -3,6 +3,7 @@ import { parseFrontmatter, serializeFrontmatter } from "./frontmatter";
 import { buildIndexMarkdown, type IndexElement } from "./docsIndex";
 import { renderNotePanel, type NoteMode, type NoteTab, type NotePanelState } from "./notePanel";
 import { createMarkdownEditor, type MarkdownEditor } from "./cmEditor";
+import { createAssetResolver, type AssetResolver } from "./assetResolver";
 import type { DocsClient } from "./docsClient";
 
 export interface DiagramElement {
@@ -29,8 +30,14 @@ export function createNotePanelController(api: NoteControllerApi) {
   let body = "";
   let hasNote = false;
   let editor: MarkdownEditor | null = null;
+  let resolver: AssetResolver | null = null;
 
   function destroyEditor(): void { editor?.destroy(); editor = null; }
+
+  function rebuildResolver(): void {
+    resolver?.dispose();
+    resolver = createAssetResolver({ readAsset: (n) => api.docs.readAsset(api.diagramId(), n) });
+  }
 
   async function regenerateIndex(): Promise<void> {
     const documented = new Set(await api.docs.listDocumentedIds(api.diagramId()));
@@ -103,8 +110,26 @@ export function createNotePanelController(api: NoteControllerApi) {
       },
       onEditHostReady: (host) => {
         destroyEditor();
-        editor = createMarkdownEditor(host, { doc: body, onChange: (d) => { body = d; } });
+        rebuildResolver();
+        const media = {
+          listAssets: () => api.docs.listAssets(api.diagramId()),
+          writeAsset: (n: string, b: Uint8Array) => api.docs.writeAsset(api.diagramId(), n, b),
+        };
+        editor = createMarkdownEditor(host, {
+          doc: body,
+          onChange: (d) => { body = d; },
+          media,
+          resolveAsset: (ref) => resolver!.resolve(ref),
+        });
         editor.focus();
+      },
+      onReadHostReady: (readEl) => {
+        rebuildResolver();
+        const imgs = Array.from(readEl.querySelectorAll<HTMLImageElement>('img[src^="assets/"]'));
+        for (const img of imgs) {
+          const ref = img.getAttribute("src")!;
+          resolver!.resolve(ref).then((url) => { if (url) img.src = url; });
+        }
       },
     });
   }
