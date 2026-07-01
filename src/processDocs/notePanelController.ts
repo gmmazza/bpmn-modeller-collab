@@ -7,7 +7,6 @@ import { createAssetResolver, type AssetResolver } from "./assetResolver";
 import type { DocsClient } from "./docsClient";
 import { wikiCandidates } from "./wikiComplete";
 import { parseWikilinkTarget, type WikiTarget } from "./wikilinks";
-import { createIdeasControllerV2 } from "./ideasControllerV2";
 
 export interface DiagramElement {
   id: string;
@@ -25,11 +24,6 @@ export interface NoteControllerApi {
   onSelectionChange(cb: () => void): void;
   wikiProcesses?(): string[];
   navigateWiki?(target: WikiTarget, raw: string): void;
-  identity?(): string;
-  today?(): string;
-  ideasClient?: import("./ideasClient").IdeasClient;
-  promptMotivo?(estado: string): string | null;
-  onIdeaCounts?(counts: Array<{ elementId: string; count: number }>): void;
 }
 
 const PROCESS_TEMPLATE = "# Proceso\n\n_Describí para qué sirve este proceso, quién es el dueño y su alcance._\n";
@@ -41,7 +35,6 @@ export function createNotePanelController(api: NoteControllerApi) {
   let hasNote = false;
   let editor: MarkdownEditor | null = null;
   let resolver: AssetResolver | null = null;
-  let ideasCtl: ReturnType<typeof createIdeasControllerV2> | null = null;
 
   function destroyEditor(): void { editor?.destroy(); editor = null; }
 
@@ -66,11 +59,6 @@ export function createNotePanelController(api: NoteControllerApi) {
       const raw = await api.docs.readProcessNote(api.diagramId());
       hasNote = raw !== null;
       body = raw === null ? "" : parseFrontmatter(raw).body;
-      return;
-    }
-    if (tab === "ideas") {
-      hasNote = false;
-      body = "";
       return;
     }
     const sel = api.getSelected();
@@ -156,22 +144,6 @@ export function createNotePanelController(api: NoteControllerApi) {
           resolver!.resolve(ref).then((url) => { if (url) img.src = url; });
         }
       },
-      onIdeasHostReady: (host) => {
-        if (api.ideasClient) {
-          ideasCtl = createIdeasControllerV2({
-            ideasClient: api.ideasClient,
-            mount: host,
-            diagramId: () => api.diagramId(),
-            processName: () => api.processName(),
-            identity: () => api.identity?.() ?? "",
-            today: () => api.today?.() ?? "",
-            getSelected: () => { const s = api.getSelected(); return s ? { id: s.id, name: s.name } : null; },
-            promptMotivo: (e) => api.promptMotivo?.(e) ?? null,
-            onAnchoredCounts: (counts) => api.onIdeaCounts?.(counts),
-          });
-          void ideasCtl.refresh();
-        }
-      },
     });
   }
 
@@ -219,25 +191,5 @@ export function createNotePanelController(api: NoteControllerApi) {
     _disposedForTest = true;
   }
 
-  function openIdeasTab(): void {
-    destroyEditor();
-    tab = "ideas";
-    mode = "read";
-    render();
-    void ideasCtl?.refresh();
-  }
-
-  function openThread(ideaId: string): void {
-    destroyEditor();
-    tab = "ideas";
-    mode = "read";
-    render();
-    void ideasCtl?.openThread(ideaId);
-  }
-
-  function refreshIdeas(): void {
-    if (tab === "ideas") void ideasCtl?.refresh();
-  }
-
-  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest, openIdeasTab, openThread, refreshIdeas };
+  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest };
 }

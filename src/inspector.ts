@@ -24,6 +24,11 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[]) {
     }
     show();
   }
+  // Hide/show a tab BUTTON (its pane visibility is still driven by setTab). Used
+  // for tabs that only exist in a specific mode (e.g. Ideas under idea mode).
+  function setTabVisible(id: string, visible: boolean): void {
+    if (buttons[id]) buttons[id].hidden = !visible;
+  }
   // Visibility is a slide (a `.collapsed` class animated via CSS margin) rather
   // than display:none, so the panel slides out/in and the canvas reclaims space.
   function show(): void {
@@ -57,6 +62,7 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[]) {
 
   return {
     setTab,
+    setTabVisible,
     activeTab: (): string | null => active,
     paneEl: (id: string): HTMLElement => panes[id],
     show,

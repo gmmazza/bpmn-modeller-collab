@@ -24,6 +24,7 @@ import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
 import { createIdeasClient } from "./processDocs/ideasClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
 import { createIdeaMode } from "./processDocs/ideaMode";
+import { createIdeasControllerV2 } from "./processDocs/ideasControllerV2";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
@@ -97,6 +98,7 @@ async function bootstrap() {
   let docsClient: DocsClient;
   let ideasClientV2: ReturnType<typeof createIdeasClient>;
   let docsController: ReturnType<typeof createNotePanelController> | null = null;
+  let ideasCtl: ReturnType<typeof createIdeasControllerV2> | null = null;
   let ideaMode: ReturnType<typeof createIdeaMode>;
   let docsFileId = "";
   const docsSelectionCbs: Array<() => void> = [];
@@ -700,12 +702,15 @@ async function bootstrap() {
       { id: "propiedades", label: "Propiedades" },
       { id: "historial", label: "Historial" },
       { id: "documentacion", label: "Documentación" },
+      { id: "ideas", label: "Ideas" },
     ]);
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
     inspector.paneEl("propiedades").id = "propspanel";
     inspector.paneEl("capas").id = "layerspanel";
     inspector.paneEl("capas").classList.add("layers-panel");
     inspector.paneEl("historial").id = "history";
+    // The Ideas tab only exists while idea mode is on (revealed by ideaMode.onModeChange).
+    inspector.setTabVisible("ideas", false);
     inspector.hide();
     setupInspectorResize();
 
@@ -749,16 +754,33 @@ async function bootstrap() {
             selectElementById(target.element);
           })().catch(onError);
         } else if (target.kind === "idea") {
-          inspector.setTab("documentacion");
-          docsController?.openIdeasTab?.();
+          showIdeasTab();
         }
       },
+    });
+
+    // ---- Ideas panel (own inspector tab, shown only in idea mode) ----
+    ideasCtl = createIdeasControllerV2({
+      ideasClient: ideasClientV2,
+      mount: inspector.paneEl("ideas"),
+      diagramId: () => docsFileId,
+      processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
       identity: () => me.name,
       today: () => new Date().toISOString().slice(0, 10),
-      ideasClient: ideasClientV2,
+      getSelected: () => {
+        const sel = (modeler?.get("selection")?.get?.() ?? []) as Array<{ id: string; businessObject?: { name?: string; $type?: string } }>;
+        return sel[0] ? toDiagramElement(sel[0]) : null;
+      },
       promptMotivo: (estado: string) => window.prompt(`Motivo para marcar la idea como ${estado}:`),
-      onIdeaCounts: (counts) => ideaMode?.setCounts(counts),
+      onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
     });
+
+    // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
+    function showIdeasTab(): void {
+      inspector.setTabVisible("ideas", true);
+      inspector.setTab("ideas");
+      void ideasCtl?.refresh();
+    }
 
     // ---- Idea mode ----
     const ideaOverlayHost = {
@@ -782,15 +804,30 @@ async function bootstrap() {
         const r = gfx?.getBoundingClientRect();
         return r ? { left: r.right, top: r.top } : { left: 100, top: 100 };
       },
-      openThreadInPanel: (ideaId) => docsController?.openThread(ideaId),
-      onPanelShouldRefresh: () => docsController?.refreshIdeas(),
+      openThreadInPanel: (ideaId) => {
+        inspector.setTabVisible("ideas", true);
+        inspector.setTab("ideas");
+        void ideasCtl?.openThread(ideaId);
+      },
+      onPanelShouldRefresh: () => { void ideasCtl?.refresh(); },
       persistGet: () => localStorage.getItem("bpmn-compartida.ideaMode") === "1",
       persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
-      onModeChange: (on) => { document.getElementById("toggle-idea-mode")?.classList.toggle("active", on); },
+      onModeChange: (on) => {
+        document.getElementById("toggle-idea-mode")?.classList.toggle("active", on);
+        inspector.setTabVisible("ideas", on);
+        if (on) {
+          inspector.setTab("ideas");
+          void ideasCtl?.refresh();
+        } else if (inspector.activeTab() === "ideas") {
+          inspector.setTab("documentacion");
+        }
+      },
     });
 
-    // Set initial button state from persisted toggle value.
+    // Set initial button state from persisted toggle value; reveal the Ideas tab
+    // if idea mode was left on (without stealing focus from the current tab).
     document.getElementById("toggle-idea-mode")?.classList.toggle("active", ideaMode.isOn());
+    if (ideaMode.isOn()) inspector.setTabVisible("ideas", true);
     document.getElementById("toggle-idea-mode")?.addEventListener("click", () => void ideaMode.toggle());
 
     // Capture element.click at high priority (2000) while idea mode is on;
@@ -1151,6 +1188,7 @@ async function bootstrap() {
     await loadDocs(fileId);
     await ideasClientV2.migrateIfNeeded(fileId);
     await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
+    void ideasCtl?.refresh();
     if (ideaMode?.isOn()) void ideaMode.refresh();
   }
 

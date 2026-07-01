@@ -22,7 +22,7 @@ export interface IdeasV2Deps {
 
 export function createIdeasControllerV2(deps: IdeasV2Deps) {
   let ideas: IdeaNote[] = [];
-  let estado: EstadoFilter = "activas";
+  let estado: EstadoFilter = "todas";
   let scope: ScopeFilter = "todas";
   let openId: string | null = null;
 
