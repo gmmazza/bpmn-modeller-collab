@@ -23,4 +23,15 @@ describe("createMarkdownEditor", () => {
     expect(parent.querySelector(".cm-editor")).not.toBeNull();
     ed.destroy();
   });
+
+  it("accepts wiki options and still round-trips the doc", () => {
+    const parent = document.createElement("div");
+    const ed = createMarkdownEditor(parent, {
+      doc: "[[x]]",
+      onChange: () => {},
+      wiki: { candidates: () => [{ label: "x", insert: "x" }], navigate: () => {} },
+    });
+    expect(ed.getDoc()).toBe("[[x]]");
+    ed.destroy();
+  });
 });

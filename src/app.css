@@ -249,3 +249,5 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .cm-md-widget { display: block; margin: 4px 0; }
 .cm-md-image { max-width: 100%; }
 .cm-md-video { width: 100%; aspect-ratio: 16 / 9; border: 0; }
+.cm-wikilink { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.cm-link { color: var(--accent); cursor: pointer; }
