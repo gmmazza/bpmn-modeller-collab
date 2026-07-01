@@ -24,6 +24,16 @@ describe("inspector", () => {
     expect(insp.paneEl("capas").hidden).toBe(true);
     expect(insp.paneEl("propiedades").hidden).toBe(false);
   });
+  it("setTabVisible hides/shows a tab button without affecting its pane", () => {
+    const el = document.createElement("div");
+    const insp = createInspector(el, tabs);
+    const btn = el.querySelector<HTMLButtonElement>('[data-tab="historial"]')!;
+    expect(btn.hidden).toBe(false);
+    insp.setTabVisible("historial", false);
+    expect(btn.hidden).toBe(true);
+    insp.setTabVisible("historial", true);
+    expect(btn.hidden).toBe(false);
+  });
   it("paneEl returns a mountable element; show/hide toggle visibility", () => {
     const el = document.createElement("div");
     const insp = createInspector(el, tabs);

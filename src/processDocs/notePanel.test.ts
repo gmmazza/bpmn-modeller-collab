@@ -8,7 +8,6 @@ function handlers(): NotePanelHandlers {
     onBodyInput: vi.fn(),
     onSave: vi.fn(),
     onCreateNote: vi.fn(),
-    onIdeasHostReady: vi.fn(),
   };
 }
 
@@ -58,21 +57,15 @@ describe("renderNotePanel", () => {
     expect(c.textContent).toContain("Seleccioná un paso");
   });
 
-  it("renders an ideas host when the ideas tab is active", () => {
+  it("renders exactly the Paso and Proceso tabs (Ideas moved to its own inspector tab)", () => {
     const c = document.createElement("div");
-    const h = handlers();
-    renderNotePanel(c, { tab: "ideas", mode: "read", stepLabel: null, body: "", hasNote: false }, h);
-    expect(c.querySelector("[data-ideas-host]")).not.toBeNull();
+    renderNotePanel(c, { tab: "step", mode: "read", stepLabel: "X", body: "", hasNote: true }, handlers());
+    const tabIds = Array.from(c.querySelectorAll("[data-tab]")).map((b) => (b as HTMLElement).dataset.tab);
+    expect(tabIds).toEqual(["step", "process"]);
+    expect(c.querySelector('[data-tab="ideas"]')).toBeNull();
   });
 
-  it("hides mode buttons on the ideas tab but keeps all three tab buttons", () => {
-    const c = document.createElement("div");
-    renderNotePanel(c, { tab: "ideas", mode: "read", stepLabel: null, body: "", hasNote: false }, handlers());
-    expect(c.querySelectorAll("[data-mode]").length).toBe(0);
-    expect(c.querySelectorAll("[data-tab]").length).toBe(3);
-  });
-
-  it("shows mode buttons on the step tab (no over-suppression)", () => {
+  it("shows mode buttons on the step tab", () => {
     const c = document.createElement("div");
     renderNotePanel(c, { tab: "step", mode: "read", stepLabel: "X", body: "", hasNote: true }, handlers());
     expect(c.querySelectorAll("[data-mode]").length).toBe(2);

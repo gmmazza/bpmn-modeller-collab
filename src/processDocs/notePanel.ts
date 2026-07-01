@@ -1,6 +1,6 @@
 import { renderMarkdown } from "./markdownRender";
 
-export type NoteTab = "step" | "process" | "ideas";
+export type NoteTab = "step" | "process";
 export type NoteMode = "read" | "edit";
 
 export interface NotePanelState {
@@ -19,7 +19,6 @@ export interface NotePanelHandlers {
   onCreateNote(): void;
   onEditHostReady?(host: HTMLElement): void;
   onReadHostReady?(readEl: HTMLElement): void;
-  onIdeasHostReady?(host: HTMLElement): void;
 }
 
 function tabButton(tab: NoteTab, active: NoteTab, label: string, on: (t: NoteTab) => void): HTMLButtonElement {
@@ -51,29 +50,18 @@ export function renderNotePanel(container: HTMLElement, state: NotePanelState, h
   tabs.append(
     tabButton("step", state.tab, "Paso", h.onTabChange),
     tabButton("process", state.tab, "Proceso", h.onTabChange),
-    tabButton("ideas", state.tab, "Ideas", h.onTabChange),
   );
   const header = document.createElement("div");
   header.className = "note-header";
   header.append(tabs);
-  if (state.tab !== "ideas") {
-    const modes = document.createElement("div");
-    modes.className = "note-modes";
-    modes.append(
-      modeButton("read", state.mode, "Leer", h.onModeChange),
-      modeButton("edit", state.mode, "Editar", h.onModeChange),
-    );
-    header.append(modes);
-  }
+  const modes = document.createElement("div");
+  modes.className = "note-modes";
+  modes.append(
+    modeButton("read", state.mode, "Leer", h.onModeChange),
+    modeButton("edit", state.mode, "Editar", h.onModeChange),
+  );
+  header.append(modes);
   container.append(header);
-
-  if (state.tab === "ideas") {
-    const host = document.createElement("div");
-    host.dataset.ideasHost = "true";
-    container.append(host);
-    h.onIdeasHostReady?.(host);
-    return;
-  }
 
   if (state.tab === "step" && state.stepLabel === null) {
     const empty = document.createElement("p");
