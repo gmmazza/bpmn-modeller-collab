@@ -69,4 +69,16 @@ describe("notePanelController", () => {
     const saved = await docs.readNote("x.bpmn", "Activity_1");
     expect(saved).toContain("texto via cm6");
   });
+
+  it("destroy() disposes the resolver and does not throw", async () => {
+    const { mount, ctrl } = setup([A], A);
+    await ctrl.refresh();
+    // Enter edit mode so onEditHostReady fires, which calls rebuildResolver()
+    (mount.querySelector('[data-mode="edit"]') as HTMLElement).click();
+    // Pre-condition: not yet disposed
+    expect(ctrl._isDisposedForTest()).toBe(false);
+    // destroy() must not throw and must mark disposed
+    expect(() => ctrl.destroy()).not.toThrow();
+    expect(ctrl._isDisposedForTest()).toBe(true);
+  });
 });
