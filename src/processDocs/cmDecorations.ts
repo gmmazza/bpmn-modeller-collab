@@ -30,7 +30,23 @@ function videoEmbed(line: string): string | null {
 
 export function computeMarkdownDecorations(text: string): DecoSpec[] {
   const specs: DecoSpec[] = [];
+
+  // Wikilinks: [[target]] — lezer doesn't parse these, so scan by regex.
+  const wikiRanges: Array<{ from: number; to: number }> = [];
+  const re = /\[\[([^\]]+)\]\]/g;
+  let wm: RegExpExecArray | null;
+  while ((wm = re.exec(text)) !== null) {
+    const from = wm.index;
+    const to = from + wm[0].length;
+    wikiRanges.push({ from, to });
+    specs.push({ kind: "hide", from, to: from + 2 });                 // "[["
+    specs.push({ kind: "hide", from: to - 2, to });                   // "]]"
+    specs.push({ kind: "mark", from: from + 2, to: to - 2, cls: "cm-wikilink" });
+  }
+  const insideWiki = (a: number, b: number) => wikiRanges.some((r) => a >= r.from && b <= r.to);
+
   const tree = parser.parse(text);
+  const treeSpecs: DecoSpec[] = [];
 
   tree.iterate({
     enter: (node) => {
@@ -39,13 +55,17 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
       const to = node.to;
 
       if (HEADING_CLASS[name]) {
-        specs.push({ kind: "mark", from, to, cls: HEADING_CLASS[name] });
+        treeSpecs.push({ kind: "mark", from, to, cls: HEADING_CLASS[name] });
         return;
       }
-      if (name === "StrongEmphasis") { specs.push({ kind: "mark", from, to, cls: "cm-strong" }); return; }
-      if (name === "Emphasis") { specs.push({ kind: "mark", from, to, cls: "cm-em" }); return; }
-      if (name === "InlineCode") { specs.push({ kind: "mark", from, to, cls: "cm-inline-code" }); return; }
-      if (name === "Blockquote") { specs.push({ kind: "mark", from, to, cls: "cm-quote" }); return; }
+      if (name === "StrongEmphasis") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-strong" }); return; }
+      if (name === "Emphasis") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-em" }); return; }
+      if (name === "InlineCode") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-inline-code" }); return; }
+      if (name === "Blockquote") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-quote" }); return; }
+
+      // Markdown links: mark the whole Link node and hide the URL.
+      if (name === "Link") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-link" }); return; }
+      if (name === "URL") { treeSpecs.push({ kind: "hide", from, to }); return; }
 
       // Markup punctuation to hide.
       if (name === "HeaderMark" || name === "EmphasisMark" || name === "CodeMark" ||
@@ -54,18 +74,20 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
         // rendered line starts flush.
         let end = to;
         if ((name === "HeaderMark" || name === "QuoteMark" || name === "ListMark") && text[to] === " ") end = to + 1;
-        specs.push({ kind: "hide", from, to: end });
+        treeSpecs.push({ kind: "hide", from, to: end });
         return;
       }
 
       if (name === "Image") {
         const raw = text.slice(from, to);
         const m = raw.match(/^!\[([^\]]*)\]\(([^)]*)\)$/);
-        if (m) specs.push({ kind: "widget", from, to, widget: { type: "image", src: m[2], alt: m[1] } });
+        if (m) treeSpecs.push({ kind: "widget", from, to, widget: { type: "image", src: m[2], alt: m[1] } });
         return false;
       }
     },
   });
+
+  for (const s of treeSpecs) if (!insideWiki(s.from, s.to)) specs.push(s);
 
   // Bare video URL line → video widget (one per matching line).
   let offset = 0;
