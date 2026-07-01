@@ -9,7 +9,7 @@ import { wikiCandidates } from "./wikiComplete";
 import { parseWikilinkTarget, type WikiTarget } from "./wikilinks";
 import { renderIdeasPanel } from "./ideasPanel";
 import { createIdeaOverlays, type OverlayHost } from "./ideasOverlays";
-import { parseIdeas, serializeIdeas, addIdea, toggleIdea, type Idea } from "./ideasModel";
+import { parseIdeas, mergeIdeas, addIdea, toggleIdea, type Idea } from "./ideasModel";
 
 export interface DiagramElement {
   id: string;
@@ -42,6 +42,7 @@ export function createNotePanelController(api: NoteControllerApi) {
   let editor: MarkdownEditor | null = null;
   let resolver: AssetResolver | null = null;
   let ideas: Idea[] = [];
+  let ideasRaw = "";
   let showIdeas = localStorage.getItem("ideasShow") === "1";
   let filterPending = false;
   let overlays: ReturnType<typeof createIdeaOverlays> | null = null;
@@ -58,7 +59,9 @@ export function createNotePanelController(api: NoteControllerApi) {
   }
 
   async function saveIdeas(): Promise<void> {
-    await api.docs.writeIdeas(api.diagramId(), serializeIdeas(api.processName(), ideas));
+    const merged = mergeIdeas(ideasRaw, api.processName(), ideas);
+    await api.docs.writeIdeas(api.diagramId(), merged);
+    ideasRaw = merged;
   }
 
   function rerenderIdeas(): void {
@@ -112,6 +115,7 @@ export function createNotePanelController(api: NoteControllerApi) {
 
   async function loadBody(): Promise<void> {
     const md = await api.docs.readIdeas(api.diagramId());
+    ideasRaw = md ?? "";
     ideas = md ? parseIdeas(md) : [];
     refreshOverlays();
 
