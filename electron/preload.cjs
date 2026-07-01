@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("fsapi", {
   mkdir: (root, rel) => ipcRenderer.invoke("fsapi:mkdir", root, rel),
   rename: (root, from, to) => ipcRenderer.invoke("fsapi:rename", root, from, to),
   copyFile: (root, from, to) => ipcRenderer.invoke("fsapi:copyFile", root, from, to),
+  writeFileBinary: (root, rel, base64) => ipcRenderer.invoke("fsapi:writeFileBinary", root, rel, base64),
+  readFileBinary: (root, rel) => ipcRenderer.invoke("fsapi:readFileBinary", root, rel),
 });
 
 contextBridge.exposeInMainWorld("versionApi", {

@@ -48,6 +48,8 @@ function fakeApi(): FsApi & { _seed(rel: string, data: string): void } {
     async mkdir(_root, rel) { dirs.add(norm(rel)); },
     async rename(_root, from, to) { const f = files.get(norm(from)); if (f) { files.set(norm(to), f); files.delete(norm(from)); } },
     async copyFile(_root, from, to) { const f = files.get(norm(from)); if (f) { files.set(norm(to), { ...f }); } },
+    async writeFileBinary(_root, rel, base64) { files.set(norm(rel), { data: base64, mtime: ++clock }); },
+    async readFileBinary(_root, rel) { const f = files.get(norm(rel)); return f ? f.data : null; },
   };
 }
 
