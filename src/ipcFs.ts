@@ -9,6 +9,8 @@ export interface FsApi {
   mkdir(root: string, rel: string): Promise<void>;
   rename(root: string, from: string, to: string): Promise<void>;
   copyFile(root: string, from: string, to: string): Promise<void>;
+  writeFileBinary(root: string, rel: string, base64: string): Promise<void>;
+  readFileBinary(root: string, rel: string): Promise<string | null>;
 }
 
 declare global {
@@ -94,6 +96,8 @@ export function makeIpcDir(root: string, api: FsApi): FileSystemDirectoryHandle 
   handle.__native = {
     rename: (from: string, to: string) => api.rename(root, from, to),
     copyFile: (from: string, to: string) => api.copyFile(root, from, to),
+    writeBinary: (rel: string, base64: string) => api.writeFileBinary(root, rel, base64),
+    readBinary: (rel: string) => api.readFileBinary(root, rel),
   };
   return handle as unknown as FileSystemDirectoryHandle;
 }

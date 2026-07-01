@@ -189,6 +189,20 @@ ipcMain.handle("fsapi:writeFile", async (_e, _root, rel, data) => {
   }
 });
 
+ipcMain.handle("fsapi:writeFileBinary", async (_e, _root, rel, base64) => {
+  const p = await guardedPath(rel);
+  await fs.mkdir(path.dirname(p), { recursive: true });
+  await fs.writeFile(p, Buffer.from(base64, "base64"));
+});
+ipcMain.handle("fsapi:readFileBinary", async (_e, _root, rel) => {
+  try {
+    const buf = await fs.readFile(await guardedPath(rel));
+    return buf.toString("base64");
+  } catch {
+    return null;
+  }
+});
+
 ipcMain.handle("fsapi:removeEntry", async (_e, _root, rel) => {
   await fs.rm(await guardedPath(rel), { force: true });
 });
