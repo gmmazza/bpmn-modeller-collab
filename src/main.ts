@@ -660,7 +660,7 @@ async function bootstrap() {
         <div class="tgroup">
           <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
           <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
-          <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("help")}</button>
+          <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Ajustes">${icon("settings")}</button>
             <div id="vizsettings" class="popover" hidden></div>
@@ -670,7 +670,7 @@ async function bootstrap() {
         <div class="tgroup">
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
-          <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("help")}<span style="font-size:11px">Manual</span></button>
+          <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
