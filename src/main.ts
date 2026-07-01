@@ -647,6 +647,12 @@ async function bootstrap() {
 
     await mountModeler();
 
+    function selectElementById(id: string): void {
+      const reg = modeler.get("elementRegistry");
+      const el = reg.get(id);
+      if (el) modeler.get("selection").select(el);
+    }
+
     docsController?.destroy?.();
     docsController = createNotePanelController({
       docs: docsClient,
@@ -659,6 +665,19 @@ async function bootstrap() {
         return sel[0] ? toDiagramElement(sel[0]) : null;
       },
       onSelectionChange: (cb) => docsSelectionCbs.push(cb),
+      wikiProcesses: () =>
+        lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => e.path.replace(/\.bpmn$/i, "")),
+      navigateWiki: (target) => {
+        if (target.kind === "bare") {
+          const asFile = `${target.text}.bpmn`;
+          if (lastTree.some((e) => e.path === asFile)) { void openFile(asFile).catch(onError); return; }
+          const el = listDocumentableElements(modeler).find((e) => e.name === target.text);
+          if (el) selectElementById(el.id);
+        } else if (target.kind === "element") {
+          selectElementById(target.element);
+        }
+        // idea: no-op until Plan 3
+      },
     });
 
     const $ = (id: string) => document.getElementById(id)!;

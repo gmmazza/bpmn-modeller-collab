@@ -5,6 +5,8 @@ import { renderNotePanel, type NoteMode, type NoteTab, type NotePanelState } fro
 import { createMarkdownEditor, type MarkdownEditor } from "./cmEditor";
 import { createAssetResolver, type AssetResolver } from "./assetResolver";
 import type { DocsClient } from "./docsClient";
+import { wikiCandidates } from "./wikiComplete";
+import { parseWikilinkTarget, type WikiTarget } from "./wikilinks";
 
 export interface DiagramElement {
   id: string;
@@ -20,6 +22,8 @@ export interface NoteControllerApi {
   listElements(): DiagramElement[];
   getSelected(): DiagramElement | null;
   onSelectionChange(cb: () => void): void;
+  wikiProcesses?(): string[];
+  navigateWiki?(target: WikiTarget, raw: string): void;
 }
 
 const PROCESS_TEMPLATE = "# Proceso\n\n_Describí para qué sirve este proceso, quién es el dueño y su alcance._\n";
@@ -120,6 +124,15 @@ export function createNotePanelController(api: NoteControllerApi) {
           onChange: (d) => { body = d; },
           media,
           resolveAsset: (ref) => resolver!.resolve(ref),
+          wiki: api.navigateWiki
+            ? {
+                candidates: (q: string) => wikiCandidates(q, {
+                  processes: api.wikiProcesses ? api.wikiProcesses() : [],
+                  elements: api.listElements().map((e) => ({ id: e.id, name: e.name })),
+                }),
+                navigate: (raw: string) => api.navigateWiki!(parseWikilinkTarget(raw), raw),
+              }
+            : undefined,
         });
         editor.focus();
       },
