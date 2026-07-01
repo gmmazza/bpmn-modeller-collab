@@ -21,6 +21,7 @@ import { BUNDLED_BPMN_JS_VERSION, checkLatestBpmnJs } from "./version";
 import { evaluateUpdate } from "./appUpdate";
 import { createFsClient, type FsClient } from "./fsClient";
 import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
+import { createIdeasClient } from "./processDocs/ideasClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
@@ -93,6 +94,7 @@ async function bootstrap() {
   let applyingViz = false;
   let layersClient: ReturnType<typeof createLayersClient>;
   let docsClient: DocsClient;
+  let ideasClientV2: ReturnType<typeof createIdeasClient>;
   let docsController: ReturnType<typeof createNotePanelController> | null = null;
   let docsFileId = "";
   const docsSelectionCbs: Array<() => void> = [];
@@ -193,6 +195,7 @@ async function bootstrap() {
           api = createFsClient(dir);
           layersClient = createLayersClient(api);
           docsClient = createDocsClient(api);
+          ideasClientV2 = createIdeasClient(api);
           void ensureAgentsFile(api);
           await ensureNameThenApp();
         } else {
@@ -231,6 +234,7 @@ async function bootstrap() {
         api = createFsClient(dir);
         layersClient = createLayersClient(api);
         docsClient = createDocsClient(api);
+        ideasClientV2 = createIdeasClient(api);
         void ensureAgentsFile(api);
         await ensureNameThenApp();
       })().catch(onError);
@@ -753,6 +757,8 @@ async function bootstrap() {
       },
       identity: () => me.name,
       today: () => new Date().toISOString().slice(0, 10),
+      ideasClient: ideasClientV2,
+      promptMotivo: (estado: string) => window.prompt(`Motivo para marcar la idea como ${estado}:`),
     });
 
     const $ = (id: string) => document.getElementById(id)!;
@@ -1103,6 +1109,8 @@ async function bootstrap() {
     await loadHistory(fileId);
     await loadLayers(fileId);
     await loadDocs(fileId);
+    await ideasClientV2.migrateIfNeeded(fileId);
+    await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
   }
 
 
@@ -1360,6 +1368,7 @@ async function bootstrap() {
     api = createFsClient(saved);
     layersClient = createLayersClient(api);
     docsClient = createDocsClient(api);
+    ideasClientV2 = createIdeasClient(api);
     void ensureAgentsFile(api);
     await ensureNameThenApp();
   } else {

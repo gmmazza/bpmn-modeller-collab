@@ -10,6 +10,7 @@ import { parseWikilinkTarget, type WikiTarget } from "./wikilinks";
 import { renderIdeasPanel } from "./ideasPanel";
 import { createIdeaOverlays, type OverlayHost } from "./ideasOverlays";
 import { parseIdeas, mergeIdeas, addIdea, toggleIdea, type Idea } from "./ideasModel";
+import { createIdeasControllerV2 } from "./ideasControllerV2";
 
 export interface DiagramElement {
   id: string;
@@ -30,6 +31,8 @@ export interface NoteControllerApi {
   ideasOverlays?: OverlayHost;
   identity?(): string;
   today?(): string;
+  ideasClient?: import("./ideasClient").IdeasClient;
+  promptMotivo?(estado: string): string | null;
 }
 
 const PROCESS_TEMPLATE = "# Proceso\n\n_Describí para qué sirve este proceso, quién es el dueño y su alcance._\n";
@@ -46,6 +49,7 @@ export function createNotePanelController(api: NoteControllerApi) {
   let showIdeas = localStorage.getItem("ideasShow") === "1";
   let filterPending = false;
   let overlays: ReturnType<typeof createIdeaOverlays> | null = null;
+  let ideasCtl: ReturnType<typeof createIdeasControllerV2> | null = null;
 
   function destroyEditor(): void { editor?.destroy(); editor = null; }
 
@@ -215,6 +219,22 @@ export function createNotePanelController(api: NoteControllerApi) {
         }
       },
       onIdeasHostReady: (host) => {
+        if (api.ideasClient) {
+          ideasCtl = createIdeasControllerV2({
+            ideasClient: api.ideasClient,
+            mount: host,
+            diagramId: () => api.diagramId(),
+            processName: () => api.processName(),
+            identity: () => api.identity?.() ?? "",
+            today: () => api.today?.() ?? "",
+            getSelected: () => { const s = api.getSelected(); return s ? { id: s.id, name: s.name } : null; },
+            promptMotivo: (e) => api.promptMotivo?.(e) ?? null,
+            onAnchoredCounts: (_counts) => { /* overlays wired in Plan 3 */ },
+          });
+          void ideasCtl.refresh();
+          return;
+        }
+        // fallback (no v2 client) keeps the old panel — remove once main.ts always provides it
         renderIdeasPanel(
           host,
           { ideas, showOnDiagram: showIdeas, filterPending, selectedLabel: api.getSelected()?.name ?? null },
@@ -276,6 +296,7 @@ export function createNotePanelController(api: NoteControllerApi) {
     mode = "read";
     refreshOverlays();
     render();
+    void ideasCtl?.refresh();
   }
 
   return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest, openIdeasTab };
