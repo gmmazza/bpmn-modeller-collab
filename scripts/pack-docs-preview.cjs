@@ -12,7 +12,7 @@ const EXCLUDE =
 
 packager({
   dir: ".",
-  name: "BPMN compartida (docs preview)",
+  name: process.env.PACK_NAME || "BPMN compartida (docs preview)",
   platform: "win32",
   arch: "x64",
   out: "release",
