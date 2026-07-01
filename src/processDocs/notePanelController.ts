@@ -7,6 +7,9 @@ import { createAssetResolver, type AssetResolver } from "./assetResolver";
 import type { DocsClient } from "./docsClient";
 import { wikiCandidates } from "./wikiComplete";
 import { parseWikilinkTarget, type WikiTarget } from "./wikilinks";
+import { renderIdeasPanel } from "./ideasPanel";
+import { createIdeaOverlays, type OverlayHost } from "./ideasOverlays";
+import { parseIdeas, serializeIdeas, addIdea, toggleIdea, type Idea } from "./ideasModel";
 
 export interface DiagramElement {
   id: string;
@@ -24,6 +27,9 @@ export interface NoteControllerApi {
   onSelectionChange(cb: () => void): void;
   wikiProcesses?(): string[];
   navigateWiki?(target: WikiTarget, raw: string): void;
+  ideasOverlays?: OverlayHost;
+  identity?(): string;
+  today?(): string;
 }
 
 const PROCESS_TEMPLATE = "# Proceso\n\n_Describí para qué sirve este proceso, quién es el dueño y su alcance._\n";
@@ -35,8 +41,58 @@ export function createNotePanelController(api: NoteControllerApi) {
   let hasNote = false;
   let editor: MarkdownEditor | null = null;
   let resolver: AssetResolver | null = null;
+  let ideas: Idea[] = [];
+  let showIdeas = localStorage.getItem("ideasShow") === "1";
+  let filterPending = false;
+  let overlays: ReturnType<typeof createIdeaOverlays> | null = null;
 
   function destroyEditor(): void { editor?.destroy(); editor = null; }
+
+  function refreshOverlays(): void {
+    if (api.ideasOverlays && (tab === "ideas" || showIdeas)) {
+      overlays ??= createIdeaOverlays(api.ideasOverlays);
+      overlays.render(ideas);
+    } else {
+      overlays?.clear();
+    }
+  }
+
+  async function saveIdeas(): Promise<void> {
+    await api.docs.writeIdeas(api.diagramId(), serializeIdeas(api.processName(), ideas));
+  }
+
+  function rerenderIdeas(): void {
+    render();
+  }
+
+  const ideasHandlers = {
+    onAdd(text: string, anchorToSelection: boolean): void {
+      const sel = anchorToSelection ? api.getSelected() : null;
+      const idea: Idea = {
+        done: false,
+        anchor: sel ? sel.id : null,
+        anchorLabel: sel ? sel.name : "",
+        text,
+        author: api.identity?.() ?? "",
+        date: api.today?.() ?? "",
+      };
+      ideas = addIdea(ideas, idea);
+      void saveIdeas().then(() => { rerenderIdeas(); refreshOverlays(); });
+    },
+    onToggle(i: number): void {
+      ideas = toggleIdea(ideas, i);
+      void saveIdeas().then(() => { rerenderIdeas(); refreshOverlays(); });
+    },
+    onToggleShow(on: boolean): void {
+      showIdeas = on;
+      try { localStorage.setItem("ideasShow", on ? "1" : "0"); } catch { /* ignore */ }
+      refreshOverlays();
+    },
+    onToggleFilter(p: boolean): void {
+      filterPending = p;
+      rerenderIdeas();
+    },
+  };
 
   function rebuildResolver(): void {
     resolver?.dispose();
@@ -55,10 +111,19 @@ export function createNotePanelController(api: NoteControllerApi) {
   }
 
   async function loadBody(): Promise<void> {
+    const md = await api.docs.readIdeas(api.diagramId());
+    ideas = md ? parseIdeas(md) : [];
+    refreshOverlays();
+
     if (tab === "process") {
       const raw = await api.docs.readProcessNote(api.diagramId());
       hasNote = raw !== null;
       body = raw === null ? "" : parseFrontmatter(raw).body;
+      return;
+    }
+    if (tab === "ideas") {
+      hasNote = false;
+      body = "";
       return;
     }
     const sel = api.getSelected();
@@ -90,6 +155,7 @@ export function createNotePanelController(api: NoteControllerApi) {
         tab = t;
         mode = "read";
         await loadBody();
+        refreshOverlays();
         render();
       },
       onModeChange: (m) => {
@@ -144,6 +210,13 @@ export function createNotePanelController(api: NoteControllerApi) {
           resolver!.resolve(ref).then((url) => { if (url) img.src = url; });
         }
       },
+      onIdeasHostReady: (host) => {
+        renderIdeasPanel(
+          host,
+          { ideas, showOnDiagram: showIdeas, filterPending, selectedLabel: api.getSelected()?.name ?? null },
+          ideasHandlers,
+        );
+      },
     });
   }
 
@@ -188,8 +261,18 @@ export function createNotePanelController(api: NoteControllerApi) {
     destroyEditor();
     resolver?.dispose();
     resolver = null;
+    overlays?.clear();
+    overlays = null;
     _disposedForTest = true;
   }
 
-  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest };
+  function openIdeasTab(): void {
+    destroyEditor();
+    tab = "ideas";
+    mode = "read";
+    refreshOverlays();
+    render();
+  }
+
+  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest, openIdeasTab };
 }
