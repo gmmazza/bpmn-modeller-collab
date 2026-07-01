@@ -1,6 +1,6 @@
 // src/processDocs/mdWidgets.ts
 import { WidgetType } from "@codemirror/view";
-import type { ImageWidget, VideoWidget } from "./cmDecorations";
+import type { ImageWidget, VideoWidget, Widget } from "./cmDecorations";
 
 const ALLOWED_EMBED_HOSTS = ["www.youtube.com", "youtube.com", "player.vimeo.com", "vimeo.com", "www.loom.com", "loom.com"];
 
@@ -8,7 +8,21 @@ function isAllowedEmbed(src: string): boolean {
   try { return ALLOWED_EMBED_HOSTS.includes(new URL(src).host); } catch { return false; }
 }
 
-export function buildWidgetDom(w: ImageWidget | VideoWidget): HTMLElement {
+export function buildWidgetDom(w: Widget): HTMLElement {
+  if (w.type === "bullet") {
+    const b = document.createElement("span");
+    b.className = "cm-md-bullet";
+    b.textContent = "• ";
+    return b;
+  }
+  if (w.type === "task") {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = "cm-md-task";
+    box.disabled = true;
+    box.checked = w.checked;
+    return box;
+  }
   const wrap = document.createElement("span");
   wrap.className = "cm-md-widget";
   if (w.type === "image") {
@@ -57,3 +71,19 @@ export class VideoWidgetType extends WidgetType {
   eq(other: VideoWidgetType): boolean { return other.src === this.src; }
   toDOM(): HTMLElement { return buildWidgetDom({ type: "video", src: this.src }); }
 }
+
+export class BulletWidgetType extends WidgetType {
+  eq(other: BulletWidgetType): boolean { return other instanceof BulletWidgetType; }
+  toDOM(): HTMLElement { return buildWidgetDom({ type: "bullet" }); }
+}
+
+export class TaskWidgetType extends WidgetType {
+  constructor(readonly checked: boolean) { super(); }
+  eq(other: TaskWidgetType): boolean { return other.checked === this.checked; }
+  toDOM(): HTMLElement { return buildWidgetDom({ type: "task", checked: this.checked }); }
+  // Let clicks reach the editor (they place the cursor), enabling inline editing.
+  ignoreEvent(): boolean { return false; }
+}
+
+// Re-export types used by callers/tests that build the pure widget shapes.
+export type { ImageWidget, VideoWidget };

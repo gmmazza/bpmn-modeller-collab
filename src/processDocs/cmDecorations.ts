@@ -1,15 +1,23 @@
 // src/processDocs/cmDecorations.ts
-import { parser } from "@lezer/markdown";
+import { parser as baseParser, GFM } from "@lezer/markdown";
+
+// Configure the markdown parser with GFM so task lists (`- [ ]`), strikethrough
+// (`~~`), tables and autolinks are recognized. Without this, the base parser
+// mis-parses `- [x]` as a link and never yields a task marker.
+const mdParser = baseParser.configure(GFM);
 
 export type DecoKind = "hide" | "mark" | "widget";
 export interface ImageWidget { type: "image"; src: string; alt: string }
 export interface VideoWidget { type: "video"; src: string }
+export interface BulletWidget { type: "bullet" }
+export interface TaskWidget { type: "task"; checked: boolean }
+export type Widget = ImageWidget | VideoWidget | BulletWidget | TaskWidget;
 export interface DecoSpec {
   kind: DecoKind;
   from: number;
   to: number;
   cls?: string;
-  widget?: ImageWidget | VideoWidget;
+  widget?: Widget;
 }
 
 const HEADING_CLASS: Record<string, string> = {
@@ -45,8 +53,14 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
   }
   const insideWiki = (a: number, b: number) => wikiRanges.some((r) => a >= r.from && b <= r.to);
 
-  const tree = parser.parse(text);
+  const tree = mdParser.parse(text);
   const treeSpecs: DecoSpec[] = [];
+
+  // Hide a range plus a single trailing space, so the rendered line starts flush.
+  const hideWithSpace = (from: number, to: number) => {
+    const end = text[to] === " " ? to + 1 : to;
+    treeSpecs.push({ kind: "hide", from, to: end });
+  };
 
   tree.iterate({
     enter: (node) => {
@@ -60,6 +74,7 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
       }
       if (name === "StrongEmphasis") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-strong" }); return; }
       if (name === "Emphasis") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-em" }); return; }
+      if (name === "Strikethrough") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-strike" }); return; }
       if (name === "InlineCode") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-inline-code" }); return; }
       if (name === "Blockquote") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-quote" }); return; }
 
@@ -67,14 +82,34 @@ export function computeMarkdownDecorations(text: string): DecoSpec[] {
       if (name === "Link") { treeSpecs.push({ kind: "mark", from, to, cls: "cm-link" }); return; }
       if (name === "URL") { treeSpecs.push({ kind: "hide", from, to }); return; }
 
+      // List markers: render a real bullet, keep ordered numbers, or (for a task
+      // item) hide the bullet so the checkbox from the TaskMarker stands in.
+      if (name === "ListMark") {
+        const isTask = !!node.node.parent?.getChild("Task");
+        const markText = text.slice(from, to);
+        const isOrdered = /^\d+[.)]$/.test(markText);
+        if (isTask) {
+          hideWithSpace(from, to);                                     // "- " before a checkbox
+        } else if (isOrdered) {
+          treeSpecs.push({ kind: "mark", from, to, cls: "cm-list-number" }); // keep "1." visible
+        } else {
+          const end = text[to] === " " ? to + 1 : to;
+          treeSpecs.push({ kind: "widget", from, to: end, widget: { type: "bullet" } }); // "- " -> "•"
+        }
+        return;
+      }
+      // Task checkbox: replace "[ ]"/"[x]" with a rendered checkbox.
+      if (name === "TaskMarker") {
+        const checked = /\[[xX]\]/.test(text.slice(from, to));
+        treeSpecs.push({ kind: "widget", from, to, widget: { type: "task", checked } });
+        return;
+      }
+
       // Markup punctuation to hide.
       if (name === "HeaderMark" || name === "EmphasisMark" || name === "CodeMark" ||
-          name === "QuoteMark" || name === "ListMark" || name === "LinkMark") {
-        // For HeaderMark/QuoteMark/ListMark, also swallow the trailing space so the
-        // rendered line starts flush.
-        let end = to;
-        if ((name === "HeaderMark" || name === "QuoteMark" || name === "ListMark") && text[to] === " ") end = to + 1;
-        treeSpecs.push({ kind: "hide", from, to: end });
+          name === "QuoteMark" || name === "LinkMark" || name === "StrikethroughMark") {
+        if (name === "HeaderMark" || name === "QuoteMark") hideWithSpace(from, to);
+        else treeSpecs.push({ kind: "hide", from, to });
         return;
       }
 
