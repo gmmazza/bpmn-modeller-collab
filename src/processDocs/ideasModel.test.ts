@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseIdeas, serializeIdeas, addIdea, toggleIdea, anchoredCounts } from "./ideasModel";
+import { parseIdeas, serializeIdeas, addIdea, toggleIdea, anchoredCounts, mergeIdeas } from "./ideasModel";
 
 const SAMPLE = `# Ideas sueltas — Validación
 
@@ -38,6 +38,37 @@ describe("ideasModel", () => {
       { done: false, anchor: null, anchorLabel: "", text: "d", author: "u", date: "d" },
     ];
     expect(anchoredCounts(ideas)).toEqual([{ elementId: "A", count: 2 }]);
+  });
+
+  it("mergeIdeas preserves comments/blank lines and appends a new idea", () => {
+    const original = `# Ideas sueltas — P
+
+<!-- nota del agente LLM -->
+- [ ] (general) primera — Ana, 2026-07-01
+
+## sección extra
+`;
+    const ideas = parseIdeas(original);
+    const withNew = [...ideas, { done: false, anchor: null, anchorLabel: "", text: "segunda", author: "Beto", date: "2026-07-02" }];
+    const out = mergeIdeas(original, "P", withNew);
+    expect(out).toContain("<!-- nota del agente LLM -->");
+    expect(out).toContain("## sección extra");
+    expect(out).toContain("primera");
+    expect(out).toContain("segunda");
+  });
+
+  it("mergeIdeas toggles an idea in place without dropping surrounding lines", () => {
+    const original = `# Ideas sueltas — P\n\n<!-- keep -->\n- [ ] (general) x — Ana, 2026-07-01\n`;
+    const ideas = toggleIdea(parseIdeas(original), 0);
+    const out = mergeIdeas(original, "P", ideas);
+    expect(out).toContain("<!-- keep -->");
+    expect(out).toContain("- [x] (general) x — Ana, 2026-07-01");
+  });
+
+  it("mergeIdeas falls back to a fresh doc when original is empty", () => {
+    const out = mergeIdeas("", "P", [{ done: false, anchor: null, anchorLabel: "", text: "y", author: "u", date: "d" }]);
+    expect(out).toContain("# Ideas sueltas — P");
+    expect(out).toContain("y");
   });
 });
 import type { Idea } from "./ideasModel";

@@ -9,6 +9,10 @@ export interface Idea {
 
 const LINE = /^- \[([ xX])\] \(([^)]*)\) (.*) — ([^,]+), (\d{4}-\d{2}-\d{2})\s*$/;
 
+export function isIdeaLine(line: string): boolean {
+  return LINE.test(line);
+}
+
 export function parseIdeas(md: string): Idea[] {
   const out: Idea[] = [];
   for (const raw of md.split("\n")) {
@@ -28,14 +32,34 @@ export function parseIdeas(md: string): Idea[] {
   return out;
 }
 
-function anchorText(i: Idea): string {
-  if (!i.anchor) return "general";
-  return i.anchorLabel ? `${i.anchor} · ${i.anchorLabel}` : i.anchor;
+export function serializeIdeaLine(i: Idea): string {
+  const anchor = !i.anchor ? "general" : (i.anchorLabel ? `${i.anchor} · ${i.anchorLabel}` : i.anchor);
+  return `- [${i.done ? "x" : " "}] (${anchor}) ${i.text} — ${i.author}, ${i.date}`;
 }
 
 export function serializeIdeas(processName: string, ideas: Idea[]): string {
-  const lines = ideas.map((i) => `- [${i.done ? "x" : " "}] (${anchorText(i)}) ${i.text} — ${i.author}, ${i.date}`);
+  const lines = ideas.map(serializeIdeaLine);
   return `# Ideas sueltas — ${processName}\n\n${lines.join("\n")}\n`;
+}
+
+// Rewrites `original` preserving every non-idea line in place, replacing the Nth
+// idea line with ideas[N], and appending any ideas beyond the original idea-line
+// count. If `original` has no content, falls back to a fresh doc.
+export function mergeIdeas(original: string, processName: string, ideas: Idea[]): string {
+  if (original.trim().length === 0) return serializeIdeas(processName, ideas);
+  const lines = original.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  for (const line of lines) {
+    if (isIdeaLine(line)) {
+      if (i < ideas.length) { out.push(serializeIdeaLine(ideas[i])); i++; }
+      // extra original idea lines beyond model count are dropped (deleted ideas)
+    } else {
+      out.push(line);
+    }
+  }
+  for (; i < ideas.length; i++) out.push(serializeIdeaLine(ideas[i]));
+  return out.join("\n");
 }
 
 export function addIdea(ideas: Idea[], idea: Idea): Idea[] {
