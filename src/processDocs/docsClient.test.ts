@@ -41,4 +41,13 @@ describe("docsClient", () => {
     await c.deleteNote("x.bpmn", "Activity_1");
     expect(await c.readNote("x.bpmn", "Activity_1")).toBeNull();
   });
+
+  it("writes, lists and reads a binary asset", async () => {
+    const c = client();
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await c.writeAsset("x.bpmn", "imagen-1.png", bytes);
+    expect(await c.listAssets("x.bpmn")).toEqual(["imagen-1.png"]);
+    const back = await c.readAsset("x.bpmn", "imagen-1.png");
+    expect(back && Array.from(back)).toEqual([1, 2, 3, 4]);
+  });
 });
