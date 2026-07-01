@@ -2,7 +2,7 @@
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { type Extension, type Range } from "@codemirror/state";
 import { computeMarkdownDecorations, type DecoSpec } from "./cmDecorations";
-import { ImageWidgetType, VideoWidgetType } from "./mdWidgets";
+import { ImageWidgetType, VideoWidgetType, BulletWidgetType, TaskWidgetType } from "./mdWidgets";
 
 type ActiveRange = { from: number; to: number };
 
@@ -10,9 +10,12 @@ function intersects(a: ActiveRange, b: ActiveRange): boolean {
   return a.from <= b.to && b.from <= a.to;
 }
 
+// On the cursor's line, reveal the raw markdown so it can be edited: drop both
+// `hide` and `widget` (replace) specs that intersect an active range. `mark`
+// specs (styling only) are always kept.
 export function visibleSpecs(specs: DecoSpec[], activeRanges: ActiveRange[]): DecoSpec[] {
   return specs.filter((s) => {
-    if (s.kind !== "hide") return true;
+    if (s.kind === "mark") return true;
     return !activeRanges.some((r) => intersects(s, r));
   });
 }
@@ -44,9 +47,11 @@ function buildDecorations(view: EditorView, resolveAsset?: (ref: string) => Prom
     } else if (s.kind === "mark" && s.cls) {
       if (s.to > s.from) decoRanges.push(Decoration.mark({ class: s.cls }).range(s.from, s.to));
     } else if (s.kind === "widget" && s.widget) {
-      const w = s.widget.type === "image"
-        ? new ImageWidgetType(s.widget.src, s.widget.alt, resolveAsset)
-        : new VideoWidgetType(s.widget.src);
+      const wd = s.widget;
+      const w = wd.type === "image" ? new ImageWidgetType(wd.src, wd.alt, resolveAsset)
+        : wd.type === "video" ? new VideoWidgetType(wd.src)
+        : wd.type === "bullet" ? new BulletWidgetType()
+        : new TaskWidgetType(wd.checked);
       if (s.to > s.from) decoRanges.push(Decoration.replace({ widget: w }).range(s.from, s.to));
     }
   }

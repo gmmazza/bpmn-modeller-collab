@@ -244,6 +244,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .cm-heading-4, .cm-heading-5, .cm-heading-6 { font-weight: 700; }
 .cm-strong { font-weight: 700; }
 .cm-em { font-style: italic; }
+.cm-strike { text-decoration: line-through; color: var(--muted, #888); }
+.cm-list-number { color: var(--muted, #888); }
+.cm-md-bullet { color: var(--muted, #888); }
+.cm-md-task { margin: 0 4px 0 0; vertical-align: middle; }
 .cm-inline-code { font-family: monospace; background: var(--surface-2, rgba(127,127,127,.15)); padding: 0 3px; border-radius: 3px; }
 .cm-quote { color: var(--muted, #888); border-left: 3px solid var(--border); padding-left: 8px; }
 .cm-md-widget { display: block; margin: 4px 0; }

@@ -19,4 +19,34 @@ describe("buildWidgetDom", () => {
     const el = buildWidgetDom({ type: "video", src: "https://evil.example.com/x" });
     expect(el.querySelector("iframe")).toBeNull();
   });
+
+  it("builds a bullet glyph span", () => {
+    const el = buildWidgetDom({ type: "bullet" });
+    expect(el.tagName).toBe("SPAN");
+    expect(el.className).toContain("cm-md-bullet");
+    expect(el.textContent).toContain("•");
+  });
+
+  it("builds a disabled unchecked checkbox for an open task", () => {
+    const el = buildWidgetDom({ type: "task", checked: false }) as HTMLInputElement;
+    expect(el.tagName).toBe("INPUT");
+    expect(el.type).toBe("checkbox");
+    expect(el.disabled).toBe(true);
+    expect(el.checked).toBe(false);
+  });
+
+  it("builds a checked checkbox for a done task", () => {
+    const el = buildWidgetDom({ type: "task", checked: true }) as HTMLInputElement;
+    expect(el.checked).toBe(true);
+    expect(el.disabled).toBe(true);
+  });
+});
+
+describe("widget types eq()", () => {
+  it("bullet widgets are equal; task widgets compare checked state", async () => {
+    const { BulletWidgetType, TaskWidgetType } = await import("./mdWidgets");
+    expect(new BulletWidgetType().eq(new BulletWidgetType())).toBe(true);
+    expect(new TaskWidgetType(true).eq(new TaskWidgetType(true))).toBe(true);
+    expect(new TaskWidgetType(true).eq(new TaskWidgetType(false))).toBe(false);
+  });
 });
