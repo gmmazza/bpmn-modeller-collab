@@ -647,6 +647,7 @@ async function bootstrap() {
 
     await mountModeler();
 
+    docsController?.destroy?.();
     docsController = createNotePanelController({
       docs: docsClient,
       mount: inspector.paneEl("documentacion"),

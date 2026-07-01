@@ -169,5 +169,14 @@ export function createNotePanelController(api: NoteControllerApi) {
     if (editor) editor.setDoc(s); else body = s;
   }
 
-  return { refresh, setSelected: refresh, _setEditorDocForTest };
+  let _disposedForTest = false;
+
+  function destroy(): void {
+    destroyEditor();
+    resolver?.dispose();
+    resolver = null;
+    _disposedForTest = true;
+  }
+
+  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest };
 }
