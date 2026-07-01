@@ -252,6 +252,14 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .cm-wikilink { color: var(--accent); cursor: pointer; text-decoration: underline; }
 .cm-link { color: var(--accent); cursor: pointer; }
 
+/* Manual modal */
+.manual-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 1500; display: flex; align-items: center; justify-content: center; }
+.manual-box { background: var(--surface); color: var(--text); width: 820px; max-width: 92vw; max-height: 88vh; border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.manual-head { display: flex; gap: 8px; justify-content: flex-end; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.manual-body { padding: 16px 20px; overflow: auto; }
+.manual-body img { max-width: 100%; }
+.manual-body h2 { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 20px; }
+
 /* Ideas panel */
 .ideas-panel { display: flex; flex-direction: column; gap: 8px; height: 100%; box-sizing: border-box; }
 .ideas-add { display: flex; flex-direction: column; gap: 4px; }
