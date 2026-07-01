@@ -43,3 +43,27 @@ describe("computeMarkdownDecorations", () => {
     expect(specs.filter((s) => s.kind === "widget")).toHaveLength(1);
   });
 });
+
+describe("wikilinks and markdown links", () => {
+  it("hides [[ ]] and marks the inner text as cm-wikilink", () => {
+    const specs = computeMarkdownDecorations("ver [[mi-proceso]]");
+    // "[[" at 4..6, "]]" at 16..18, inner "mi-proceso" 6..16 marked
+    expect(specs.some((s) => s.kind === "hide" && s.from === 4 && s.to === 6)).toBe(true);
+    expect(specs.some((s) => s.kind === "hide" && s.from === 16 && s.to === 18)).toBe(true);
+    expect(specs.some((s) => s.kind === "mark" && s.cls === "cm-wikilink" && s.from === 6 && s.to === 16)).toBe(true);
+  });
+
+  it("does not emit overlapping hides inside a wikilink (tree specs filtered)", () => {
+    const specs = computeMarkdownDecorations("[[a#b]]");
+    const hides = specs.filter((s) => s.kind === "hide");
+    // only the [[ and ]] hides — no LinkMark hides from the tree inside the wikilink
+    expect(hides).toHaveLength(2);
+  });
+
+  it("marks a markdown link as cm-link and hides its URL", () => {
+    const specs = computeMarkdownDecorations("[docs](http://a.b)");
+    expect(specs.some((s) => s.kind === "mark" && s.cls === "cm-link")).toBe(true);
+    // the URL "http://a.b" (7..17) is hidden
+    expect(specs.some((s) => s.kind === "hide" && s.from === 7 && s.to === 17)).toBe(true);
+  });
+});
