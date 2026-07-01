@@ -23,6 +23,7 @@ import { createFsClient, type FsClient } from "./fsClient";
 import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
 import { createIdeasClient } from "./processDocs/ideasClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
+import { createIdeaMode } from "./processDocs/ideaMode";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
@@ -96,6 +97,7 @@ async function bootstrap() {
   let docsClient: DocsClient;
   let ideasClientV2: ReturnType<typeof createIdeasClient>;
   let docsController: ReturnType<typeof createNotePanelController> | null = null;
+  let ideaMode: ReturnType<typeof createIdeaMode>;
   let docsFileId = "";
   const docsSelectionCbs: Array<() => void> = [];
   let layerView: LayerView | null = null;
@@ -675,6 +677,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
+          <button class="btn icon-only" id="toggle-idea-mode" type="button" title="Modo idea">💡</button>
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
@@ -754,6 +757,48 @@ async function bootstrap() {
       today: () => new Date().toISOString().slice(0, 10),
       ideasClient: ideasClientV2,
       promptMotivo: (estado: string) => window.prompt(`Motivo para marcar la idea como ${estado}:`),
+      onIdeaCounts: (counts) => ideaMode?.setCounts(counts),
+    });
+
+    // ---- Idea mode ----
+    const ideaOverlayHost = {
+      add: (elementId: string, html: HTMLElement) =>
+        (modeler.get("overlays") as any).add(elementId, "ideas", { position: { top: -12, right: 12 }, html }),
+      remove: (id: string) => (modeler.get("overlays") as any).remove(id),
+    };
+    ideaMode = createIdeaMode({
+      overlayHost: ideaOverlayHost,
+      ideasClient: ideasClientV2,
+      diagramId: () => docsFileId,
+      processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
+      identity: () => me.name,
+      today: () => new Date().toISOString().slice(0, 10),
+      elementLabel: (id) => {
+        const el = (modeler.get("elementRegistry") as any).get(id);
+        return (el && el.businessObject && el.businessObject.name) || id;
+      },
+      clientRectFor: (id) => {
+        const gfx = (modeler.get("elementRegistry") as any).getGraphics(id) as SVGElement | undefined;
+        const r = gfx?.getBoundingClientRect();
+        return r ? { left: r.right, top: r.top } : { left: 100, top: 100 };
+      },
+      openThreadInPanel: (ideaId) => docsController?.openThread(ideaId),
+      onPanelShouldRefresh: () => docsController?.refreshIdeas(),
+      persistGet: () => localStorage.getItem("bpmn-compartida.ideaMode") === "1",
+      persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
+      onModeChange: (on) => { document.getElementById("toggle-idea-mode")?.classList.toggle("active", on); },
+    });
+
+    // Set initial button state from persisted toggle value.
+    document.getElementById("toggle-idea-mode")?.classList.toggle("active", ideaMode.isOn());
+    document.getElementById("toggle-idea-mode")?.addEventListener("click", () => void ideaMode.toggle());
+
+    // Capture element.click at high priority (2000) while idea mode is on;
+    // return false blocks bpmn-js normal selection while the mode is active.
+    (modeler.get("eventBus") as any).on("element.click", 2000, (e: { element: { id: string } }) => {
+      if (!ideaMode.isOn()) return;
+      void ideaMode.onElementClick(e.element.id);
+      return false;
     });
 
     const $ = (id: string) => document.getElementById(id)!;
@@ -1106,6 +1151,7 @@ async function bootstrap() {
     await loadDocs(fileId);
     await ideasClientV2.migrateIfNeeded(fileId);
     await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
+    if (ideaMode?.isOn()) void ideaMode.refresh();
   }
 
 
