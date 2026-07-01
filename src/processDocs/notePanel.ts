@@ -53,15 +53,18 @@ export function renderNotePanel(container: HTMLElement, state: NotePanelState, h
     tabButton("process", state.tab, "Proceso", h.onTabChange),
     tabButton("ideas", state.tab, "Ideas", h.onTabChange),
   );
-  const modes = document.createElement("div");
-  modes.className = "note-modes";
-  modes.append(
-    modeButton("read", state.mode, "Leer", h.onModeChange),
-    modeButton("edit", state.mode, "Editar", h.onModeChange),
-  );
   const header = document.createElement("div");
   header.className = "note-header";
-  header.append(tabs, modes);
+  header.append(tabs);
+  if (state.tab !== "ideas") {
+    const modes = document.createElement("div");
+    modes.className = "note-modes";
+    modes.append(
+      modeButton("read", state.mode, "Leer", h.onModeChange),
+      modeButton("edit", state.mode, "Editar", h.onModeChange),
+    );
+    header.append(modes);
+  }
   container.append(header);
 
   if (state.tab === "ideas") {
