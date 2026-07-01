@@ -38,6 +38,8 @@ import { createEditor, createBpmnModeler, type ModelerLike } from "./editor";
 import { getName, setName } from "./identity";
 import { getVizSettings, setVizSettings, type VizSettings } from "./vizSettings";
 import { exportSvg, exportPng } from "./exporters";
+import { graphFromModeler } from "./processDocs/flowOrder";
+import { buildManual, exportManualHtml } from "./processDocs/manualController";
 import { createHeatmapController } from "./heatmap";
 import { reduce, initialState, type AppState } from "./state";
 import { readLock, lockState, lockProps, clearProps, canCheckOut } from "./lockManager";
@@ -614,6 +616,7 @@ async function bootstrap() {
         <div class="tgroup">
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
+          <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("help")}<span style="font-size:11px">Manual</span></button>
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
@@ -816,6 +819,109 @@ async function bootstrap() {
     $("exportPng").addEventListener("click", guard(async () => {
       if (state.kind === "editing") await exportPng(modeler, baseName(state.fileId));
     }));
+
+    function manualDeps(): import("./processDocs/manualController").ManualDeps {
+      return {
+        graph: () => graphFromModeler(modeler),
+        processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
+        readProcessNote: () => docsClient.readProcessNote(docsFileId),
+        readNote: (id) => docsClient.readNote(docsFileId, id),
+        readAsset: (name) => docsClient.readAsset(docsFileId, name),
+      };
+    }
+
+    function downloadHtml(filename: string, html: string): void {
+      const blob = new Blob([html], { type: "text/html" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function showManualModal(renderedHtml: string): void {
+      const overlay = document.createElement("div");
+      overlay.className = "manual-overlay";
+
+      const box = document.createElement("div");
+      box.className = "manual-box";
+      box.setAttribute("role", "dialog");
+      box.setAttribute("aria-modal", "true");
+      box.setAttribute("aria-label", "Manual del proceso");
+
+      const head = document.createElement("div");
+      head.className = "manual-head";
+
+      const printBtn = document.createElement("button");
+      printBtn.className = "btn";
+      printBtn.type = "button";
+      printBtn.textContent = "Imprimir";
+
+      const exportBtn = document.createElement("button");
+      exportBtn.className = "btn";
+      exportBtn.type = "button";
+      exportBtn.textContent = "Exportar HTML";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "btn icon-only";
+      closeBtn.type = "button";
+      closeBtn.title = "Cerrar";
+      closeBtn.innerHTML = icon("close"); // icon() returns trusted SVG literals from icons.ts
+
+      head.appendChild(printBtn);
+      head.appendChild(exportBtn);
+      head.appendChild(closeBtn);
+
+      const body = document.createElement("div");
+      body.className = "manual-body markdown-body";
+      // renderedHtml is the output of renderMarkdown(), which passes through
+      // DOMPurify.sanitize() before being returned — safe to assign as innerHTML.
+      body.innerHTML = renderedHtml;
+
+      box.appendChild(head);
+      box.appendChild(body);
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+
+      const close = (): void => {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey);
+      };
+      function onKey(e: KeyboardEvent): void { if (e.key === "Escape") close(); }
+      closeBtn.addEventListener("click", close);
+      overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+      document.addEventListener("keydown", onKey);
+
+      exportBtn.addEventListener("click", () => {
+        void (async () => {
+          const exportedHtml = await exportManualHtml(manualDeps());
+          const name = (docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? "manual") + "-manual.html";
+          downloadHtml(name, exportedHtml);
+        })().catch(onError);
+      });
+
+      printBtn.addEventListener("click", () => {
+        void (async () => {
+          const printHtml = await exportManualHtml(manualDeps());
+          // Load via Blob URL into a new window — avoids document.write() and is
+          // safe in both browser and Electron renderer. The standalone HTML is
+          // self-contained (inlined images, no external deps), so the new window
+          // can print without network access.
+          const blob = new Blob([printHtml], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          const win = window.open(url, "_blank");
+          if (!win) { showToast("El navegador bloqueó la ventana emergente"); URL.revokeObjectURL(url); return; }
+          // Revoke after a delay to give the browser time to load the blob.
+          setTimeout(() => URL.revokeObjectURL(url), 5000);
+        })().catch(onError);
+      });
+    }
+
+    $("manual").addEventListener("click", () => void (async () => {
+      if (!docsFileId) { showToast("Abrí un diagrama primero"); return; }
+      const { html } = await buildManual(manualDeps());
+      showManualModal(html);
+    })().catch(onError));
     $("undo").addEventListener("click", () => { try { modeler.get("commandStack").undo(); } catch { /* nothing to undo */ } });
     $("redo").addEventListener("click", () => { try { modeler.get("commandStack").redo(); } catch { /* nothing to redo */ } });
     $("save").addEventListener("click", guard(async () => { if (state.kind === "editing" && state.lock === "mine") await save(state.fileId); }));
