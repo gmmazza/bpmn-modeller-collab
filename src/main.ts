@@ -675,9 +675,18 @@ async function bootstrap() {
           if (el) selectElementById(el.id);
         } else if (target.kind === "element") {
           selectElementById(target.element);
+        } else if (target.kind === "idea") {
+          inspector.setTab("documentacion");
+          docsController?.openIdeasTab?.();
         }
-        // idea: no-op until Plan 3
       },
+      ideasOverlays: {
+        add: (elementId: string, html: HTMLElement) =>
+          modeler.get("overlays").add(elementId, "ideas", { position: { top: -12, right: 12 }, html }),
+        remove: (id: string) => modeler.get("overlays").remove(id),
+      },
+      identity: () => me.name,
+      today: () => new Date().toISOString().slice(0, 10),
     });
 
     const $ = (id: string) => document.getElementById(id)!;

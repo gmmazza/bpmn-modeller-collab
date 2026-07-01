@@ -2,7 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import { renderNotePanel, type NotePanelHandlers } from "./notePanel";
 
 function handlers(): NotePanelHandlers {
-  return { onTabChange: vi.fn(), onModeChange: vi.fn(), onBodyInput: vi.fn(), onSave: vi.fn(), onCreateNote: vi.fn() };
+  return {
+    onTabChange: vi.fn(),
+    onModeChange: vi.fn(),
+    onBodyInput: vi.fn(),
+    onSave: vi.fn(),
+    onCreateNote: vi.fn(),
+    onIdeasHostReady: vi.fn(),
+  };
 }
 
 describe("renderNotePanel", () => {
@@ -49,5 +56,12 @@ describe("renderNotePanel", () => {
     const c = document.createElement("div");
     renderNotePanel(c, { tab: "step", mode: "read", stepLabel: null, body: "", hasNote: false }, handlers());
     expect(c.textContent).toContain("Seleccioná un paso");
+  });
+
+  it("renders an ideas host when the ideas tab is active", () => {
+    const c = document.createElement("div");
+    const h = handlers();
+    renderNotePanel(c, { tab: "ideas", mode: "read", stepLabel: null, body: "", hasNote: false }, h);
+    expect(c.querySelector("[data-ideas-host]")).not.toBeNull();
   });
 });
