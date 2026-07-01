@@ -11,12 +11,12 @@ function assertValidName(name: string): void {
   }
 }
 
-export function createFakeDir(): FileSystemDirectoryHandle & { _files: Map<string, { data: string; mtime: number }> } {
-  const files = new Map<string, { data: string; mtime: number }>();
+export function createFakeDir(): FileSystemDirectoryHandle & { _files: Map<string, { data: string; mtime: number; bin?: Uint8Array }> } {
+  const files = new Map<string, { data: string; mtime: number; bin?: Uint8Array }>();
   const dirs = new Map<string, ReturnType<typeof createFakeDir>>();
   let clock = 1;
 
-  function fileHandle(name: string, rec: { data: string; mtime: number }): any {
+  function fileHandle(name: string, rec: { data: string; mtime: number; bin?: Uint8Array }): any {
     return {
       kind: "file",
       name,
@@ -24,20 +24,25 @@ export function createFakeDir(): FileSystemDirectoryHandle & { _files: Map<strin
         return {
           name,
           lastModified: rec.mtime,
-          size: rec.data.length,
-          async text() {
-            return rec.data;
+          size: rec.bin ? rec.bin.length : rec.data.length,
+          async text() { return rec.data; },
+          async arrayBuffer() {
+            return (rec.bin ? rec.bin : new TextEncoder().encode(rec.data)).buffer;
           },
         };
       },
       async createWritable() {
-        let buf = "";
+        let sbuf = "";
+        let bbuf: Uint8Array | null = null;
         return {
-          async write(chunk: string) {
-            buf += chunk;
+          async write(chunk: string | Uint8Array | Blob) {
+            if (chunk instanceof Uint8Array) bbuf = chunk;
+            else if (typeof Blob !== "undefined" && chunk instanceof Blob) bbuf = new Uint8Array(await chunk.arrayBuffer());
+            else sbuf += chunk as string;
           },
           async close() {
-            rec.data = buf;
+            if (bbuf) { rec.bin = bbuf; rec.data = ""; }
+            else { rec.data = sbuf; rec.bin = undefined; }
             rec.mtime = ++clock;
           },
         };
