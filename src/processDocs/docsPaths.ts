@@ -17,3 +17,7 @@ export function indexPath(diagramId: string): string {
 export function assetsDir(diagramId: string): string {
   return `${docsDir(diagramId)}/assets`;
 }
+
+export function ideasPath(diagramId: string): string {
+  return `${docsDir(diagramId)}/_ideas.md`;
+}
