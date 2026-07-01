@@ -4,6 +4,16 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.2.1] — 2026-07-01
+
+### Corregido
+- **Live preview del editor**: las listas con viñetas, las listas numeradas y las
+  casillas de tareas (`- [ ]` / `- [x]`) ahora se renderizan correctamente. Antes
+  las viñetas y los números desaparecían y `- [x]` se mostraba como enlace. El
+  editor parsea con GFM y dibuja viñetas (•), números y checkboxes; el markdown
+  crudo se revela en la línea del cursor para poder editar. También se soporta
+  tachado `~~texto~~`.
+
 ## [0.2.0] — 2026-07-01
 
 Capa de **gestión de conocimiento de procesos** sobre el editor BPMN. El LLM vive
