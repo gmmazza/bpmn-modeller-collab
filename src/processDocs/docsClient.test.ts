@@ -50,4 +50,11 @@ describe("docsClient", () => {
     const back = await c.readAsset("x.bpmn", "imagen-1.png");
     expect(back && Array.from(back)).toEqual([1, 2, 3, 4]);
   });
+
+  it("writes and reads the ideas file", async () => {
+    const c = client();
+    await c.writeIdeas("x.bpmn", "# Ideas sueltas — x\n\n- [ ] (general) hola — Ana, 2026-07-01\n");
+    const md = await c.readIdeas("x.bpmn");
+    expect(md).toContain("hola");
+  });
 });
