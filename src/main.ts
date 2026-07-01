@@ -24,6 +24,9 @@ import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
+import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
+import { resolveCalledProcess, findEventCounterpart, type DiagramInfo } from "./processDocs/resolveTargets";
+import { extractInterProcessRefs, type RawEl } from "./processDocs/interProcessRefs";
 import { createLayersClient } from "./layers/layersClient";
 import { createLayerView, type LayerView } from "./layers/layerView";
 import { renderLayersPanel } from "./layers/layersPanel";
@@ -103,6 +106,7 @@ async function bootstrap() {
   let inspector: Inspector;
   let expanded = new Set<string>();
   let treeVersions = new Map<string, string>();
+  let folderIndex: DiagramInfo[] | null = null;
 
   function guard(fn: () => Promise<void>) {
     return () => fn().catch(onError);
@@ -252,6 +256,35 @@ async function bootstrap() {
 
   const baseName = (id: string) => id.replace(/\.bpmn$/i, "");
 
+  async function getFolderIndex(): Promise<DiagramInfo[]> {
+    if (folderIndex) return folderIndex;
+    const src: IndexSource = {
+      listBpmnFiles: async () => lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => e.path),
+      readXml: (file) => api.getXml(file).catch(() => null),
+    };
+    folderIndex = await buildFolderIndex(src);
+    return folderIndex;
+  }
+
+  function toRawEl(el: any): RawEl {
+    const bo = el.businessObject ?? {};
+    const type: string = bo.$type ?? "";
+    const raw: RawEl = { id: el.id, name: bo.name ?? "", type };
+    if (bo.calledElement) raw.calledElement = bo.calledElement;
+    const defs: any[] = bo.eventDefinitions ?? [];
+    if (defs.length) {
+      const dt: string = defs[0].$type ?? "";
+      const kind = dt.includes("Message") ? "message" : dt.includes("Signal") ? "signal" : dt.includes("Link") ? "link" : null;
+      if (kind) {
+        raw.eventKind = kind;
+        raw.isThrow = type.includes("ThrowEvent") || type.includes("EndEvent");
+        const ref = defs[0].messageRef ?? defs[0].signalRef;
+        raw.eventRefName = ref?.name ?? (kind === "link" ? defs[0].name : undefined);
+      }
+    }
+    return raw;
+  }
+
   async function mountModeler(): Promise<void> {
     const $ = (id: string) => document.getElementById(id)!;
     const canvasEl = $("canvas") as HTMLElement;
@@ -297,6 +330,27 @@ async function bootstrap() {
       heatmap = createHeatmapController(modeler, canvasEl);
       heatmap.start();
     }
+    // Single dblclick handler: Call Activity first, else Message/Signal counterpart.
+    modeler.get("eventBus").on("element.dblclick", (e: { element: any }) => {
+      const bo = e.element.businessObject;
+      if (bo?.$type === "bpmn:CallActivity" && bo.calledElement) {
+        void (async () => {
+          const idx = await getFolderIndex();
+          const file = resolveCalledProcess(bo.calledElement!, idx);
+          if (file) await openFile(file);
+          else showToast("No se encontró el proceso referenciado");
+        })().catch(onError);
+        return;
+      }
+      const els: RawEl[] = [toRawEl(e.element)];
+      const { events } = extractInterProcessRefs(els);
+      if (!events.length) return;
+      void (async () => {
+        const idx = await getFolderIndex();
+        const file = findEventCounterpart(events[0], docsFileId, idx);
+        if (file) { showToast(`Ir al proceso vinculado: ${baseNameOfFile(file)}`); await openFile(file); }
+      })().catch(onError);
+    });
   }
 
   function renderVizSettings(): void {
@@ -677,7 +731,16 @@ async function bootstrap() {
           const el = listDocumentableElements(modeler).find((e) => e.name === target.text);
           if (el) selectElementById(el.id);
         } else if (target.kind === "element") {
-          selectElementById(target.element);
+          void (async () => {
+            if (target.process) {
+              const idx = await getFolderIndex();
+              const file = resolveCalledProcess(target.process, idx) ?? `${target.process}.bpmn`;
+              if (file !== docsFileId && lastTree.some((e) => e.path === file)) {
+                await openFile(file);
+              }
+            }
+            selectElementById(target.element);
+          })().catch(onError);
         } else if (target.kind === "idea") {
           inspector.setTab("documentacion");
           docsController?.openIdeasTab?.();
@@ -998,6 +1061,7 @@ async function bootstrap() {
     const clean = all.filter((e) => !(e.kind === "file" && isSyncConflict(e.path)));
     renderSyncWarning(document.getElementById("sync")!, conflicts.map((f) => f.path));
     lastTree = clean;
+    folderIndex = null;
     const selectedId = state.kind === "editing" ? state.fileId : null;
     renderFileTree(
       document.getElementById("files")!,
