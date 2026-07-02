@@ -13,6 +13,9 @@ export interface IdeasPanelState {
   // When an element is selected on the canvas the panel focuses on it: the list
   // is filtered to its ideas and the quick-add anchors new ideas to it.
   focus: { id: string; label: string } | null;
+  // Elements that have anchored ideas (for the object filter shown when scope="ancladas").
+  objectOptions: { id: string; label: string }[];
+  objectFilter: string | null;
 }
 export interface IdeasPanelHandlers {
   onAdd(text: string): void;
@@ -21,6 +24,7 @@ export interface IdeasPanelHandlers {
   onOpen(id: string): void;
   onSetState(id: string, estado: IdeaState): void;
   onClearFocus(): void;
+  onObjectFilter(id: string | null): void;
 }
 
 const ESTADO_OPTS: EstadoFilter[] = ["todas", "activas", "cerradas", ...IDEA_STATES];
@@ -79,6 +83,22 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
     select(state.estado, ESTADO_OPTS as string[], "filterEstado", (v) => h.onEstado(v as EstadoFilter)),
     select(state.scope, SCOPE_OPTS as string[], "filterScope", (v) => h.onScope(v as ScopeFilter)),
   );
+  // object filter — only when scoping to anchored ideas
+  if (state.scope === "ancladas" && !state.focus) {
+    const objSel = document.createElement("select");
+    objSel.dataset.filterObject = "true";
+    const all = document.createElement("option");
+    all.value = ""; all.textContent = "todos los objetos";
+    objSel.appendChild(all);
+    for (const o of state.objectOptions) {
+      const opt = document.createElement("option");
+      opt.value = o.id; opt.textContent = o.label;
+      if (o.id === state.objectFilter) opt.selected = true;
+      objSel.appendChild(opt);
+    }
+    objSel.addEventListener("change", () => h.onObjectFilter(objSel.value || null));
+    filters.append(objSel);
+  }
 
   // list
   const list = document.createElement("ul");
@@ -88,14 +108,27 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
     li.className = "idea-row";
     li.dataset.ideaRow = "true";
     const chip = createStateChip(idea.estado, (s) => h.onSetState(idea.id, s));
-    // body (click to open)
+    // body (click to open) — differentiates anchored vs general visually
     const body = document.createElement("button");
     body.dataset.ideaOpen = "true";
     body.className = "idea-open";
-    const where = idea.anchor ? (idea.anchorLabel || idea.anchor) : "general";
-    const cN = idea.comments.length ? ` · 💬${idea.comments.length}` : "";
-    const mej = idea.mejora ? ` · → ${idea.mejora}` : "";
-    body.textContent = `${STATE_GLYPH[idea.estado]} ${idea.description.split("\n")[0]}  ·  ${where} · ${idea.autor}${cN}${mej}`;
+    const tag = document.createElement("span");
+    if (idea.anchor) {
+      tag.className = "idea-tag anchored";
+      tag.textContent = `📌 ${idea.anchorLabel || idea.anchor}`;
+    } else {
+      tag.className = "idea-tag general";
+      tag.textContent = "general";
+    }
+    const desc = document.createElement("span");
+    desc.className = "idea-desc";
+    desc.textContent = idea.description.split("\n")[0];
+    const cN = idea.comments.length ? ` 💬${idea.comments.length}` : "";
+    const mej = idea.mejora ? ` → ${idea.mejora}` : "";
+    const meta = document.createElement("span");
+    meta.className = "idea-meta";
+    meta.textContent = ` · ${idea.autor}${cN}${mej}`;
+    body.append(tag, desc, meta);
     body.addEventListener("click", () => h.onOpen(idea.id));
     li.append(chip, body);
     list.append(li);

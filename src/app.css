@@ -274,20 +274,31 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ideas-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1 1 auto; }
 .ideas-list .idea { display: flex; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .ideas-list .idea.done .idea-body { text-decoration: line-through; color: var(--muted); }
-.idea-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 10px; padding: 1px 6px; font-size: 11px; cursor: default; box-shadow: var(--shadow); }
+.idea-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; line-height: 1.2; cursor: default; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--accent-contrast); }
+.idea-badge-clickable:hover { filter: brightness(1.1); }
 
 /* Ideas panel v2 */
 .ideas-filters { display: flex; gap: 8px; margin: 6px 0; }
 .ideas-filters select { flex: 1; }
-.idea-row { display: flex; gap: 6px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); }
-.idea-state-chip { flex: none; }
-.idea-open { flex: 1; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; }
+.idea-row { display: flex; gap: 6px; align-items: flex-start; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.idea-open { flex: 1; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.idea-desc { flex: 1 1 auto; min-width: 0; }
+.idea-meta { color: var(--muted); font-size: 12px; }
+/* anchored vs general differentiation */
+.idea-tag { flex: none; font-size: 11px; border-radius: 999px; padding: 0 7px; line-height: 1.6; }
+.idea-tag.anchored { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.idea-tag.general { background: var(--hover, rgba(127,127,127,0.14)); color: var(--muted); }
 .idea-thread { display: flex; flex-direction: column; gap: 8px; height: 100%; box-sizing: border-box; }
 .thread-head { display: flex; justify-content: space-between; }
 .thread-meta { font-size: 12px; color: var(--muted); }
 .thread-desc { width: 100%; min-height: 80px; box-sizing: border-box; }
-.thread-comments { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 4px; }
 .thread-promote { align-self: flex-start; }
+/* comments as a chat */
+.thread-comments { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.thread-comment { display: flex; flex-direction: column; gap: 2px; }
+.thread-comment-meta { font-size: 11px; color: var(--muted); }
+.thread-comment-bubble { background: var(--hover, rgba(127,127,127,0.12)); border-radius: 10px; padding: 6px 10px; white-space: pre-wrap; word-break: break-word; align-self: flex-start; max-width: 90%; }
+.thread-comment-empty { color: var(--muted); }
 
 /* Idea mode — canvas overlay popover */
 .idea-badge-clickable { cursor: pointer; }
@@ -299,9 +310,18 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ideas-focus-clear { flex: none; background: transparent; border: none; color: var(--accent, #2563eb); cursor: pointer; font-size: 12px; }
 .ideas-empty { list-style: none; color: var(--muted); font-size: 13px; padding: 6px 0; }
 
-/* State chip (glyph + menu) used in idea rows and the thread head */
-.idea-state-chip { cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 6px; font-size: 12px; white-space: nowrap; }
-.idea-state-menu { min-width: 140px; }
+/* Idea-mode toggle — clearly evident when active */
+#toggle-idea-mode.active { background: var(--accent); color: var(--accent-contrast); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+#toggle-idea-mode.active svg { color: var(--accent-contrast); }
+
+/* State chip — icon-only, colored per state; label in tooltip + menu */
+.idea-state-chip { flex: none; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; padding: 0; }
+.idea-state-chip.state-pendiente { color: #6b7280; }
+.idea-state-chip.state-haciendo  { color: #2563eb; }
+.idea-state-chip.state-pausado   { color: #d97706; }
+.idea-state-chip.state-hecho     { color: #16a34a; }
+.idea-state-chip.state-rechazado { color: #dc2626; }
+.idea-state-menu { min-width: 150px; }
 .idea-state-option { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
 .idea-state-option:hover { background: var(--hover, rgba(127,127,127,0.12)); }
 .idea-state-option.current { font-weight: 600; }
