@@ -327,7 +327,7 @@ async function bootstrap() {
     tagPools();
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
-    modeler.get("eventBus").on("commandStack.changed", () => tagPools());
+    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); });
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -684,8 +684,7 @@ async function bootstrap() {
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
-        <button class="btn primary" id="editbtn" type="button" hidden>Editar</button>
-        <button class="btn" id="checkin" type="button" hidden>Check in</button>
+        <button class="btn" id="editmode" type="button" hidden></button>
         <button class="btn" id="close" type="button" hidden>Cerrar</button>
         <span class="divider"></span>
         <button class="btn icon-only" id="toggle-inspector" type="button" title="Mostrar panel lateral">${icon("panelRight")}</button>
@@ -1087,11 +1086,13 @@ async function bootstrap() {
     $("undo").addEventListener("click", () => { try { modeler.get("commandStack").undo(); } catch { /* nothing to undo */ } });
     $("redo").addEventListener("click", () => { try { modeler.get("commandStack").redo(); } catch { /* nothing to redo */ } });
     $("save").addEventListener("click", guard(async () => { if (state.kind === "editing" && state.lock === "mine") await save(state.fileId); }));
-    $("editbtn").addEventListener("click", guard(async () => {
-      if (state.kind === "editing" && state.lock !== "mine") await checkOut(state.fileId);
-    }));
-    $("checkin").addEventListener("click", guard(async () => {
-      if (state.kind === "editing") await checkIn(state.fileId);
+    // Single mode control: its meaning depends on the current lock —
+    // free → check out (Editar); mine → check in; theirs → request/steal.
+    $("editmode").addEventListener("click", guard(async () => {
+      if (state.kind !== "editing") return;
+      if (state.lock === "mine") await checkIn(state.fileId);
+      else if (state.lock === "theirs") await requestEdit(state.fileId);
+      else await checkOut(state.fileId);
     }));
     $("close").addEventListener("click", guard(async () => {
       if (state.kind === "editing") await closeFile(state.fileId);
@@ -1139,26 +1140,34 @@ async function bootstrap() {
   function render() {
     const editing = state.kind === "editing";
     const el = (id: string) => document.getElementById(id);
+    const mine = state.kind === "editing" && state.lock === "mine";
+    const theirs = state.kind === "editing" && state.lock === "theirs";
+    // Notorious mode indicator on the whole app: editing (accent) vs read-only.
+    document.body.classList.toggle("app-editing", mine);
+    document.body.classList.toggle("app-readonly", editing && !mine);
     const chip = el("filechip");
     if (chip) {
       if (state.kind === "editing") {
-        const st = state.lock === "mine" ? "editando" : state.lock === "theirs" ? "solo lectura" : "libre";
-        chip.textContent = `${state.fileId} · ${st}`;
-        chip.classList.toggle("lock-mine", state.lock === "mine");
-        chip.classList.toggle("lock-theirs", state.lock === "theirs");
+        const label = mine ? `✏️ Editando · ${state.fileId}`
+          : theirs ? `🔒 Solo lectura · ${state.fileId}`
+          : `👁 Solo lectura · ${state.fileId}`;
+        chip.textContent = label;
+        chip.classList.toggle("lock-mine", mine);
+        chip.classList.toggle("lock-theirs", theirs);
       } else {
         chip.textContent = "";
         chip.classList.remove("lock-mine", "lock-theirs");
       }
     }
-    const eb = el("editbtn");
-    const ci = el("checkin");
+    const em = el("editmode") as HTMLButtonElement | null;
     const cl = el("close");
-    if (eb) {
-      (eb as HTMLElement).hidden = !editing || (state.kind === "editing" && state.lock === "mine");
-      eb.textContent = state.kind === "editing" && state.lock === "theirs" ? "Tomar edición" : "Editar";
+    if (em) {
+      em.hidden = !editing;
+      em.classList.remove("primary", "btn-checkin");
+      if (mine) { em.textContent = "✓ Check in"; em.classList.add("btn-checkin"); em.title = "Guardar y liberar el archivo"; }
+      else if (theirs) { em.textContent = "Solicitar edición"; em.title = "Pedir permiso para editar (lo tiene otra persona)"; }
+      else { em.textContent = "✏️ Editar"; em.classList.add("primary"); em.title = "Tomar el archivo para editar"; }
     }
-    if (ci) (ci as HTMLElement).hidden = !editing || (state.kind === "editing" && state.lock !== "mine");
     if (cl) (cl as HTMLElement).hidden = !editing;
     if (!editing) {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
@@ -1173,6 +1182,7 @@ async function bootstrap() {
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
     if (undo) undo.disabled = !canEdit;
     if (redo) redo.disabled = !canEdit;
+    armIdle(); // (re)start the inactivity timer when we hold the lock; clears otherwise
   }
 
   async function refreshFileList() {
@@ -1255,6 +1265,7 @@ async function bootstrap() {
     if (lockState(readLock(after), me) !== "mine") { showToast("No se pudo tomar — otra persona lo tomó"); await refreshFileList(); return; }
     openHeadRevisionId = after.headRevisionId ?? openHeadRevisionId;
     editor.setReadOnly(false);
+    await clearMyRequest(fileId); // I'm editing now — drop any pending request of mine
     dispatch({ type: "lockChanged", lock: "mine" });
     await refreshFileList();
     showToast("Editando — tenés el archivo tomado");
@@ -1299,6 +1310,59 @@ async function bootstrap() {
     }
     dispatch({ type: "closedFile" });
     await refreshFileList();
+  }
+
+  // ---- Request-to-edit (ask the current holder — human or LLM agent — to release) ----
+  // A plain `<file>.req` JSON sidecar reuses the same synced-folder + watcher flow:
+  // the requester writes it; the holder's poll surfaces it; releasing frees the file.
+  let pendingRequestFile: string | null = null;
+  let lastReqNotice = "";
+  async function requestEdit(fileId: string) {
+    await api.writePath(`${fileId}.req`, JSON.stringify({ by: me.email, name: me.name, at: new Date().toISOString() }));
+    pendingRequestFile = fileId;
+    showToast("Pedido de edición enviado — te aviso cuando se libere");
+  }
+  async function clearMyRequest(fileId: string) {
+    try { await api.deletePath(`${fileId}.req`); } catch { /* already gone */ }
+    if (pendingRequestFile === fileId) pendingRequestFile = null;
+  }
+  // Called each poll: nudge the holder if someone requested; notify the requester
+  // once the file is free.
+  async function pollEditRequests() {
+    if (state.kind !== "editing") return;
+    const fileId = state.fileId;
+    if (state.lock === "mine") {
+      const raw = await api.readPath(`${fileId}.req`).catch(() => null);
+      if (raw) {
+        try {
+          const req = JSON.parse(raw) as { by?: string; name?: string };
+          if (req.by && req.by !== me.email) {
+            const key = `${fileId}:${req.by}`;
+            if (lastReqNotice !== key) { lastReqNotice = key; showToast(`🔔 ${req.name || req.by} pide editar — hacé Check in para cederle`); }
+          }
+        } catch { /* ignore malformed */ }
+      } else { lastReqNotice = ""; }
+    } else if (pendingRequestFile === fileId && state.lock === "free") {
+      // the holder released — my turn
+      await clearMyRequest(fileId);
+      showToast(`✅ Ya podés editar ${fileId} — tocá «Editar»`);
+    }
+  }
+
+  // ---- Idle auto-release: drop the lock after a while with no edits, so a
+  // forgotten check-out doesn't block others. Reset whenever the file is edited.
+  const IDLE_RELEASE_MS = 8 * 60 * 1000; // 8 minutes
+  let idleTimer: number | null = null;
+  function clearIdle(): void { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } }
+  function armIdle(): void {
+    clearIdle();
+    if (!(state.kind === "editing" && state.lock === "mine")) return;
+    idleTimer = window.setTimeout(() => void (async () => {
+      if (state.kind === "editing" && state.lock === "mine") {
+        await checkIn(state.fileId);
+        showToast("Liberado por inactividad — sigue en solo lectura");
+      }
+    })().catch(onError), IDLE_RELEASE_MS);
   }
 
   async function loadHistory(fileId: string) {
@@ -1374,6 +1438,7 @@ async function bootstrap() {
     if (reloadOpen && openId) await handleExternalChange(openId);
     if (structureChanged) await refreshFileList();
     else treeVersions = new Map(clean.filter((e) => e.kind === "file" && e.version).map((e) => [e.path, e.version as string]));
+    await pollEditRequests();
   }
 
   async function handleExternalChange(fileId: string) {
