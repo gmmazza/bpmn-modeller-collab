@@ -292,6 +292,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* Idea mode — canvas overlay popover */
 .idea-badge-clickable { cursor: pointer; }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
+/* In idea mode the canvas is a clean comment-style overlay: hide the editing
+   palette and the context pad so they don't clutter or fight the idea popover. */
+body.idea-mode-active .djs-palette,
+body.idea-mode-active .djs-context-pad { display: none !important; }
 .idea-pop-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; color: var(--muted); }
 .idea-pop-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
 .idea-pop-row { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
