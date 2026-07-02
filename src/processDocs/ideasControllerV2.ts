@@ -6,7 +6,7 @@ import { buildMejora } from "./promoteToMejora";
 import { renderIdeasPanelV2 } from "./ideasPanelView";
 import { renderIdeaThread } from "./ideaThreadView";
 import { requiresMotivo, type IdeaState } from "./ideaState";
-import { addComment } from "./ideaComments";
+import { addComment, parseStateLog } from "./ideaComments";
 
 export interface IdeasV2Deps {
   ideasClient: IdeasClient;
@@ -18,6 +18,7 @@ export interface IdeasV2Deps {
   getSelected(): { id: string; name: string } | null;
   clearSelection?(): void;
   selectElement?(elementId: string): void;
+  aiAuthor?(): string; // author used to attribute external (agent) edits
   promptMotivo(estado: string): string | null | Promise<string | null>;
   onAnchoredCounts?(counts: Array<{ elementId: string; count: number }>): void;
 }
@@ -37,8 +38,31 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   }
 
   async function reload(): Promise<void> {
-    ideas = await deps.ideasClient.listIdeas(deps.diagramId());
+    let list = await deps.ideasClient.listIdeas(deps.diagramId());
+    if (await reconcileExternal(list)) list = await deps.ideasClient.listIdeas(deps.diagramId());
+    ideas = list;
     deps.onAnchoredCounts?.(activeAnchoredCounts(ideas));
+  }
+
+  // If an idea's frontmatter estado was changed OUTSIDE the app (an agent edited
+  // the .md directly) without appending a state-log line, record that change now,
+  // attributed to the configured IA author. Idempotent: once logged, estado
+  // matches the last log entry so it won't re-fire.
+  async function reconcileExternal(list: IdeaNote[]): Promise<boolean> {
+    let any = false;
+    for (const idea of list) {
+      const logs = idea.comments.filter((c) => parseStateLog(c.text));
+      if (logs.length === 0) continue; // no history yet → creation state, not an external change
+      const last = parseStateLog(logs[logs.length - 1].text);
+      if (last && last.estado !== idea.estado) {
+        const author = deps.aiAuthor?.() ?? "IA";
+        const updated = { ...idea, comments: addComment(idea.comments, { author, date: deps.today(), text: `[${idea.estado}]` }) };
+        await deps.ideasClient.writeIdea(deps.diagramId(), updated);
+        any = true;
+      }
+    }
+    if (any) await deps.ideasClient.writeIndex(deps.diagramId(), deps.processName());
+    return any;
   }
   async function persist(note: IdeaNote): Promise<void> {
     await deps.ideasClient.writeIdea(deps.diagramId(), note);

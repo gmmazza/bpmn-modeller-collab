@@ -2,6 +2,12 @@ import type { IdeaNote } from "./ideaNote";
 import { STATE_GLYPH, type IdeaState } from "./ideaState";
 import { createStateChip } from "./stateChip";
 import { parseStateLog } from "./ideaComments";
+import { isAiAuthor } from "./aiIdentity";
+
+// author label with a 🤖 marker when the author is an AI/agent identity.
+function authorLabel(name: string): string {
+  return isAiAuthor(name) ? `🤖 ${name}` : name;
+}
 
 export interface ThreadHandlers {
   onBack(): void;
@@ -53,7 +59,7 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
       li.className = "thread-log";
       li.dataset.threadLog = "true";
       const g = STATE_GLYPH[log.estado as IdeaState] ?? "•";
-      li.textContent = `${g} ${c.author} cambió a «${log.estado}»${log.motivo ? ` — ${log.motivo}` : ""} · ${c.date}`;
+      li.textContent = `${g} ${authorLabel(c.author)} cambió a «${log.estado}»${log.motivo ? ` — ${log.motivo}` : ""} · ${c.date}`;
       comments.append(li);
       shown++;
       continue;
@@ -62,7 +68,7 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
     li.className = "thread-comment";
     const metaEl = document.createElement("div");
     metaEl.className = "thread-comment-meta";
-    metaEl.textContent = `${c.author} · ${c.date}`;
+    metaEl.textContent = `${authorLabel(c.author)} · ${c.date}`;
     const bubble = document.createElement("div");
     bubble.className = "thread-comment-bubble";
     bubble.textContent = c.text;
