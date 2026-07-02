@@ -679,7 +679,6 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
-          <button class="btn icon-only" id="toggle-idea-mode" type="button" title="Modo idea">💡</button>
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
@@ -703,14 +702,17 @@ async function bootstrap() {
       { id: "historial", label: "Historial" },
       { id: "documentacion", label: "Documentación" },
       { id: "ideas", label: "Ideas" },
-    ]);
+    ], (tabId) => {
+      // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
+      const on = tabId === "ideas";
+      void ideaMode?.setEnabled(on);
+      if (on) void ideasCtl?.refresh();
+    });
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
     inspector.paneEl("propiedades").id = "propspanel";
     inspector.paneEl("capas").id = "layerspanel";
     inspector.paneEl("capas").classList.add("layers-panel");
     inspector.paneEl("historial").id = "history";
-    // The Ideas tab only exists while idea mode is on (revealed by ideaMode.onModeChange).
-    inspector.setTabVisible("ideas", false);
     inspector.hide();
     setupInspectorResize();
 
@@ -791,11 +793,9 @@ async function bootstrap() {
     // in-memory list (no async reload) so it can't race with an in-flight write.
     docsSelectionCbs.push(() => { if (ideaMode?.isOn()) { ideasCtl?.syncSelection(); highlightIdeaElement(selectedId); } });
 
-    // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
+    // Open the Ideas tab (selecting it enables idea mode via the inspector onChange).
     function showIdeasTab(): void {
-      inspector.setTabVisible("ideas", true);
       inspector.setTab("ideas");
-      void ideasCtl?.refresh();
     }
 
     // ---- Idea mode ----
@@ -833,7 +833,6 @@ async function bootstrap() {
         return r ? { left: r.right, top: r.top } : { left: 100, top: 100 };
       },
       openThreadInPanel: (ideaId) => {
-        inspector.setTabVisible("ideas", true);
         inspector.setTab("ideas");
         void ideasCtl?.openThread(ideaId);
       },
@@ -841,32 +840,15 @@ async function bootstrap() {
         // badge click → select the element (panel focuses on it) + surface the tab
         const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
         if (el) (modeler?.get("selection") as any)?.select?.(el);
-        inspector.setTabVisible("ideas", true);
         inspector.setTab("ideas");
       },
       onPanelShouldRefresh: () => { void ideasCtl?.refresh(); },
-      persistGet: () => localStorage.getItem("bpmn-compartida.ideaMode") === "1",
-      persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
-      onModeChange: (on) => {
-        document.getElementById("toggle-idea-mode")?.classList.toggle("active", on);
-        // Idea mode keeps normal editing/selection; it just reveals the Ideas tab
-        // (+ badges) and, when on, focuses it.
-        inspector.setTabVisible("ideas", on);
-        if (on) {
-          inspector.setTab("ideas");
-          void ideasCtl?.refresh();
-        } else {
-          highlightIdeaElement(null);
-          if (inspector.activeTab() === "ideas") inspector.setTab("documentacion");
-        }
-      },
+      // Idea mode is now driven by the Ideas tab being active (see inspector
+      // onChange), not a persisted toggle — so it's ephemeral.
+      persistGet: () => false,
+      persistSet: () => { /* no-op: tab-driven */ },
+      onModeChange: (on) => { if (!on) highlightIdeaElement(null); },
     });
-
-    // Set initial button state from persisted toggle value; reveal the Ideas tab
-    // if idea mode was left on (without stealing focus from the current tab).
-    document.getElementById("toggle-idea-mode")?.classList.toggle("active", ideaMode.isOn());
-    if (ideaMode.isOn()) inspector.setTabVisible("ideas", true);
-    document.getElementById("toggle-idea-mode")?.addEventListener("click", () => void ideaMode.toggle());
 
     const $ = (id: string) => document.getElementById(id)!;
     $("folderchip").innerHTML = `${icon("folder")} <span class="folder-path"></span>`;
