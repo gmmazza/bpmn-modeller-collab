@@ -760,9 +760,15 @@ async function bootstrap() {
     });
 
     // ---- Ideas panel (own inspector tab, shown only in idea mode) ----
+    // Mount into a CHILD of the pane, not the pane itself: the ideas views call
+    // `container.className = ...` which would otherwise wipe the pane's
+    // "inspector-pane" class and break the `[hidden]` hide-when-inactive rule
+    // (making the panel bleed into every tab).
+    const ideasPaneHost = document.createElement("div");
+    inspector.paneEl("ideas").appendChild(ideasPaneHost);
     ideasCtl = createIdeasControllerV2({
       ideasClient: ideasClientV2,
-      mount: inspector.paneEl("ideas"),
+      mount: ideasPaneHost,
       diagramId: () => docsFileId,
       processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
       identity: () => me.name,
