@@ -12,9 +12,12 @@ export function createStateChip(
   const chip = document.createElement("button");
   chip.type = "button";
   chip.dataset[dataAttr] = "true";
-  chip.className = "idea-state-chip";
+  // icon-only chip (glyph), colored per state; the word lives in the tooltip and
+  // the menu so the state column isn't a repetitive wall of text.
+  chip.className = `idea-state-chip state-${current}`;
   chip.title = current;
-  chip.textContent = `${STATE_GLYPH[current]} ${current}`;
+  chip.setAttribute("aria-label", current);
+  chip.textContent = STATE_GLYPH[current];
   chip.addEventListener("click", (e) => {
     e.stopPropagation();
     openStateMenu(chip, current, onPick);

@@ -25,7 +25,14 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   let ideas: IdeaNote[] = [];
   let estado: EstadoFilter = "todas";
   let scope: ScopeFilter = "todas";
+  let objectFilter: string | null = null;
   let openId: string | null = null;
+
+  function anchoredObjects(): { id: string; label: string }[] {
+    const seen = new Map<string, string>();
+    for (const i of ideas) if (i.anchor && !seen.has(i.anchor)) seen.set(i.anchor, i.anchorLabel || i.anchor);
+    return [...seen.entries()].map(([id, label]) => ({ id, label }));
+  }
 
   async function reload(): Promise<void> {
     ideas = await deps.ideasClient.listIdeas(deps.diagramId());
@@ -56,13 +63,15 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
     const focus = sel ? { id: sel.id, label: sel.name } : null;
     let shown = filterIdeas(ideas, { estado, scope });
     if (focus) shown = shown.filter((i) => i.anchor === focus.id);
-    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, focus }, {
+    else if (scope === "ancladas" && objectFilter) shown = shown.filter((i) => i.anchor === objectFilter);
+    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, focus, objectOptions: anchoredObjects(), objectFilter }, {
       onAdd: (text) => void add(text),
       onEstado: (e) => { estado = e; render(); },
-      onScope: (s) => { scope = s; render(); },
+      onScope: (s) => { scope = s; if (s !== "ancladas") objectFilter = null; render(); },
       onOpen: (id) => { openId = id; render(); },
       onSetState: (id, e) => { const idea = ideas.find((i) => i.id === id); if (idea) void setState(idea, e); },
       onClearFocus: () => { deps.clearSelection?.(); render(); },
+      onObjectFilter: (id) => { objectFilter = id; render(); },
     });
   }
 

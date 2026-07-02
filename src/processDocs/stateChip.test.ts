@@ -4,11 +4,12 @@ import { createStateChip } from "./stateChip";
 afterEach(() => { document.body.innerHTML = ""; });
 
 describe("createStateChip", () => {
-  it("shows the current state's glyph and label", () => {
+  it("shows the current state's glyph (icon-only) with the label in the tooltip", () => {
     const chip = createStateChip("haciendo", vi.fn());
     expect(chip.dataset.ideaState).toBe("true");
-    expect(chip.textContent).toContain("◑");
-    expect(chip.textContent).toContain("haciendo");
+    expect(chip.textContent).toBe("◑");
+    expect(chip.title).toBe("haciendo");
+    expect(chip.className).toContain("state-haciendo");
   });
 
   it("opens a menu with the five states on click", () => {

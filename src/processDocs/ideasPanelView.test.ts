@@ -3,11 +3,12 @@ import { renderIdeasPanelV2, STATE_GLYPH, type IdeasPanelHandlers } from "./idea
 import type { IdeaNote } from "./ideaNote";
 
 function handlers(): IdeasPanelHandlers {
-  return { onAdd: vi.fn(), onEstado: vi.fn(), onScope: vi.fn(), onOpen: vi.fn(), onSetState: vi.fn(), onClearFocus: vi.fn() };
+  return { onAdd: vi.fn(), onEstado: vi.fn(), onScope: vi.fn(), onOpen: vi.fn(), onSetState: vi.fn(), onClearFocus: vi.fn(), onObjectFilter: vi.fn() };
 }
 function n(p: Partial<IdeaNote>): IdeaNote {
   return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [], ...p };
 }
+const base = { objectOptions: [] as { id: string; label: string }[], objectFilter: null as string | null };
 afterEach(() => { document.body.innerHTML = ""; });
 
 describe("renderIdeasPanelV2", () => {
@@ -20,7 +21,7 @@ describe("renderIdeasPanelV2", () => {
     const h = handlers();
     renderIdeasPanelV2(c, {
       ideas: [n({ id: "idea-1", estado: "haciendo", description: "primera", anchor: "A", anchorLabel: "Val", comments: [{ author: "b", date: "d", text: "t" }] }), n({ id: "idea-2", estado: "rechazado", description: "segunda" })],
-      estado: "todas", scope: "todas", focus: null,
+      estado: "todas", scope: "todas", focus: null, ...base,
     }, h);
     const rows = c.querySelectorAll("[data-idea-row]");
     expect(rows).toHaveLength(2);
@@ -33,7 +34,7 @@ describe("renderIdeasPanelV2", () => {
   it("quick-add fires onAdd with the text and clears the input; Enter also submits", () => {
     const c = document.createElement("div");
     const h = handlers();
-    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: null }, h);
+    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: null, ...base }, h);
     const input = c.querySelector<HTMLInputElement>("[data-idea-input]")!;
     input.value = "nueva";
     (c.querySelector("[data-idea-add]") as HTMLButtonElement).click();
@@ -47,7 +48,7 @@ describe("renderIdeasPanelV2", () => {
   it("shows a focus header with 'ver todas' when an element is focused", () => {
     const c = document.createElement("div");
     const h = handlers();
-    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: { id: "A", label: "Validar" } }, h);
+    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: { id: "A", label: "Validar" }, ...base }, h);
     expect(c.textContent).toContain("Ideas de: Validar");
     (c.querySelector("[data-idea-clear-focus]") as HTMLButtonElement).click();
     expect(h.onClearFocus).toHaveBeenCalled();
@@ -58,7 +59,7 @@ describe("renderIdeasPanelV2", () => {
   it("the estado filter fires onEstado", () => {
     const c = document.createElement("div");
     const h = handlers();
-    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: null }, h);
+    renderIdeasPanelV2(c, { ideas: [], estado: "todas", scope: "todas", focus: null, ...base }, h);
     const sel = c.querySelector<HTMLSelectElement>("[data-filter-estado]")!;
     sel.value = "activas";
     sel.dispatchEvent(new Event("change"));
@@ -68,7 +69,7 @@ describe("renderIdeasPanelV2", () => {
   it("the row state chip opens a menu and picking a state fires onSetState", () => {
     const c = document.createElement("div");
     const h = handlers();
-    renderIdeasPanelV2(c, { ideas: [n({ id: "idea-1" })], estado: "todas", scope: "todas", focus: null }, h);
+    renderIdeasPanelV2(c, { ideas: [n({ id: "idea-1" })], estado: "todas", scope: "todas", focus: null, ...base }, h);
     (c.querySelector("[data-idea-state]") as HTMLButtonElement).click();
     (document.querySelector('[data-state-option="hecho"]') as HTMLButtonElement).click();
     expect(h.onSetState).toHaveBeenCalledWith("idea-1", "hecho");

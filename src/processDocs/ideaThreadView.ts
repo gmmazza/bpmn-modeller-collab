@@ -35,8 +35,21 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
   comments.className = "thread-comments";
   for (const c of idea.comments) {
     const li = document.createElement("li");
-    li.textContent = `${c.author}, ${c.date}: ${c.text}`;
+    li.className = "thread-comment";
+    const metaEl = document.createElement("div");
+    metaEl.className = "thread-comment-meta";
+    metaEl.textContent = `${c.author} · ${c.date}`;
+    const bubble = document.createElement("div");
+    bubble.className = "thread-comment-bubble";
+    bubble.textContent = c.text;
+    li.append(metaEl, bubble);
     comments.append(li);
+  }
+  if (idea.comments.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "thread-comment-empty";
+    empty.textContent = "Sin comentarios todavía.";
+    comments.append(empty);
   }
 
   const commentBox = document.createElement("input");

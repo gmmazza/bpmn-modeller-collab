@@ -782,8 +782,9 @@ async function bootstrap() {
       onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
     });
     // In idea mode, selecting an element on the canvas focuses the ideas panel on
-    // it (its ideas + anchored quick-add). Normal selection/editing is preserved.
-    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) ideasCtl?.syncSelection(); });
+    // it (its ideas + anchored quick-add). refresh() (reload) guarantees the list
+    // reflects ideas added in this or another session. Normal editing is preserved.
+    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) void ideasCtl?.refresh(); });
 
     // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
     function showIdeasTab(): void {
@@ -795,7 +796,8 @@ async function bootstrap() {
     // ---- Idea mode ----
     const ideaOverlayHost = {
       add: (elementId: string, html: HTMLElement) =>
-        (modeler.get("overlays") as any).add(elementId, "ideas", { position: { top: -12, right: 12 }, html }),
+        // top-LEFT so the badge doesn't collide with the context pad (top-right on selection).
+        (modeler.get("overlays") as any).add(elementId, "ideas", { position: { top: -14, left: -10 }, html }),
       remove: (id: string) => (modeler.get("overlays") as any).remove(id),
     };
     ideaMode = createIdeaMode({
