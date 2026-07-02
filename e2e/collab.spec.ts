@@ -139,6 +139,33 @@ test("compare mode: split with diff on both panes (incl. moved), radio switches 
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test("compare: copy an element from the historical pane into the current diagram", async ({ page }) => {
+  const shape = (id: string, x: number, y: number, w = 100, h = 80) =>
+    `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
+  const wrap = (proc: string, di: string) =>
+    `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="D" targetNamespace="x"><bpmn:process id="P" isExecutable="false">${proc}</bpmn:process><bpmndi:BPMNDiagram id="Dg"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">${di}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`;
+  const CUR = wrap(`<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/>`, shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59));
+  // revision has an extra TaskB (with a documentation child) that we'll copy back in.
+  const REV = wrap(
+    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Paso viejo"><bpmn:documentation>nota</bpmn:documentation></bpmn:task>`,
+    shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59) + shape("TaskB", 250, 200, 120),
+  );
+  await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
+  await page.getByText("📄 test.bpmn").click();
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
+
+  // current diagram has no TaskB yet.
+  await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(0);
+  // select TaskB in the historical (right) pane → copy button enables.
+  await page.locator('#canvas2 .djs-element[data-element-id="TaskB"] .djs-hit').click();
+  await expect(page.locator(".compare-copy")).toBeEnabled();
+  await page.locator(".compare-copy").click();
+  // it lands in the current editable diagram, which becomes publishable.
+  await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(1);
+  await expect(page.locator("#save")).toBeEnabled();
+});
+
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {
   // Regression for the layout bug: on a narrower window the long chip
   // ("Reservado por Otro hasta HH:MM · Borrador sin publicar") plus Publicar /

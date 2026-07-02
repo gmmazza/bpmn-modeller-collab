@@ -71,7 +71,7 @@ import {
   renderPreviewBar,
   renderCompareBar,
 } from "./ui";
-import { createBpmnViewer, syncViewport, type ViewerLike } from "./compareView";
+import { createCompareModeler, syncViewport, type ViewerLike } from "./compareView";
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1540,7 +1540,11 @@ async function bootstrap() {
     c2.hidden = false;
     $el("canvasarea")?.classList.add("split");
     document.body.classList.add("app-comparing");
-    if (!compareViewer) compareViewer = await createBpmnViewer(c2);
+    if (!compareViewer) {
+      compareViewer = await createCompareModeler(c2);
+      // Selecting elements in the historical pane enables "Copiar al actual".
+      compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow());
+    }
     await renderCompare();
     renderCompareBarNow();
     render();
@@ -1590,14 +1594,33 @@ async function bootstrap() {
   }
   function renderCompareBarNow(): void {
     if (!comparing || !compareRevId) return;
+    let copyCount = 0;
+    try { copyCount = compareViewer ? compareViewer.get("selection").get().length : 0; } catch { copyCount = 0; }
     renderCompareBar($el("compare")!, {
       base: compareBase,
       revId: compareRevId,
       revisions: comparePoints,
+      copyCount,
+      canCopy: compareBase === "actual", // paste only into the editable "Actual" pane
       onBase: setCompareBase,
       onRev: setCompareRev,
+      onCopy: () => void copySelectionToActual().catch(onError),
       onExit: () => void exitCompare().catch(onError),
     });
+  }
+  // Copy the elements selected in the historical (right) pane into the current
+  // editable diagram, with all their properties — reusing bpmn-js copyPaste. Only
+  // valid when base = "Actual" (the left pane is then the live working modeler).
+  async function copySelectionToActual(): Promise<void> {
+    if (!compareViewer || compareBase !== "actual") return;
+    const selected = compareViewer.get("selection").get();
+    if (!selected.length) return;
+    const tree = compareViewer.get("copyPaste").copy(selected); // serializable descriptor
+    const targetCanvas = modeler.get("canvas");
+    modeler.get("clipboard").set(tree);
+    const vb = targetCanvas.viewbox();
+    modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
+    showToast(`${selected.length} elemento(s) copiados a tu versión actual`);
   }
   function teardownCompare(): void {
     comparing = false;
