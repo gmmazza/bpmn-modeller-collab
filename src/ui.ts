@@ -141,6 +141,31 @@ export function renderSyncWarning(container: HTMLElement, names: string[]): void
 
 // In-app text prompt. Electron's renderer does not support window.prompt(), so we
 // render our own modal. Resolves with the trimmed value, or null on cancel/empty.
+// In-app yes/no confirmation (window.confirm is unsupported in Electron's renderer).
+export function confirmModal(message: string, okLabel = "Aceptar"): Promise<boolean> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true">
+        <p class="modal-msg"></p>
+        <div class="modal-actions">
+          <button class="modal-cancel" type="button">Cancelar</button>
+          <button class="modal-ok" type="button"></button>
+        </div>
+      </div>`;
+    (overlay.querySelector(".modal-msg") as HTMLElement).textContent = message;
+    (overlay.querySelector(".modal-ok") as HTMLButtonElement).textContent = okLabel;
+    function done(v: boolean): void { overlay.remove(); document.removeEventListener("keydown", onKey, true); resolve(v); }
+    function onKey(e: KeyboardEvent): void { if (e.key === "Escape") done(false); }
+    (overlay.querySelector(".modal-ok") as HTMLButtonElement).addEventListener("click", () => done(true));
+    (overlay.querySelector(".modal-cancel") as HTMLButtonElement).addEventListener("click", () => done(false));
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+    (overlay.querySelector(".modal-ok") as HTMLButtonElement).focus();
+  });
+}
+
 export function promptText(
   message: string,
   opts: { placeholder?: string; initial?: string } = {},

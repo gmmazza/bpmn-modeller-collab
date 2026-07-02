@@ -49,7 +49,7 @@ import { graphFromModeler } from "./processDocs/flowOrder";
 import { buildManual, exportManualHtml } from "./processDocs/manualController";
 import { createHeatmapController } from "./heatmap";
 import { reduce, initialState, type AppState } from "./state";
-import { readLock, lockState, lockProps, clearProps, canCheckOut } from "./lockManager";
+import { readLock, lockState, lockProps, clearProps, isStale } from "./lockManager";
 import { diffTree } from "./watcher";
 import { computeDiff } from "./bpmnDiff";
 import { createDiffView, type DiffView } from "./diffView";
@@ -65,6 +65,7 @@ import {
   toRestorePoint,
   showToast,
   promptText,
+  confirmModal,
 } from "./ui";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -683,6 +684,7 @@ async function bootstrap() {
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
+        <button class="btn primary" id="editbtn" type="button" hidden>Editar</button>
         <button class="btn" id="checkin" type="button" hidden>Check in</button>
         <button class="btn" id="close" type="button" hidden>Cerrar</button>
         <span class="divider"></span>
@@ -1085,13 +1087,19 @@ async function bootstrap() {
     $("undo").addEventListener("click", () => { try { modeler.get("commandStack").undo(); } catch { /* nothing to undo */ } });
     $("redo").addEventListener("click", () => { try { modeler.get("commandStack").redo(); } catch { /* nothing to redo */ } });
     $("save").addEventListener("click", guard(async () => { if (state.kind === "editing" && state.lock === "mine") await save(state.fileId); }));
+    $("editbtn").addEventListener("click", guard(async () => {
+      if (state.kind === "editing" && state.lock !== "mine") await checkOut(state.fileId);
+    }));
     $("checkin").addEventListener("click", guard(async () => {
       if (state.kind === "editing") await checkIn(state.fileId);
     }));
     $("close").addEventListener("click", guard(async () => {
-      if (state.kind === "editing" && state.lock === "mine") await checkIn(state.fileId);
-      else dispatch({ type: "closedFile" });
+      if (state.kind === "editing") await closeFile(state.fileId);
     }));
+    // Best-effort: release our lock if the window closes while we hold it.
+    window.addEventListener("beforeunload", () => {
+      if (state.kind === "editing" && state.lock === "mine") { void api.setLock(state.fileId, clearProps()).catch(() => {}); }
+    });
 
     // Fast-switch: press "d" to blink between mine/theirs while a diff is shown.
     window.addEventListener("keydown", (ev) => {
@@ -1132,9 +1140,24 @@ async function bootstrap() {
     const editing = state.kind === "editing";
     const el = (id: string) => document.getElementById(id);
     const chip = el("filechip");
-    if (chip) chip.textContent = state.kind === "editing" ? state.fileId : "";
+    if (chip) {
+      if (state.kind === "editing") {
+        const st = state.lock === "mine" ? "editando" : state.lock === "theirs" ? "solo lectura" : "libre";
+        chip.textContent = `${state.fileId} · ${st}`;
+        chip.classList.toggle("lock-mine", state.lock === "mine");
+        chip.classList.toggle("lock-theirs", state.lock === "theirs");
+      } else {
+        chip.textContent = "";
+        chip.classList.remove("lock-mine", "lock-theirs");
+      }
+    }
+    const eb = el("editbtn");
     const ci = el("checkin");
     const cl = el("close");
+    if (eb) {
+      (eb as HTMLElement).hidden = !editing || (state.kind === "editing" && state.lock === "mine");
+      eb.textContent = state.kind === "editing" && state.lock === "theirs" ? "Tomar edición" : "Editar";
+    }
     if (ci) (ci as HTMLElement).hidden = !editing || (state.kind === "editing" && state.lock !== "mine");
     if (cl) (cl as HTMLElement).hidden = !editing;
     if (!editing) {
@@ -1175,7 +1198,20 @@ async function bootstrap() {
     treeVersions = new Map(clean.filter((e) => e.kind === "file" && e.version).map((e) => [e.path, e.version as string]));
   }
 
+  // Release the lock we hold on the currently-open file (used when switching files
+  // or closing). Saves pending edits first so nothing is lost.
+  async function releaseLockIfMine(): Promise<void> {
+    if (state.kind === "editing" && state.lock === "mine") {
+      const prev = state.fileId;
+      if (state.dirty) { try { await save(prev); } catch { /* keep going */ } }
+      try { await api.setLock(prev, clearProps()); } catch { /* best-effort */ }
+    }
+  }
+
   async function openFile(fileId: string) {
+    // Explicit check-out model: opening a file is READ-ONLY (no lock taken). The
+    // user clicks "Editar" to check it out. Release any lock we still hold first.
+    await releaseLockIfMine();
     let meta;
     try {
       meta = await api.getMeta(fileId);
@@ -1183,14 +1219,7 @@ async function bootstrap() {
       await refreshFileList();
       return;
     }
-    const lock = readLock(meta);
-    let lockKind = lockState(lock, me);
-    if (canCheckOut(lock, me)) {
-      await api.setLock(fileId, lockProps(me, new Date().toISOString()));
-      const after = await api.getMeta(fileId);
-      lockKind = lockState(readLock(after), me);
-      if (lockKind !== "mine") showToast("Otra persona lo tomó — abriendo en solo lectura");
-    }
+    const lockKind = lockState(readLock(meta), me); // "mine" only if we already hold it
     const xml = await api.getXml(fileId);
     await editor.load(xml);
     editor.setReadOnly(lockKind !== "mine");
@@ -1202,8 +1231,33 @@ async function bootstrap() {
     await loadDocs(fileId);
     await ideasClientV2.migrateIfNeeded(fileId);
     await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
+    // keep the element index (_index.md) fresh even after external structural edits
+    try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
     void ideasCtl?.refresh();
     if (ideaMode?.isOn()) void ideaMode.refresh();
+  }
+
+  // Check out the open file for editing: take the lock (stealing a foreign/stale
+  // lock only after confirmation), then make the canvas editable.
+  async function checkOut(fileId: string) {
+    const before = readLock(await api.getMeta(fileId));
+    if (lockState(before, me) === "theirs") {
+      const who = before.lockedByName || before.lockedByEmail || "otra persona";
+      const stale = isStale(before, Date.now());
+      const ok = await confirmModal(
+        `Lo tiene ${who}${stale ? " (parece vencido)" : ""}. Si lo tomás, podrías pisar su trabajo. ¿Tomar la edición?`,
+        "Tomar edición",
+      );
+      if (!ok) return;
+    }
+    await api.setLock(fileId, lockProps(me, new Date().toISOString()));
+    const after = await api.getMeta(fileId);
+    if (lockState(readLock(after), me) !== "mine") { showToast("No se pudo tomar — otra persona lo tomó"); await refreshFileList(); return; }
+    openHeadRevisionId = after.headRevisionId ?? openHeadRevisionId;
+    editor.setReadOnly(false);
+    dispatch({ type: "lockChanged", lock: "mine" });
+    await refreshFileList();
+    showToast("Editando — tenés el archivo tomado");
   }
 
 
@@ -1227,9 +1281,22 @@ async function bootstrap() {
     showToast("Guardado");
   }
 
+  // Check in: save pending edits, release the lock, and stay open in read-only.
   async function checkIn(fileId: string) {
     if (state.kind === "editing" && state.dirty) await save(fileId);
     await api.setLock(fileId, clearProps());
+    editor.setReadOnly(true);
+    dispatch({ type: "lockChanged", lock: "free" });
+    await refreshFileList();
+    showToast("Check in — guardado y liberado");
+  }
+
+  // Close the file (release the lock if we hold it) and go back to browsing.
+  async function closeFile(fileId: string) {
+    if (state.kind === "editing" && state.lock === "mine") {
+      if (state.dirty) await save(fileId);
+      await api.setLock(fileId, clearProps());
+    }
     dispatch({ type: "closedFile" });
     await refreshFileList();
   }
@@ -1317,6 +1384,8 @@ async function bootstrap() {
       const fresh = await api.getMeta(fileId);
       openHeadRevisionId = fresh.headRevisionId ?? openHeadRevisionId;
       api.lastWrites.set(fileId, fresh.version); // mark this version as seen so we don't reload it again
+      try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
+      void ideasCtl?.refresh();
       dispatch({ type: "reloaded" });
       showToast("Recargado — actualizado externamente");
     } else {
@@ -1343,6 +1412,7 @@ async function bootstrap() {
     if (parent) expanded.add(parent);
     await refreshFileList();
     await openFile(file.id);
+    await checkOut(file.id); // a file you just created is yours — start editing right away
   }
 
   async function newFolderIn(parent: string): Promise<void> {

@@ -191,5 +191,5 @@ export function createNotePanelController(api: NoteControllerApi) {
     _disposedForTest = true;
   }
 
-  return { refresh, setSelected: refresh, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest };
+  return { refresh, setSelected: refresh, regenerateIndex, _setEditorDocForTest, destroy, _isDisposedForTest: () => _disposedForTest };
 }

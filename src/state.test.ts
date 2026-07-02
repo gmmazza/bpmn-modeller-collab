@@ -21,6 +21,19 @@ describe("app reducer", () => {
     expect(s).toEqual({ kind: "editing", folderId: "F", fileId: "f1", lock: "mine", dirty: false, conflict: false });
   });
 
+  it("opening another file while editing switches to it (no-op bug fixed)", () => {
+    const editing: AppState = { kind: "editing", folderId: "F", fileId: "f1", lock: "mine", dirty: true, conflict: false };
+    const s = reduce(editing, { type: "openedFile", fileId: "f2", lock: "free" });
+    expect(s).toEqual({ kind: "editing", folderId: "F", fileId: "f2", lock: "free", dirty: false, conflict: false });
+  });
+
+  it("lockChanged updates the lock (check-out / check-in) while editing", () => {
+    const editing: AppState = { kind: "editing", folderId: "F", fileId: "f1", lock: "free", dirty: false, conflict: false };
+    expect(reduce(editing, { type: "lockChanged", lock: "mine" })).toMatchObject({ lock: "mine" });
+    const mine: AppState = { ...editing, lock: "mine" };
+    expect(reduce(mine, { type: "lockChanged", lock: "free" })).toMatchObject({ lock: "free" });
+  });
+
   it("external change while clean stays clean (caller auto-reloads)", () => {
     const editing: AppState = { kind: "editing", folderId: "F", fileId: "f1", lock: "mine", dirty: false, conflict: false };
     expect(reduce(editing, { type: "externalChange" })).toEqual(editing);

@@ -99,6 +99,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 .btn.primary:hover { filter: brightness(1.05); }
 .btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .lock-chip { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.lock-chip.lock-mine { color: var(--accent); font-weight: 600; }
+.lock-chip.lock-theirs { color: #d97706; }
 
 main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
