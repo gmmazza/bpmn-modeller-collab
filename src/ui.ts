@@ -57,22 +57,26 @@ export function renderHistoryPanel(
   points: RestorePoint[],
   handlers: { onPreview: (id: string) => void; onRestore: (id: string) => void },
 ): void {
-  container.innerHTML = "<h3>History</h3>";
+  container.innerHTML = "<h3>Historial</h3>";
   for (const p of points) {
     const row = document.createElement("div");
     row.className = "history-row";
     const label = document.createElement("span");
-    label.textContent = `${p.modifiedTime} — ${p.authorName}${p.isExternal ? " (external)" : ""}`;
+    // Own entries are marked "(vos)", others' "(externo)" — matching the app's
+    // "por vos" language elsewhere; the raw ISO is shown as a readable local date.
+    const who = p.isExternal ? " (externo)" : p.authorEmail ? " (vos)" : "";
+    const when = (() => { const d = new Date(p.modifiedTime); return isNaN(d.getTime()) ? p.modifiedTime : d.toLocaleString(); })();
+    label.textContent = `${when} — ${p.authorName}${who}`;
     row.appendChild(label);
 
     const preview = document.createElement("button");
-    preview.textContent = "Preview";
+    preview.textContent = "Vista previa";
     preview.dataset.preview = p.id;
     preview.addEventListener("click", () => handlers.onPreview(p.id));
     row.appendChild(preview);
 
     const restore = document.createElement("button");
-    restore.textContent = "Restore";
+    restore.textContent = "Restaurar";
     restore.dataset.restore = p.id;
     restore.addEventListener("click", () => handlers.onRestore(p.id));
     row.appendChild(restore);

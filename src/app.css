@@ -22,7 +22,14 @@
   --shadow: 0 1px 3px rgba(0,0,0,.5);
 }
 
+html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
+/* Root is a full-height flex column: header/toolbar keep their natural height and
+   main.app fills the rest. This is immune to the toolbar wrapping to a 2nd row (a
+   long lock-chip + Publicar + Solicitar/Cerrar) — the canvas shrinks instead of the
+   whole page growing and forcing a scrollbar. */
+#app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#appheader, #toolbar, #sync, #conflict, #appupdate { flex: none; }
 
 #appheader {
   display: flex; align-items: center; gap: 12px;
@@ -103,14 +110,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 #save:not(:disabled) { background: var(--accent); color: var(--accent-contrast); }
 #save:not(:disabled):hover { filter: brightness(1.05); }
 #save:not(:disabled) .dot { background: var(--accent-contrast); }
-.lock-chip { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.lock-chip { font-size: 12px; color: var(--muted); display: inline-block; min-width: 0; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* my reservation = filled accent pill (notorious); someone else's stays amber */
 .lock-chip.lock-mine { color: var(--accent-contrast); background: var(--accent); border-radius: 999px; padding: 2px 10px; font-weight: 600; }
 .lock-chip.lock-theirs { color: #d97706; }
 /* notorious frame around the canvas while you hold a reservation on this diagram */
 body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
 
-main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
+main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
 #files.collapsed { margin-left: -240px; }
 #canvas { flex: 1; min-width: 0; }
