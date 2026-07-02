@@ -814,6 +814,9 @@ async function bootstrap() {
       persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
       onModeChange: (on) => {
         document.getElementById("toggle-idea-mode")?.classList.toggle("active", on);
+        // Idea mode is a clean overlay (like Figma comment mode): hide the palette
+        // and context pad so editing affordances don't clutter or fight the popover.
+        document.body.classList.toggle("idea-mode-active", on);
         inspector.setTabVisible("ideas", on);
         if (on) {
           inspector.setTab("ideas");
@@ -827,14 +830,24 @@ async function bootstrap() {
     // Set initial button state from persisted toggle value; reveal the Ideas tab
     // if idea mode was left on (without stealing focus from the current tab).
     document.getElementById("toggle-idea-mode")?.classList.toggle("active", ideaMode.isOn());
-    if (ideaMode.isOn()) inspector.setTabVisible("ideas", true);
+    if (ideaMode.isOn()) {
+      inspector.setTabVisible("ideas", true);
+      document.body.classList.add("idea-mode-active");
+    }
     document.getElementById("toggle-idea-mode")?.addEventListener("click", () => void ideaMode.toggle());
 
-    // Capture element.click at high priority (2000) while idea mode is on;
-    // return false blocks bpmn-js normal selection while the mode is active.
-    (modeler.get("eventBus") as any).on("element.click", 2000, (e: { element: { id: string } }) => {
+    // While idea mode is on, a click on a SHAPE opens its idea popover instead of
+    // doing normal editing: we clear the selection (no highlight/context pad) and
+    // ignore the root plane (empty canvas) and connections. High priority (2000)
+    // + return false stops bpmn-js's own selection for this click.
+    (modeler.get("eventBus") as any).on("element.click", 2000, (e: { element: any }) => {
       if (!ideaMode.isOn()) return;
-      void ideaMode.onElementClick(e.element.id);
+      let el = e.element;
+      if (el && el.type === "label" && el.labelTarget) el = el.labelTarget; // resolve labels to their shape
+      // Only real shapes get idea popovers — skip the root/plane and connections.
+      if (!el || !el.parent || el.waypoints) return false;
+      (modeler.get("selection") as any).select(null);
+      void ideaMode.onElementClick(el.id);
       return false;
     });
 
