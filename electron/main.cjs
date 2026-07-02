@@ -4,6 +4,16 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { resolveWithinRoot } = require("./pathGuard.cjs");
 
+// Portable build: keep ALL app state (userData → folder.json + Local Storage, i.e.
+// the private "Borrador" drafts) in a `data/` folder NEXT TO the executable instead
+// of %APPDATA%, so the whole app travels on a USB/copy. Must run before anything
+// reads a userData path. Guarded to the packaged app so `electron:dev` doesn't
+// litter the repo with a `data/` folder. Requires a writable exe location (a USB or
+// a normal extract; NOT Program Files).
+if (app.isPackaged) {
+  app.setPath("userData", path.join(path.dirname(app.getPath("exe")), "data"));
+}
+
 // The authorized folder is owned by the MAIN process: it is set ONLY by the native
 // folder dialog and persisted in userData. The renderer never gets to choose which
 // root the file ops run against — so a compromised renderer (e.g. via a malicious

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTree, renderFileTree } from "./fileTree";
+import { buildTree, renderFileTree, visibleEntries } from "./fileTree";
 import type { TreeEntry } from "./types";
 
 describe("renderFileTree", () => {
@@ -36,6 +36,39 @@ describe("renderFileTree", () => {
     expect(opened).toBe("RRHH.bpmn");
     (el.querySelector('[data-path="RRHH.bpmn"] .ft-menu') as HTMLElement).click();
     expect(menued).toBe("RRHH.bpmn");
+  });
+});
+
+describe("visibleEntries", () => {
+  it("hides .docs sidecars and dot-folders, keeps .bpmn files and independent folders", () => {
+    const entries: TreeEntry[] = [
+      { path: "Ventas", kind: "dir" },
+      { path: "Ventas/B2B.bpmn", kind: "file" },
+      { path: "Ventas/B2B.docs", kind: "dir" },
+      { path: "Ventas/B2B.docs/assets", kind: "dir" },
+      { path: "RRHH.bpmn", kind: "file" },
+      { path: "RRHH.docs", kind: "dir" },
+      { path: ".history", kind: "dir" },
+      { path: ".history/RRHH", kind: "dir" },
+    ];
+    expect(visibleEntries(entries).map((e) => e.path)).toEqual([
+      "Ventas",
+      "Ventas/B2B.bpmn",
+      "RRHH.bpmn",
+    ]);
+  });
+
+  it("does not render hidden sidecar folders in the tree", () => {
+    const me = { name: "Ana", email: "Ana" };
+    const el = document.createElement("div");
+    renderFileTree(el, [
+      { path: "P.bpmn", kind: "file", appProperties: {} },
+      { path: "P.docs", kind: "dir" },
+    ], { expanded: new Set(), selectedId: null, me }, {
+      onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {},
+    });
+    expect(el.querySelector('[data-path="P.docs"]')).toBeNull();
+    expect(el.querySelector('[data-path="P.bpmn"]')).not.toBeNull();
   });
 });
 

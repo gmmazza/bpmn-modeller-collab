@@ -3,6 +3,7 @@ import {
   readLock,
   lockState,
   isStale,
+  isExpired,
   canCheckOut,
   lockProps,
   clearProps,
@@ -59,5 +60,24 @@ describe("lockManager", () => {
     expect(p.lockedAt).toBe("2026-06-23T10:00:00Z");
     // Drive deletes a key when its value is empty string
     expect(clearProps().lockedByEmail).toBe("");
+  });
+
+  it("carries a reservation expiry through lockProps and readLock", () => {
+    const until = "2026-06-23T12:00:00Z";
+    const p = lockProps(me, "2026-06-23T10:00:00Z", until);
+    expect(p.lockedUntil).toBe(until);
+    expect(readLock(fileWith(p)).lockedUntil).toBe(until);
+    // A permanent reservation emits an empty lockedUntil.
+    expect(lockProps(me, "2026-06-23T10:00:00Z").lockedUntil).toBe("");
+    expect(clearProps().lockedUntil).toBe("");
+  });
+
+  it("treats a reservation as expired only past lockedUntil", () => {
+    const lockedUntil = "2026-06-23T12:00:00Z";
+    const base = Date.parse(lockedUntil);
+    expect(isExpired({ lockedUntil }, base - 1)).toBe(false);
+    expect(isExpired({ lockedUntil }, base + 1)).toBe(true);
+    // No lockedUntil = permanent reservation, never expires.
+    expect(isExpired({ lockedByEmail: me.email }, base + 1)).toBe(false);
   });
 });

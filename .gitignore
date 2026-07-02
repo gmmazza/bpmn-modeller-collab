@@ -28,3 +28,6 @@ build/_preview*.png
 
 # SDD scratch (briefs/reports/ledger)
 .superpowers/
+
+# QA seed data (disposable; regenerate with `npm run qa:seed`)
+qa-workspace/
