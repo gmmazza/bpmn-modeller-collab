@@ -302,6 +302,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 
 /* Idea mode — canvas overlay popover */
 .idea-badge-clickable { cursor: pointer; }
+/* strong temporary highlight of the element an idea focus refers to */
+.djs-element.idea-focused .djs-visual > :is(rect, circle, polygon, path, ellipse) {
+  stroke: var(--accent) !important; stroke-width: 3px !important;
+}
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
 
 /* Ideas panel — focus header (shown when an element is selected) */

@@ -23,7 +23,7 @@ function setup(persisted = false) {
     diagramId: () => "x.bpmn", processName: () => "Proc",
     identity: () => "Ana", today: () => "2026-07-05",
     elementLabel: () => "Validar", clientRectFor: () => ({ left: 5, top: 5 }),
-    openThreadInPanel: vi.fn(), onPanelShouldRefresh: vi.fn(),
+    openThreadInPanel: vi.fn(), focusElement: vi.fn(), onPanelShouldRefresh: vi.fn(),
     persistGet: () => stored, persistSet: (on) => { stored = on; },
     onModeChange: vi.fn(),
   };
