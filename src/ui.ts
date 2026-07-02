@@ -178,8 +178,19 @@ const RESERVE_PRESETS: Array<{ label: string; minutes: number }> = [
   { label: "1 día", minutes: 60 * 24 },
 ];
 
+// Pure helpers (unit-tested) behind the reservation modal.
+export function reservationUntilIso(nowMs: number, minutes: number): string {
+  return new Date(nowMs + minutes * 60_000).toISOString();
+}
+// Parse the "Personalizado" free-text into whole positive minutes, or null if invalid.
+export function parseReserveMinutes(raw: string | null): number | null {
+  if (!raw) return null;
+  const mins = Math.round(Number(raw));
+  return Number.isFinite(mins) && mins > 0 ? mins : null;
+}
+
 export function pickReservationDuration(nowMs: number): Promise<string | null> {
-  const untilIso = (minutes: number): string => new Date(nowMs + minutes * 60_000).toISOString();
+  const untilIso = (minutes: number): string => reservationUntilIso(nowMs, minutes);
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
@@ -215,8 +226,8 @@ export function pickReservationDuration(nowMs: number): Promise<string | null> {
         if (btn.dataset.custom) {
           close();
           void promptText("¿Cuántos minutos querés reservar?", { placeholder: "p. ej. 90" }).then((raw) => {
-            const mins = raw ? Math.round(Number(raw)) : NaN;
-            resolve(Number.isFinite(mins) && mins > 0 ? untilIso(mins) : null);
+            const mins = parseReserveMinutes(raw);
+            resolve(mins !== null ? untilIso(mins) : null);
           });
           return;
         }

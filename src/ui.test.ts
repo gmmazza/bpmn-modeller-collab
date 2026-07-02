@@ -1,8 +1,27 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar } from "./ui";
+import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, reservationUntilIso, parseReserveMinutes } from "./ui";
 import type { DriveFile, User, Revision } from "./types";
 
 const me: User = { name: "Ana", email: "ana@x.com" };
+
+describe("reservation duration helpers", () => {
+  it("computes lockedUntil as now + minutes", () => {
+    const now = Date.parse("2026-07-02T10:00:00.000Z");
+    expect(reservationUntilIso(now, 10)).toBe("2026-07-02T10:10:00.000Z");
+    expect(reservationUntilIso(now, 120)).toBe("2026-07-02T12:00:00.000Z");
+    expect(reservationUntilIso(now, 60 * 24)).toBe("2026-07-03T10:00:00.000Z");
+  });
+
+  it("parses custom minutes, rejecting empty/zero/negative/non-numeric", () => {
+    expect(parseReserveMinutes("90")).toBe(90);
+    expect(parseReserveMinutes("15.6")).toBe(16); // rounded
+    expect(parseReserveMinutes(null)).toBeNull();
+    expect(parseReserveMinutes("")).toBeNull();
+    expect(parseReserveMinutes("0")).toBeNull();
+    expect(parseReserveMinutes("-5")).toBeNull();
+    expect(parseReserveMinutes("abc")).toBeNull();
+  });
+});
 
 describe("ui", () => {
   it("renders a locked file with a steal button that fires onSteal", () => {
