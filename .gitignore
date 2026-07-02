@@ -25,6 +25,10 @@ release/
 # CDP / E2E scratch artifacts
 .playwright-mcp/
 build/_preview*.png
+test-results/
+playwright-report/
+blob-report/
+.last-run.json
 
 # SDD scratch (briefs/reports/ledger)
 .superpowers/
