@@ -69,7 +69,10 @@ import {
   confirmModal,
   pickReservationDuration,
   renderPreviewBar,
+  renderCompareBar,
 } from "./ui";
+import { createBpmnViewer, syncViewport, type ViewerLike } from "./compareView";
+import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -98,6 +101,17 @@ async function bootstrap() {
   let folderId = "default"; // stable id of the current shared folder; namespaces local drafts
   let previewingRid: string | null = null; // revision id being previewed (read-only), or null
   let prePreviewXml: string | null = null; // working state snapshot to restore on exit-preview
+  // ---- compare mode (side-by-side revision diff) ----
+  let comparing = false;
+  let compareBase: "actual" | "latest" = "actual"; // left pane identity
+  let compareRevId: string | null = null; // right pane: which revision ("otra versión")
+  let compareViewer: ViewerLike | null = null; // right pane read-only viewer
+  let compareUnsync: (() => void) | null = null; // viewport-sync teardown
+  let compareMarkedLeft: string[] = [];
+  let compareMarkedRight: string[] = [];
+  let preCompareXml: string | null = null; // working version to restore on exit
+  let comparePoints: Array<{ id: string; label: string }> = []; // revisions for the picker
+  let compareDiffTimer: number | null = null;
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
   let modeler: ModelerLike;
@@ -347,7 +361,7 @@ async function bootstrap() {
     tagPools();
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
-    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); });
+    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); scheduleCompareDiff(); });
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -711,10 +725,14 @@ async function bootstrap() {
       <div id="sync"></div>
       <div id="conflict"></div>
       <div id="preview"></div>
+      <div id="compare"></div>
       <div id="appupdate"></div>
       <main class="app">
         <aside id="files"></aside>
-        <section id="canvas"></section>
+        <section id="canvasarea">
+          <section id="canvas"></section>
+          <section id="canvas2" hidden></section>
+        </section>
         <div id="inspector"></div>
       </main>`;
 
@@ -1176,10 +1194,12 @@ async function bootstrap() {
     const mine = st?.lock === "mine";
     const theirs = st?.lock === "theirs";
     const previewing = previewingRid !== null;
+    // While comparing, editing/publishing is only allowed when the base pane is "Actual".
+    const compareRO = comparing && compareBase !== "actual";
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
-    // Notorious frame means "you hold a reservation" — suppressed while previewing,
-    // where the indigo preview frame/banner takes over instead.
-    document.body.classList.toggle("app-editing", mine && !previewing);
+    // Notorious frame means "you hold a reservation" — suppressed while previewing or
+    // comparing, where the indigo preview / teal compare frame takes over instead.
+    document.body.classList.toggle("app-editing", mine && !previewing && !comparing);
     document.body.classList.remove("app-readonly");
     const chip = el("filechip");
     if (chip) {
@@ -1211,16 +1231,17 @@ async function bootstrap() {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
       if (el("preview")) (el("preview") as HTMLElement).innerHTML = "";
+      if (el("compare")) (el("compare") as HTMLElement).innerHTML = "";
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
-    // Never publish from a read-only preview (would push an old version).
-    if (saveBtn) saveBtn.disabled = !unpublished || previewing;
+    // Never publish from a read-only preview / read-only compare (would push an old version).
+    if (saveBtn) saveBtn.disabled = !unpublished || previewing || compareRO;
     const dot = document.getElementById("savedot");
     if (dot) (dot as HTMLElement).hidden = !unpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
-    if (undo) undo.disabled = !editing || previewing;
-    if (redo) redo.disabled = !editing || previewing;
+    if (undo) undo.disabled = !editing || previewing || compareRO;
+    if (redo) redo.disabled = !editing || previewing || compareRO;
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
@@ -1279,6 +1300,7 @@ async function bootstrap() {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
     clearPreviewUI(); // leaving any active revision preview
+    clearCompareUI(); // leaving any active compare
     await flushDraft();
     await releaseReserveIfMine();
     let meta;
@@ -1503,11 +1525,122 @@ async function bootstrap() {
     if (pv) pv.innerHTML = "";
   }
 
+  // ---- Compare mode: side-by-side revision diff (left = actual/latest, right = a
+  // revision), viewport-synced, coloured on both panes; the "actual" left is editable. ----
+  const $el = (id: string): HTMLElement | null => document.getElementById(id);
+  async function enterCompare(revId: string): Promise<void> {
+    if (state.kind !== "editing") return;
+    clearPreviewUI(); // preview and compare are mutually exclusive
+    await flushDraft();
+    preCompareXml = await editor.getXml();
+    compareRevId = revId;
+    compareBase = "actual";
+    comparing = true;
+    const c2 = $el("canvas2")!;
+    c2.hidden = false;
+    $el("canvasarea")?.classList.add("split");
+    document.body.classList.add("app-comparing");
+    if (!compareViewer) compareViewer = await createBpmnViewer(c2);
+    await renderCompare();
+    renderCompareBarNow();
+    render();
+  }
+  async function renderCompare(): Promise<void> {
+    if (!comparing || state.kind !== "editing" || !compareRevId || !compareViewer) return;
+    const fileId = state.fileId;
+    const revXml = await api.getRevisionXml(fileId, compareRevId);
+    // LEFT (newer): "actual" = working (editable); "latest" = shared published (read-only).
+    const leftXml = compareBase === "actual" ? (preCompareXml ?? (await api.getXml(fileId))) : (await api.getXml(fileId));
+    await editor.load(leftXml);
+    editor.setReadOnly(compareBase !== "actual");
+    try { modeler.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
+    await compareViewer.importXML(revXml);
+    try { compareViewer.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
+    await applyCompareDiff(revXml, leftXml);
+    if (compareUnsync) compareUnsync();
+    compareUnsync = syncViewport(modeler, compareViewer as unknown as { get(n: string): any });
+  }
+  async function applyCompareDiff(oldXml: string, newXml: string): Promise<void> {
+    if (!compareViewer) return;
+    const changes = await computeDiff(oldXml, newXml); // old = revision, new = left pane
+    const leftCanvas = modeler.get("canvas");
+    const rightCanvas = compareViewer.get("canvas");
+    clearDiffMarkers(leftCanvas, compareMarkedLeft);
+    clearDiffMarkers(rightCanvas, compareMarkedRight);
+    compareMarkedLeft = applyDiffMarkers(leftCanvas, changes, "new"); // left = newer
+    compareMarkedRight = applyDiffMarkers(rightCanvas, changes, "old"); // right = older revision
+  }
+  // Recompute the diff live while editing the "actual" pane (debounced).
+  function scheduleCompareDiff(): void {
+    if (!comparing || compareBase !== "actual" || !compareRevId) return;
+    if (compareDiffTimer) clearTimeout(compareDiffTimer);
+    compareDiffTimer = window.setTimeout(() => void (async () => {
+      if (!comparing || !compareRevId || state.kind !== "editing") return;
+      const revXml = await api.getRevisionXml(state.fileId, compareRevId);
+      await applyCompareDiff(revXml, await editor.getXml());
+    })().catch(onError), 400);
+  }
+  function setCompareBase(base: "actual" | "latest"): void {
+    compareBase = base;
+    void renderCompare().then(() => { renderCompareBarNow(); render(); }).catch(onError);
+  }
+  function setCompareRev(revId: string): void {
+    compareRevId = revId;
+    void renderCompare().then(() => renderCompareBarNow()).catch(onError);
+  }
+  function renderCompareBarNow(): void {
+    if (!comparing || !compareRevId) return;
+    renderCompareBar($el("compare")!, {
+      base: compareBase,
+      revId: compareRevId,
+      revisions: comparePoints,
+      onBase: setCompareBase,
+      onRev: setCompareRev,
+      onExit: () => void exitCompare().catch(onError),
+    });
+  }
+  function teardownCompare(): void {
+    comparing = false;
+    if (compareUnsync) { compareUnsync(); compareUnsync = null; }
+    if (compareDiffTimer) { clearTimeout(compareDiffTimer); compareDiffTimer = null; }
+    try { clearDiffMarkers(modeler.get("canvas"), compareMarkedLeft); } catch { /* ok */ }
+    compareMarkedLeft = [];
+    compareMarkedRight = [];
+    if (compareViewer) { try { compareViewer.destroy(); } catch { /* ok */ } compareViewer = null; }
+    const c2 = $el("canvas2");
+    if (c2) { c2.hidden = true; c2.innerHTML = ""; }
+    $el("canvasarea")?.classList.remove("split");
+    document.body.classList.remove("app-comparing");
+    const bar = $el("compare");
+    if (bar) bar.innerHTML = "";
+  }
+  async function exitCompare(): Promise<void> {
+    if (!comparing) return;
+    const fileId = state.kind === "editing" ? state.fileId : null;
+    const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    teardownCompare();
+    preCompareXml = null;
+    compareRevId = null;
+    if (restore) { await loadIntoEditor(restore); editor.setReadOnly(false); }
+    render();
+    showToast("Saliste de la comparación");
+  }
+  // Drop compare state without restoring (used on file switch).
+  function clearCompareUI(): void {
+    if (!comparing) return;
+    teardownCompare();
+    preCompareXml = null;
+    compareRevId = null;
+  }
+
   async function loadHistory(fileId: string) {
     const revs = await api.listRevisions(fileId);
     const points = revs
       .map((r) => toRestorePoint(r, me))
       .sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime));
+    const revLabel = (p: (typeof points)[number]): string =>
+      `${new Date(p.modifiedTime).toLocaleString()} — ${p.authorName}${p.isExternal ? " (externo)" : ""}`;
+    comparePoints = points.map((p) => ({ id: p.id, label: revLabel(p) })); // for the compare picker
     // Don't force the pane visible — the inspector owns tab visibility (setTab).
     // Forcing hidden=false made the history show inside whatever tab was active
     // (e.g. Capas) after open/save. Just populate; it shows on the Historial tab.
@@ -1515,8 +1648,7 @@ async function bootstrap() {
     renderHistoryPanel(panel, points, {
       onPreview: (rid) => void (async () => {
         const p = points.find((pt) => pt.id === rid);
-        const label = p ? `${new Date(p.modifiedTime).toLocaleString()} — ${p.authorName}${p.isExternal ? " (externo)" : ""}` : "";
-        await enterPreview(fileId, rid, label);
+        await enterPreview(fileId, rid, p ? revLabel(p) : "");
       })().catch(onError),
       onRestore: (rid) => void (async () => {
         if (state.kind !== "editing") return;
@@ -1528,6 +1660,7 @@ async function bootstrap() {
         dispatch({ type: "dirtyChanged", dirty: true });
         showToast("Restaurado en tu borrador — Publicá para compartirlo");
       })().catch(onError),
+      onCompare: (rid) => void enterCompare(rid).catch(onError),
     });
   }
 

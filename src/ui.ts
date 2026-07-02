@@ -55,7 +55,7 @@ export function toRestorePoint(rev: Revision, me: User): RestorePoint {
 export function renderHistoryPanel(
   container: HTMLElement,
   points: RestorePoint[],
-  handlers: { onPreview: (id: string) => void; onRestore: (id: string) => void },
+  handlers: { onPreview: (id: string) => void; onRestore: (id: string) => void; onCompare?: (id: string) => void },
 ): void {
   container.innerHTML = "<h3>Historial</h3>";
   for (const p of points) {
@@ -80,6 +80,14 @@ export function renderHistoryPanel(
     restore.dataset.restore = p.id;
     restore.addEventListener("click", () => handlers.onRestore(p.id));
     row.appendChild(restore);
+
+    if (handlers.onCompare) {
+      const compare = document.createElement("button");
+      compare.textContent = "Comparar";
+      compare.dataset.compare = p.id;
+      compare.addEventListener("click", () => handlers.onCompare!(p.id));
+      row.appendChild(compare);
+    }
 
     container.appendChild(row);
   }
@@ -167,6 +175,71 @@ export function renderPreviewBar(
   btn.dataset.exitPreview = "1";
   btn.addEventListener("click", handlers.onExit);
   bar.appendChild(btn);
+  container.appendChild(bar);
+}
+
+// Compare-mode bar: a 2-option radio for the base (left) pane — "Actual" (editable) vs
+// "Versión más actual" (latest published, read-only) — plus a picker for the "otra
+// versión" (right pane), a colour legend, and an exit button.
+export function renderCompareBar(
+  container: HTMLElement,
+  opts: {
+    base: "actual" | "latest";
+    revId: string;
+    revisions: { id: string; label: string }[];
+    onBase: (base: "actual" | "latest") => void;
+    onRev: (revId: string) => void;
+    onExit: () => void;
+  },
+): void {
+  container.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "compare-bar";
+
+  const mk = (base: "actual" | "latest", text: string): HTMLLabelElement => {
+    const l = document.createElement("label");
+    const r = document.createElement("input");
+    r.type = "radio";
+    r.name = "cmp-base";
+    r.checked = opts.base === base;
+    r.addEventListener("change", () => { if (r.checked) opts.onBase(base); });
+    l.append(r, document.createTextNode(text));
+    return l;
+  };
+  bar.append(mk("actual", "Actual (editable)"), mk("latest", "Versión más actual"));
+
+  const vs = document.createElement("span");
+  vs.textContent = "↔ otra versión:";
+  bar.appendChild(vs);
+  const sel = document.createElement("select");
+  sel.className = "compare-rev";
+  for (const rev of opts.revisions) {
+    const o = document.createElement("option");
+    o.value = rev.id;
+    o.textContent = rev.label;
+    if (rev.id === opts.revId) o.selected = true;
+    sel.appendChild(o);
+  }
+  sel.addEventListener("change", () => opts.onRev(sel.value));
+  bar.appendChild(sel);
+
+  const legend = document.createElement("span");
+  legend.className = "compare-legend";
+  legend.textContent = "🟢 nuevo  🔴 eliminado  🟡 cambiado  🔵 movido";
+  bar.appendChild(legend);
+
+  const spacer = document.createElement("span");
+  spacer.className = "compare-spacer";
+  bar.appendChild(spacer);
+
+  const exit = document.createElement("button");
+  exit.type = "button";
+  exit.className = "compare-exit";
+  exit.textContent = "Salir";
+  exit.dataset.exitCompare = "1";
+  exit.addEventListener("click", opts.onExit);
+  bar.appendChild(exit);
+
   container.appendChild(bar);
 }
 
