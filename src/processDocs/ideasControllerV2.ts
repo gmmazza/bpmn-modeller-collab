@@ -17,7 +17,8 @@ export interface IdeasV2Deps {
   today(): string;
   getSelected(): { id: string; name: string } | null;
   clearSelection?(): void;
-  promptMotivo(estado: string): string | null;
+  selectElement?(elementId: string): void;
+  promptMotivo(estado: string): string | null | Promise<string | null>;
   onAnchoredCounts?(counts: Array<{ elementId: string; count: number }>): void;
 }
 
@@ -71,7 +72,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
       onOpen: (id) => { openId = id; render(); },
       onSetState: (id, e) => { const idea = ideas.find((i) => i.id === id); if (idea) void setState(idea, e); },
       onClearFocus: () => { deps.clearSelection?.(); render(); },
-      onObjectFilter: (id) => { objectFilter = id; render(); },
+      onObjectFilter: (id) => { objectFilter = id; if (id) deps.selectElement?.(id); render(); },
     });
   }
 
@@ -87,7 +88,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
     let motivo = idea.motivo;
     let comments = idea.comments;
     if (requiresMotivo(e)) {
-      const m = deps.promptMotivo(e);
+      const m = await deps.promptMotivo(e); // may be an in-app modal (async)
       if (m === null || m.trim() === "") return; // cancelled — no change
       motivo = m.trim().replace(/\n/g, " "); // single line (frontmatter safe)
       comments = addComment(comments, { author: deps.identity(), date: deps.today(), text: `[${e}] ${motivo}` });

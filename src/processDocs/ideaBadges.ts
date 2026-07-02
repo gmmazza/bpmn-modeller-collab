@@ -22,7 +22,13 @@ export function createIdeaBadges(host: OverlayHost, onBadgeClick: (elementId: st
         e.stopPropagation();
         onBadgeClick(elementId);
       });
-      ids.push(host.add(elementId, el));
+      // The element may not be overlay-able yet (diagram still rendering) or gone
+      // (deleted) — skip rather than let one bad overlay abort the whole draw.
+      try {
+        ids.push(host.add(elementId, el));
+      } catch {
+        /* skip */
+      }
     }
   }
 
