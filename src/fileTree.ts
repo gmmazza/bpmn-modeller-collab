@@ -26,6 +26,17 @@ function sortNodes(nodes: TreeNode[]): void {
   for (const n of nodes) if (n.children.length) sortNodes(n.children);
 }
 
+// Folders tied to a .bpmn (its `<name>.docs` sidecar) and dot-prefixed infra folders
+// (.history, .layer-templates, .git…) are implementation detail, not user content.
+// The file view shows only .bpmn files and INDEPENDENT organizational folders.
+function isSidecarSegment(seg: string): boolean {
+  return seg.endsWith(".docs") || seg.startsWith(".");
+}
+
+export function visibleEntries(entries: TreeEntry[]): TreeEntry[] {
+  return entries.filter((e) => !e.path.split("/").some(isSidecarSegment));
+}
+
 export function buildTree(entries: TreeEntry[]): TreeNode[] {
   const roots: TreeNode[] = [];
   // Folders first so file insertion finds parent dirs already created.
@@ -149,6 +160,6 @@ export function renderFileTree(
   handlers: FileTreeHandlers,
 ): void {
   el.innerHTML = "";
-  renderNodes(el, buildTree(entries), 0, state, handlers);
+  renderNodes(el, buildTree(visibleEntries(entries)), 0, state, handlers);
   addBar(el, "", handlers);
 }

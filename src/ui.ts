@@ -166,6 +166,69 @@ export function confirmModal(message: string, okLabel = "Aceptar"): Promise<bool
   });
 }
 
+// Reservation-duration picker for the optional advisory "Reserva". Resolves with a
+// lockedUntil RFC3339 string (or "" for a permanent reservation), or null on cancel.
+// "Personalizado" asks for a number of minutes via promptText.
+const RESERVE_PRESETS: Array<{ label: string; minutes: number }> = [
+  { label: "10 min", minutes: 10 },
+  { label: "30 min", minutes: 30 },
+  { label: "1 h", minutes: 60 },
+  { label: "2 h", minutes: 120 },
+  { label: "4 h", minutes: 240 },
+  { label: "1 día", minutes: 60 * 24 },
+];
+
+export function pickReservationDuration(nowMs: number): Promise<string | null> {
+  const untilIso = (minutes: number): string => new Date(nowMs + minutes * 60_000).toISOString();
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    const buttons = RESERVE_PRESETS.map(
+      (p) => `<button class="modal-choice" type="button" data-min="${p.minutes}">${p.label}</button>`,
+    ).join("");
+    overlay.innerHTML = `
+      <div class="modal" role="dialog" aria-modal="true">
+        <p class="modal-msg">¿Por cuánto tiempo querés reservar este diagrama?</p>
+        <div class="modal-choices">
+          ${buttons}
+          <button class="modal-choice" type="button" data-custom="1">Personalizado…</button>
+          <button class="modal-choice" type="button" data-perm="1">Permanente</button>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-cancel" type="button">Cancelar</button>
+        </div>
+      </div>`;
+    function close(): void {
+      overlay.remove();
+      document.removeEventListener("keydown", onKey, true);
+    }
+    function done(value: string | null): void {
+      close();
+      resolve(value);
+    }
+    function onKey(e: KeyboardEvent): void {
+      if (e.key === "Escape") done(null);
+    }
+    overlay.querySelectorAll<HTMLButtonElement>(".modal-choice").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (btn.dataset.perm) return done(""); // permanent
+        if (btn.dataset.custom) {
+          close();
+          void promptText("¿Cuántos minutos querés reservar?", { placeholder: "p. ej. 90" }).then((raw) => {
+            const mins = raw ? Math.round(Number(raw)) : NaN;
+            resolve(Number.isFinite(mins) && mins > 0 ? untilIso(mins) : null);
+          });
+          return;
+        }
+        done(untilIso(Number(btn.dataset.min)));
+      });
+    });
+    (overlay.querySelector(".modal-cancel") as HTMLButtonElement).addEventListener("click", () => done(null));
+    document.addEventListener("keydown", onKey, true);
+    document.body.appendChild(overlay);
+  });
+}
+
 export function promptText(
   message: string,
   opts: { placeholder?: string; initial?: string } = {},

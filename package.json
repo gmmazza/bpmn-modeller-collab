@@ -16,6 +16,7 @@
     "dist:win": "npm run build && electron-builder --win portable",
     "dist:win:installer": "npm run build && electron-builder --win nsis",
     "update:bpmn": "node scripts/update-bpmn.mjs",
+    "qa:seed": "node scripts/qa-seed.mjs",
     "lint:pack": "bpmnlint-pack-config -c .bpmnlintrc -t es -o src/linting/bpmnlintConfig.js"
   },
   "dependencies": {
