@@ -35,7 +35,6 @@ describe("ideasControllerV2", () => {
     const { ideasClient, mount, ctrl } = setup({ id: "Activity_1", name: "Validar" });
     await ctrl.refresh();
     (mount.querySelector<HTMLInputElement>("[data-idea-input]")!).value = "idea anclada";
-    (mount.querySelector("[data-idea-anchor]") as HTMLInputElement).checked = true;
     (mount.querySelector("[data-idea-add]") as HTMLButtonElement).click();
     await flush();
     const all = await ideasClient.listIdeas("x.bpmn");

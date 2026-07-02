@@ -16,6 +16,7 @@ export interface IdeasV2Deps {
   identity(): string;
   today(): string;
   getSelected(): { id: string; name: string } | null;
+  clearSelection?(): void;
   promptMotivo(estado: string): string | null;
   onAnchoredCounts?(counts: Array<{ elementId: string; count: number }>): void;
 }
@@ -49,17 +50,24 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
       });
       return;
     }
-    renderIdeasPanelV2(deps.mount, { ideas: filterIdeas(ideas, { estado, scope }), estado, scope, selectedLabel: deps.getSelected()?.name ?? null }, {
-      onAdd: (text, anchorToSel) => void add(text, anchorToSel),
+    // When an element is selected the panel focuses on it: the list is filtered
+    // to its ideas and the quick-add anchors new ideas to it.
+    const sel = deps.getSelected();
+    const focus = sel ? { id: sel.id, label: sel.name } : null;
+    let shown = filterIdeas(ideas, { estado, scope });
+    if (focus) shown = shown.filter((i) => i.anchor === focus.id);
+    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, focus }, {
+      onAdd: (text) => void add(text),
       onEstado: (e) => { estado = e; render(); },
       onScope: (s) => { scope = s; render(); },
       onOpen: (id) => { openId = id; render(); },
       onSetState: (id, e) => { const idea = ideas.find((i) => i.id === id); if (idea) void setState(idea, e); },
+      onClearFocus: () => { deps.clearSelection?.(); render(); },
     });
   }
 
-  async function add(text: string, anchorToSel: boolean): Promise<void> {
-    const sel = anchorToSel ? deps.getSelected() : null;
+  async function add(text: string): Promise<void> {
+    const sel = deps.getSelected(); // anchor to the focused element, if any
     const id = await deps.ideasClient.nextIdeaId(deps.diagramId());
     const note: IdeaNote = { id, estado: "pendiente", anchor: sel ? sel.id : null, anchorLabel: sel ? sel.name : "", autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", description: text, comments: [] };
     await persist(note);
@@ -90,5 +98,8 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   return {
     async refresh(): Promise<void> { await reload(); render(); },
     async openThread(id: string): Promise<void> { await reload(); openId = id; render(); },
+    // Re-render for a canvas selection change (no reload); skipped while a thread
+    // is open so it doesn't disrupt the thread view.
+    syncSelection(): void { if (!openId) render(); },
   };
 }

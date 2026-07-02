@@ -1,5 +1,6 @@
 import type { IdeaNote } from "./ideaNote";
-import { IDEA_STATES, type IdeaState } from "./ideaState";
+import { type IdeaState } from "./ideaState";
+import { createStateChip } from "./stateChip";
 
 export interface ThreadHandlers {
   onBack(): void;
@@ -18,13 +19,7 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
   const back = document.createElement("button");
   back.dataset.threadBack = "true"; back.textContent = "← Volver";
   back.addEventListener("click", h.onBack);
-  const state = document.createElement("select");
-  state.dataset.threadState = "true";
-  for (const s of IDEA_STATES) {
-    const o = document.createElement("option"); o.value = s; o.textContent = s; if (s === idea.estado) o.selected = true;
-    state.appendChild(o);
-  }
-  state.addEventListener("change", () => h.onSetState(state.value as IdeaState));
+  const state = createStateChip(idea.estado, (s) => h.onSetState(s), "threadState");
   head.append(back, state);
 
   const meta = document.createElement("div");
@@ -46,9 +41,11 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
 
   const commentBox = document.createElement("input");
   commentBox.dataset.threadComment = "true"; commentBox.placeholder = "Comentar…";
+  const submitComment = (): void => { const t = commentBox.value.trim(); if (t) { commentBox.value = ""; h.onComment(t); } };
+  commentBox.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submitComment(); } });
   const commentBtn = document.createElement("button");
   commentBtn.dataset.threadCommentAdd = "true"; commentBtn.textContent = "Comentar";
-  commentBtn.addEventListener("click", () => { const t = commentBox.value.trim(); if (t) h.onComment(t); });
+  commentBtn.addEventListener("click", submitComment);
 
   const promote = document.createElement("button");
   promote.dataset.threadPromote = "true"; promote.className = "thread-promote"; promote.textContent = "Promover a mejora";

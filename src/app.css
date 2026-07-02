@@ -292,10 +292,19 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 /* Idea mode — canvas overlay popover */
 .idea-badge-clickable { cursor: pointer; }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
-/* In idea mode the canvas is a clean comment-style overlay: hide the editing
-   palette and the context pad so they don't clutter or fight the idea popover. */
-body.idea-mode-active .djs-palette,
-body.idea-mode-active .djs-context-pad { display: none !important; }
+
+/* Ideas panel — focus header (shown when an element is selected) */
+.ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ideas-focus-clear { flex: none; background: transparent; border: none; color: var(--accent, #2563eb); cursor: pointer; font-size: 12px; }
+.ideas-empty { list-style: none; color: var(--muted); font-size: 13px; padding: 6px 0; }
+
+/* State chip (glyph + menu) used in idea rows and the thread head */
+.idea-state-chip { cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 2px 6px; font-size: 12px; white-space: nowrap; }
+.idea-state-menu { min-width: 140px; }
+.idea-state-option { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
+.idea-state-option:hover { background: var(--hover, rgba(127,127,127,0.12)); }
+.idea-state-option.current { font-weight: 600; }
 .idea-pop-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; color: var(--muted); }
 .idea-pop-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
 .idea-pop-row { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
