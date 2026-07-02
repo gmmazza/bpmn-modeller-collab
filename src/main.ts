@@ -778,13 +778,18 @@ async function bootstrap() {
         return sel[0] ? toDiagramElement(sel[0]) : null;
       },
       clearSelection: () => (modeler?.get("selection") as any)?.select?.(null),
-      promptMotivo: (estado: string) => window.prompt(`Motivo para marcar la idea como ${estado}:`),
+      selectElement: (elementId) => {
+        const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
+        if (el) (modeler?.get("selection") as any)?.select?.(el);
+      },
+      // in-app modal — window.prompt is unsupported in Electron's renderer.
+      promptMotivo: (estado: string) => promptText(`Motivo para marcar la idea como «${estado}»:`),
       onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
     });
     // In idea mode, selecting an element on the canvas focuses the ideas panel on
-    // it (its ideas + anchored quick-add). refresh() (reload) guarantees the list
-    // reflects ideas added in this or another session. Normal editing is preserved.
-    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) void ideasCtl?.refresh(); });
+    // it (its ideas + anchored quick-add). syncSelection re-renders from the
+    // in-memory list (no async reload) so it can't race with an in-flight write.
+    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) ideasCtl?.syncSelection(); });
 
     // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
     function showIdeasTab(): void {
