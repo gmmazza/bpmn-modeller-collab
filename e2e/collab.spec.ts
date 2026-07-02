@@ -73,6 +73,30 @@ test("hides .docs sidecar folders in the file view", async ({ page }) => {
   await expect(page.locator('[data-path="Compras.docs"]')).toHaveCount(0);
 });
 
+test("previewing a revision shows a read-only banner + frame and exiting restores the current version", async ({ page }) => {
+  // Seed the current diagram plus one older revision (a distinguishable task) under
+  // .history/test/<rid>~<author>.bpmn — the format listRevisions expects.
+  await openApp(page, {
+    "test.bpmn": SEED_BPMN,
+    ".history/test/1782700000000~Beto.bpmn": DRAFT_BPMN,
+  });
+  await page.getByText("📄 test.bpmn").click();
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  await page.locator("#history").getByRole("button", { name: "Vista previa" }).first().click();
+
+  // Preview: banner + indigo frame, publish disabled, and the OLD revision is loaded.
+  await expect(page.locator(".preview-bar")).toContainText("versión anterior");
+  await expect(page.locator("body.app-previewing")).toHaveCount(1);
+  await expect(page.locator("#save")).toBeDisabled();
+  await expect(page.locator('[data-element-id="Task_DRAFT"]')).toBeVisible();
+
+  // Exit → banner/frame gone and the current version is back.
+  await page.locator(".preview-exit").click();
+  await expect(page.locator(".preview-bar")).toHaveCount(0);
+  await expect(page.locator("body.app-previewing")).toHaveCount(0);
+  await expect(page.locator('[data-element-id="Task_DRAFT"]')).toHaveCount(0);
+});
+
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {
   // Regression for the layout bug: on a narrower window the long chip
   // ("Reservado por Otro hasta HH:MM · Borrador sin publicar") plus Publicar /

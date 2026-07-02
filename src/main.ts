@@ -68,6 +68,7 @@ import {
   promptText,
   confirmModal,
   pickReservationDuration,
+  renderPreviewBar,
 } from "./ui";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -95,6 +96,8 @@ async function bootstrap() {
   let pollTimer: number | null = null;
   let openLock: LockInfo = {}; // reservation info for the currently-open file (display + expiry)
   let folderId = "default"; // stable id of the current shared folder; namespaces local drafts
+  let previewingRid: string | null = null; // revision id being previewed (read-only), or null
+  let prePreviewXml: string | null = null; // working state snapshot to restore on exit-preview
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
   let modeler: ModelerLike;
@@ -707,6 +710,7 @@ async function bootstrap() {
       </div>
       <div id="sync"></div>
       <div id="conflict"></div>
+      <div id="preview"></div>
       <div id="appupdate"></div>
       <main class="app">
         <aside id="files"></aside>
@@ -1171,9 +1175,11 @@ async function bootstrap() {
     // optional advisory "Reserva", not a gate. `unpublished` drives Publicar.
     const mine = st?.lock === "mine";
     const theirs = st?.lock === "theirs";
+    const previewing = previewingRid !== null;
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
-    // Notorious frame only means "you hold a reservation on this diagram".
-    document.body.classList.toggle("app-editing", mine);
+    // Notorious frame means "you hold a reservation" — suppressed while previewing,
+    // where the indigo preview frame/banner takes over instead.
+    document.body.classList.toggle("app-editing", mine && !previewing);
     document.body.classList.remove("app-readonly");
     const chip = el("filechip");
     if (chip) {
@@ -1204,15 +1210,17 @@ async function bootstrap() {
     if (!editing) {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
+      if (el("preview")) (el("preview") as HTMLElement).innerHTML = "";
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
-    if (saveBtn) saveBtn.disabled = !unpublished;
+    // Never publish from a read-only preview (would push an old version).
+    if (saveBtn) saveBtn.disabled = !unpublished || previewing;
     const dot = document.getElementById("savedot");
     if (dot) (dot as HTMLElement).hidden = !unpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
-    if (undo) undo.disabled = !editing;
-    if (redo) redo.disabled = !editing;
+    if (undo) undo.disabled = !editing || previewing;
+    if (redo) redo.disabled = !editing || previewing;
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
@@ -1270,6 +1278,7 @@ async function bootstrap() {
   async function openFile(fileId: string) {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
+    clearPreviewUI(); // leaving any active revision preview
     await flushDraft();
     await releaseReserveIfMine();
     let meta;
@@ -1454,6 +1463,46 @@ async function bootstrap() {
     })().catch(onError), IDLE_RELEASE_MS);
   }
 
+  // ---- Revision preview (read-only, with a notorious banner + canvas frame) ----
+  // Enter loads a past revision read-only; exit restores the working version you had
+  // before (your draft if any, else the shared latest). Publicar/undo/redo are
+  // disabled while previewing so you can't accidentally publish an old version.
+  async function enterPreview(fileId: string, rid: string, label: string): Promise<void> {
+    if (state.kind !== "editing") return;
+    if (previewingRid === null) {
+      await flushDraft(); // persist any pending edits before the canvas shows the revision
+      prePreviewXml = await editor.getXml(); // snapshot the working version once
+    }
+    const xml = await api.getRevisionXml(fileId, rid);
+    await loadIntoEditor(xml);
+    editor.setReadOnly(true);
+    previewingRid = rid;
+    document.body.classList.add("app-previewing");
+    renderPreviewBar(document.getElementById("preview")!, label, {
+      onExit: () => void exitPreview(fileId).catch(onError),
+    });
+    render();
+  }
+  async function exitPreview(fileId: string): Promise<void> {
+    if (previewingRid === null) return;
+    const xml = prePreviewXml ?? loadDraft(folderId, fileId) ?? (await api.getXml(fileId));
+    previewingRid = null;
+    prePreviewXml = null;
+    await loadIntoEditor(xml);
+    editor.setReadOnly(false);
+    clearPreviewUI();
+    render();
+    showToast("Volviste a la versión actual");
+  }
+  // Drop the preview banner/frame WITHOUT restoring (used by Restaurar and file switch).
+  function clearPreviewUI(): void {
+    previewingRid = null;
+    prePreviewXml = null;
+    document.body.classList.remove("app-previewing");
+    const pv = document.getElementById("preview");
+    if (pv) pv.innerHTML = "";
+  }
+
   async function loadHistory(fileId: string) {
     const revs = await api.listRevisions(fileId);
     const points = revs
@@ -1465,13 +1514,13 @@ async function bootstrap() {
     const panel = document.getElementById("history")!;
     renderHistoryPanel(panel, points, {
       onPreview: (rid) => void (async () => {
-        const xml = await api.getRevisionXml(fileId, rid);
-        await loadIntoEditor(xml);
-        editor.setReadOnly(true);
-        showToast("Previsualizando una versión anterior (solo lectura)");
+        const p = points.find((pt) => pt.id === rid);
+        const label = p ? `${new Date(p.modifiedTime).toLocaleString()} — ${p.authorName}${p.isExternal ? " (externo)" : ""}` : "";
+        await enterPreview(fileId, rid, label);
       })().catch(onError),
       onRestore: (rid) => void (async () => {
         if (state.kind !== "editing") return;
+        clearPreviewUI(); // Restaurar supersedes any active preview
         const xml = await api.getRevisionXml(fileId, rid);
         await loadIntoEditor(xml);
         editor.setReadOnly(false);

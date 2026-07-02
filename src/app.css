@@ -29,7 +29,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
    long lock-chip + Publicar + Solicitar/Cerrar) — the canvas shrinks instead of the
    whole page growing and forcing a scrollbar. */
 #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-#appheader, #toolbar, #sync, #conflict, #appupdate { flex: none; }
+#appheader, #toolbar, #sync, #conflict, #preview, #appupdate { flex: none; }
 
 #appheader {
   display: flex; align-items: center; gap: 12px;
@@ -116,6 +116,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 .lock-chip.lock-theirs { color: #d97706; }
 /* notorious frame around the canvas while you hold a reservation on this diagram */
 body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Revision preview: a calm-but-notorious indigo frame + banner (distinct from the
+   blue reservation frame, the amber sync bar and the red conflict bar) so it's
+   unmistakable you're viewing an OLD version, without being strident. */
+body.app-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
+.preview-bar { display: flex; align-items: center; gap: 10px; background: #e0e7ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
+.preview-bar .preview-spacer { flex: 1; }
+.preview-bar .preview-exit { background: #4f46e5; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.preview-bar .preview-exit:hover { filter: brightness(1.08); }
 
 main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }

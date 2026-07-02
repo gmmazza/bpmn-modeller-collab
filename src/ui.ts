@@ -143,6 +143,33 @@ export function renderSyncWarning(container: HTMLElement, names: string[]): void
   container.appendChild(bar);
 }
 
+// Banner shown while previewing an older revision (read-only). `label` is the
+// revision's date/author. The exit button returns to the current working version.
+export function renderPreviewBar(
+  container: HTMLElement,
+  label: string,
+  handlers: { onExit: () => void },
+): void {
+  container.innerHTML = "";
+  const bar = document.createElement("div");
+  bar.className = "preview-bar";
+  const msg = document.createElement("span");
+  msg.className = "preview-msg";
+  msg.textContent = `👁 Estás viendo una versión anterior (solo lectura)${label ? ` · ${label}` : ""}`;
+  bar.appendChild(msg);
+  const spacer = document.createElement("span");
+  spacer.className = "preview-spacer";
+  bar.appendChild(spacer);
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "preview-exit";
+  btn.textContent = "Volver a la versión actual";
+  btn.dataset.exitPreview = "1";
+  btn.addEventListener("click", handlers.onExit);
+  bar.appendChild(btn);
+  container.appendChild(bar);
+}
+
 // In-app text prompt. Electron's renderer does not support window.prompt(), so we
 // render our own modal. Resolves with the trimmed value, or null on cancel/empty.
 // In-app yes/no confirmation (window.confirm is unsupported in Electron's renderer).

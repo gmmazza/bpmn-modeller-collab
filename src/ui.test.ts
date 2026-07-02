@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, reservationUntilIso, parseReserveMinutes } from "./ui";
+import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, renderPreviewBar, reservationUntilIso, parseReserveMinutes } from "./ui";
 import type { DriveFile, User, Revision } from "./types";
 
 const me: User = { name: "Ana", email: "ana@x.com" };
@@ -20,6 +20,21 @@ describe("reservation duration helpers", () => {
     expect(parseReserveMinutes("0")).toBeNull();
     expect(parseReserveMinutes("-5")).toBeNull();
     expect(parseReserveMinutes("abc")).toBeNull();
+  });
+});
+
+describe("renderPreviewBar", () => {
+  it("announces the previewed revision and fires onExit", () => {
+    const el = document.createElement("div");
+    let exited = false;
+    renderPreviewBar(el, "30/6/2026 — Beto (externo)", { onExit: () => { exited = true; } });
+    const msg = el.querySelector(".preview-msg")!.textContent!;
+    expect(msg).toContain("versión anterior");
+    expect(msg).toContain("Beto");
+    const exit = el.querySelector(".preview-exit") as HTMLElement;
+    expect(exit.textContent).toBe("Volver a la versión actual");
+    exit.click();
+    expect(exited).toBe(true);
   });
 });
 
