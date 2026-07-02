@@ -73,6 +73,30 @@ test("hides .docs sidecar folders in the file view", async ({ page }) => {
   await expect(page.locator('[data-path="Compras.docs"]')).toHaveCount(0);
 });
 
+test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {
+  // Regression for the layout bug: on a narrower window the long chip
+  // ("Reservado por Otro hasta HH:MM · Borrador sin publicar") plus Publicar /
+  // Solicitar turno / Cerrar wraps the toolbar to a 2nd row; the canvas must shrink
+  // to fill, NOT grow the page and force a scrollbar.
+  await page.setViewportSize({ width: 1000, height: 700 });
+  const lock = JSON.stringify({
+    lockedBy: "Otro", lockedByEmail: "Otro", lockedByName: "Otro",
+    lockedAt: new Date(Date.now()).toISOString(),
+    lockedUntil: new Date(Date.now() + 2 * 3600_000).toISOString(),
+  });
+  await openApp(page, { "test.bpmn": SEED_BPMN, "test.bpmn.lock": lock });
+  await page.evaluate(([k, v]) => localStorage.setItem(k, v), [DRAFT_KEY, DRAFT_BPMN] as const);
+  await page.getByText("📄 test.bpmn").click();
+  await page.locator(".modal-ok").click(); // resume the draft
+  await expect(page.locator("#filechip")).toContainText("Reservado por Otro");
+  await expect(page.locator("#filechip")).toContainText("Borrador sin publicar");
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollHeight - document.documentElement.clientHeight,
+  );
+  expect(overflow, "page must not scroll vertically").toBeLessThanOrEqual(0);
+});
+
 test("editing enables Publicar and autosaves a namespaced draft", async ({ page }) => {
   await openApp(page);
   await page.getByText("📄 test.bpmn").click();
