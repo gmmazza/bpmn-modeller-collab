@@ -19,7 +19,54 @@ export async function createCompareModeler(container: HTMLElement): Promise<View
 }
 
 interface Syncable {
-  get(name: string): any; // eventBus, canvas
+  get(name: string): any; // eventBus, canvas, lassoTool…
+}
+
+// Make dragging on empty canvas draw a selection box (rubber-band / lasso) so several
+// elements can be selected at once — click still selects one, Shift-click adds. Used on
+// the historical compare pane where we only select+copy (no modeling).
+export function enableRubberBandSelect(m: Syncable): void {
+  // Rubber-band on a background drag: draw our own selection rectangle and, on release,
+  // select every element it encloses via lassoTool.select(all, bbox). Self-managed (not
+  // the diagram-js lasso TOOL) so it composes cleanly with normal interaction — a plain
+  // CLICK on an element still selects it (Shift-click adds), because we only intercept
+  // mousedown on the empty root and return false there (which also blocks canvas pan).
+  const canvas = m.get("canvas");
+  const eventBus = m.get("eventBus");
+  const lassoTool = m.get("lassoTool");
+  const elementRegistry = m.get("elementRegistry");
+  const container: HTMLElement = canvas.getContainer();
+
+  eventBus.on("element.mousedown", 1500, (e: any) => {
+    if (e.element !== canvas.getRootElement()) return; // element clicks/drags: leave to default
+    const startX = e.originalEvent.clientX, startY = e.originalEvent.clientY;
+    const rect = container.getBoundingClientRect();
+    const box = document.createElement("div");
+    box.className = "compare-lasso";
+    container.appendChild(box);
+    let moved = false;
+    const onMove = (ev: MouseEvent): void => {
+      if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) > 3) moved = true;
+      box.style.left = `${Math.min(startX, ev.clientX) - rect.left}px`;
+      box.style.top = `${Math.min(startY, ev.clientY) - rect.top}px`;
+      box.style.width = `${Math.abs(ev.clientX - startX)}px`;
+      box.style.height = `${Math.abs(ev.clientY - startY)}px`;
+    };
+    const onUp = (ev: MouseEvent): void => {
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("mouseup", onUp, true);
+      box.remove();
+      if (!moved) return; // it was a click, not a drag
+      const vb = canvas.viewbox();
+      const toModel = (cx: number, cy: number) => ({ x: vb.x + (cx - rect.left) / vb.scale, y: vb.y + (cy - rect.top) / vb.scale });
+      const a = toModel(Math.min(startX, ev.clientX), Math.min(startY, ev.clientY));
+      const b = toModel(Math.max(startX, ev.clientX), Math.max(startY, ev.clientY));
+      try { lassoTool.select(elementRegistry.getAll(), { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }); } catch { /* ignore */ }
+    };
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("mouseup", onUp, true);
+    return false; // block canvas pan while box-selecting
+  });
 }
 
 // Mirror pan/zoom both ways between two modelers/viewers. Returns an unsubscribe fn.
