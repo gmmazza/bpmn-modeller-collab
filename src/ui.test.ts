@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, renderPreviewBar, reservationUntilIso, parseReserveMinutes } from "./ui";
+import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, renderPreviewBar, renderCompareBar, reservationUntilIso, parseReserveMinutes } from "./ui";
 import type { DriveFile, User, Revision } from "./types";
 
 const me: User = { name: "Ana", email: "ana@x.com" };
@@ -34,6 +34,32 @@ describe("renderPreviewBar", () => {
     const exit = el.querySelector(".preview-exit") as HTMLElement;
     expect(exit.textContent).toBe("Volver a la versión actual");
     exit.click();
+    expect(exited).toBe(true);
+  });
+});
+
+describe("renderCompareBar", () => {
+  it("radio switches base, select picks the other version, Salir exits", () => {
+    const el = document.createElement("div");
+    let base: string | null = null, rev: string | null = null, exited = false;
+    renderCompareBar(el, {
+      base: "actual", revId: "r1",
+      revisions: [{ id: "r1", label: "v1" }, { id: "r2", label: "v2" }],
+      onBase: (b) => { base = b; }, onRev: (r) => { rev = r; }, onExit: () => { exited = true; },
+    });
+    const radios = el.querySelectorAll('input[name="cmp-base"]');
+    expect(radios.length).toBe(2);
+    const latest = radios[1] as HTMLInputElement;
+    latest.checked = true;
+    latest.dispatchEvent(new Event("change"));
+    expect(base).toBe("latest");
+
+    const sel = el.querySelector("select.compare-rev") as HTMLSelectElement;
+    sel.value = "r2";
+    sel.dispatchEvent(new Event("change"));
+    expect(rev).toBe("r2");
+
+    (el.querySelector(".compare-exit") as HTMLElement).click();
     expect(exited).toBe(true);
   });
 });

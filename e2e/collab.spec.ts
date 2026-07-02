@@ -97,6 +97,48 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toHaveCount(0);
 });
 
+test("compare mode: split with diff on both panes (incl. moved), radio switches to read-only, exit restores", async ({ page }) => {
+  // current: Start, TaskA@250, End.  revision: Start, TaskA@350 (moved), TaskB (extra).
+  const di = (id: string, x: number, y: number, w = 100, h = 80) =>
+    `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
+  const wrap = (proc: string, di2: string) =>
+    `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="D" targetNamespace="x"><bpmn:process id="P" isExecutable="false">${proc}</bpmn:process><bpmndi:BPMNDiagram id="Dg"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">${di2}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`;
+  const CUR = wrap(
+    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:endEvent id="End"/>`,
+    di("Start", 156, 81, 36, 36) + di("TaskA", 250, 59) + di("End", 412, 81, 36, 36),
+  );
+  const REV = wrap(
+    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Extra"/>`,
+    di("Start", 156, 81, 36, 36) + di("TaskA", 350, 200) + di("TaskB", 250, 59),
+  );
+  await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
+  await page.getByText("📄 test.bpmn").click();
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
+
+  // Split + compare bar + a mounted second viewer.
+  await expect(page.locator("#canvasarea.split")).toHaveCount(1);
+  await expect(page.locator(".compare-bar")).toBeVisible();
+  await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
+  // Left (current/new): End added, TaskA moved. Right (revision/old): TaskB removed, TaskA moved.
+  await expect(page.locator('#canvas .djs-element.diff-added[data-element-id="End"]')).toHaveCount(1);
+  await expect(page.locator('#canvas .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
+  await expect(page.locator('#canvas2 .djs-element.diff-removed[data-element-id="TaskB"]')).toHaveCount(1);
+  await expect(page.locator('#canvas2 .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
+
+  // Radio → "Versión más actual" makes the left pane read-only.
+  await page.locator('input[name="cmp-base"]').nth(1).check();
+  await expect(page.locator("#undo")).toBeDisabled();
+
+  // Exit → single canvas back, no split, no overflow.
+  await page.locator(".compare-exit").click();
+  await expect(page.locator(".compare-bar")).toHaveCount(0);
+  await expect(page.locator("#canvasarea.split")).toHaveCount(0);
+  await expect(page.locator("#canvas2")).toBeHidden();
+  const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
+  expect(overflow).toBeLessThanOrEqual(0);
+});
+
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {
   // Regression for the layout bug: on a narrower window the long chip
   // ("Reservado por Otro hasta HH:MM · Borrador sin publicar") plus Publicar /

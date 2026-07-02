@@ -1,7 +1,6 @@
 import type { ModelerLike, Editor } from "./editor";
 import type { BpmnChanges } from "./bpmnDiff";
-
-const CLS = { added: "diff-added", removed: "diff-removed", changed: "diff-changed" };
+import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 export function createDiffView(modeler: ModelerLike, editor: Editor) {
   let active = false;
@@ -15,17 +14,7 @@ export function createDiffView(modeler: ModelerLike, editor: Editor) {
 
   function clearMarkers() {
     const c = canvas();
-    if (c) {
-      for (const id of marked) {
-        try {
-          c.removeMarker(id, CLS.added);
-          c.removeMarker(id, CLS.removed);
-          c.removeMarker(id, CLS.changed);
-        } catch {
-          /* element not present in this version */
-        }
-      }
-    }
+    if (c) clearDiffMarkers(c, marked);
     marked = [];
   }
 
@@ -33,23 +22,8 @@ export function createDiffView(modeler: ModelerLike, editor: Editor) {
     clearMarkers();
     const c = canvas();
     if (!c) return;
-    const add = (ids: string[], cls: string) => {
-      for (const id of ids) {
-        try {
-          c.addMarker(id, cls);
-          marked.push(id);
-        } catch {
-          /* element not present in this version */
-        }
-      }
-    };
-    if (showing === "mine") {
-      add(changes.removed, CLS.removed);
-      add(changes.changed, CLS.changed);
-    } else {
-      add(changes.added, CLS.added);
-      add(changes.changed, CLS.changed);
-    }
+    // "mine" is the version things are removed FROM (the old side); "theirs" the new.
+    marked = applyDiffMarkers(c, changes, showing === "mine" ? "old" : "new");
   }
 
   return {
