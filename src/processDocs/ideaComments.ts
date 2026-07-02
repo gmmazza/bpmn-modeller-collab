@@ -31,3 +31,12 @@ export function joinBody(description: string, comments: Comment[]): string {
 export function addComment(comments: Comment[], c: Comment): Comment[] {
   return [...comments, c];
 }
+
+// State-change log entries live in the same thread as comments, stored as
+// `[<estado>] <motivo?>` so they read fine as plain markdown for LLM agents.
+// This detects/parses them so the thread can render + toggle them separately.
+const STATE_LOG_RE = /^\[(pendiente|haciendo|pausado|hecho|rechazado)\](?:\s+(.*))?$/;
+export function parseStateLog(text: string): { estado: string; motivo: string } | null {
+  const m = STATE_LOG_RE.exec(text.trim());
+  return m ? { estado: m[1], motivo: (m[2] ?? "").trim() } : null;
+}

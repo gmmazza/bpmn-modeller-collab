@@ -1,6 +1,7 @@
 import type { IdeaNote } from "./ideaNote";
-import { type IdeaState } from "./ideaState";
+import { STATE_GLYPH, type IdeaState } from "./ideaState";
 import { createStateChip } from "./stateChip";
+import { parseStateLog } from "./ideaComments";
 
 export interface ThreadHandlers {
   onBack(): void;
@@ -8,9 +9,10 @@ export interface ThreadHandlers {
   onComment(text: string): void;
   onSetState(estado: IdeaState): void;
   onPromote(): void;
+  onToggleLog(): void;
 }
 
-export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: ThreadHandlers): void {
+export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: ThreadHandlers, showLog = true): void {
   container.innerHTML = "";
   container.className = "idea-thread";
 
@@ -31,9 +33,31 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
   desc.dataset.threadDesc = "true"; desc.className = "thread-desc"; desc.value = idea.description;
   desc.addEventListener("blur", () => h.onSaveDescription(desc.value));
 
+  // toggle: show/hide the state-change history (interleaved with comments)
+  const logToggle = document.createElement("label");
+  logToggle.className = "thread-log-toggle";
+  const logCb = document.createElement("input");
+  logCb.type = "checkbox"; logCb.dataset.threadLogToggle = "true"; logCb.checked = showLog;
+  logCb.addEventListener("change", () => h.onToggleLog());
+  logToggle.append(logCb, document.createTextNode(" Historial de estados"));
+
+  // timeline: comments + state-change log entries, in chronological (append) order
   const comments = document.createElement("ul");
   comments.className = "thread-comments";
+  let shown = 0;
   for (const c of idea.comments) {
+    const log = parseStateLog(c.text);
+    if (log) {
+      if (!showLog) continue;
+      const li = document.createElement("li");
+      li.className = "thread-log";
+      li.dataset.threadLog = "true";
+      const g = STATE_GLYPH[log.estado as IdeaState] ?? "•";
+      li.textContent = `${g} ${c.author} cambió a «${log.estado}»${log.motivo ? ` — ${log.motivo}` : ""} · ${c.date}`;
+      comments.append(li);
+      shown++;
+      continue;
+    }
     const li = document.createElement("li");
     li.className = "thread-comment";
     const metaEl = document.createElement("div");
@@ -44,8 +68,9 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
     bubble.textContent = c.text;
     li.append(metaEl, bubble);
     comments.append(li);
+    shown++;
   }
-  if (idea.comments.length === 0) {
+  if (shown === 0) {
     const empty = document.createElement("li");
     empty.className = "thread-comment-empty";
     empty.textContent = "Sin comentarios todavía.";
@@ -64,5 +89,5 @@ export function renderIdeaThread(container: HTMLElement, idea: IdeaNote, h: Thre
   promote.dataset.threadPromote = "true"; promote.className = "thread-promote"; promote.textContent = "Promover a mejora";
   promote.addEventListener("click", h.onPromote);
 
-  container.append(head, meta, desc, comments, commentBox, commentBtn, promote);
+  container.append(head, meta, desc, logToggle, comments, commentBox, commentBtn, promote);
 }

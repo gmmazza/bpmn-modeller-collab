@@ -28,6 +28,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   let scope: ScopeFilter = "todas";
   let objectFilter: string | null = null;
   let openId: string | null = null;
+  let showLog = true; // show the state-change history interleaved in the thread
 
   function anchoredObjects(): { id: string; label: string }[] {
     const seen = new Map<string, string>();
@@ -55,7 +56,8 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
         onComment: (text) => void persist({ ...idea, comments: addComment(idea.comments, { author: deps.identity(), date: deps.today(), text }) }).then(render),
         onSetState: (e) => void setState(idea, e),
         onPromote: () => void promote(idea),
-      });
+        onToggleLog: () => { showLog = !showLog; render(); },
+      }, showLog);
       return;
     }
     // When an element is selected the panel focuses on it: the list is filtered
@@ -85,14 +87,17 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   }
 
   async function setState(idea: IdeaNote, e: IdeaState): Promise<void> {
-    let motivo = idea.motivo;
-    let comments = idea.comments;
+    if (e === idea.estado) return; // no-op
+    let motivo = "";
     if (requiresMotivo(e)) {
       const m = await deps.promptMotivo(e); // may be an in-app modal (async)
       if (m === null || m.trim() === "") return; // cancelled — no change
       motivo = m.trim().replace(/\n/g, " "); // single line (frontmatter safe)
-      comments = addComment(comments, { author: deps.identity(), date: deps.today(), text: `[${e}] ${motivo}` });
     }
+    // Log EVERY state change in the thread (date + author), interleaved with
+    // comments. Format `[<estado>] <motivo?>` stays plain-markdown/agent-friendly.
+    const logText = `[${e}]${motivo ? ` ${motivo}` : ""}`;
+    const comments = addComment(idea.comments, { author: deps.identity(), date: deps.today(), text: logText });
     await persist({ ...idea, estado: e, motivo, comments });
     render();
   }
