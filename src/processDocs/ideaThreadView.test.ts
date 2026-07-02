@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderIdeaThread, type ThreadHandlers } from "./ideaThreadView";
 import type { IdeaNote } from "./ideaNote";
+
+afterEach(() => { document.body.innerHTML = ""; });
 
 function handlers(): ThreadHandlers {
   return { onBack: vi.fn(), onSaveDescription: vi.fn(), onComment: vi.fn(), onSetState: vi.fn(), onPromote: vi.fn() };
@@ -32,8 +34,8 @@ describe("renderIdeaThread", () => {
   it("changes state and promotes and goes back", () => {
     const c = document.createElement("div"); const h = handlers();
     renderIdeaThread(c, idea, h);
-    const st = c.querySelector<HTMLSelectElement>("[data-thread-state]")!;
-    st.value = "hecho"; st.dispatchEvent(new Event("change"));
+    (c.querySelector("[data-thread-state]") as HTMLButtonElement).click();
+    (document.querySelector('[data-state-option="hecho"]') as HTMLButtonElement).click();
     expect(h.onSetState).toHaveBeenCalledWith("hecho");
     (c.querySelector("[data-thread-promote]") as HTMLButtonElement).click();
     expect(h.onPromote).toHaveBeenCalled();

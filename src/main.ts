@@ -777,9 +777,13 @@ async function bootstrap() {
         const sel = (modeler?.get("selection")?.get?.() ?? []) as Array<{ id: string; businessObject?: { name?: string; $type?: string } }>;
         return sel[0] ? toDiagramElement(sel[0]) : null;
       },
+      clearSelection: () => (modeler?.get("selection") as any)?.select?.(null),
       promptMotivo: (estado: string) => window.prompt(`Motivo para marcar la idea como ${estado}:`),
       onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
     });
+    // In idea mode, selecting an element on the canvas focuses the ideas panel on
+    // it (its ideas + anchored quick-add). Normal selection/editing is preserved.
+    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) ideasCtl?.syncSelection(); });
 
     // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
     function showIdeasTab(): void {
@@ -820,9 +824,8 @@ async function bootstrap() {
       persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
       onModeChange: (on) => {
         document.getElementById("toggle-idea-mode")?.classList.toggle("active", on);
-        // Idea mode is a clean overlay (like Figma comment mode): hide the palette
-        // and context pad so editing affordances don't clutter or fight the popover.
-        document.body.classList.toggle("idea-mode-active", on);
+        // Idea mode keeps normal editing/selection; it just reveals the Ideas tab
+        // (+ badges) and, when on, focuses it.
         inspector.setTabVisible("ideas", on);
         if (on) {
           inspector.setTab("ideas");
@@ -836,26 +839,8 @@ async function bootstrap() {
     // Set initial button state from persisted toggle value; reveal the Ideas tab
     // if idea mode was left on (without stealing focus from the current tab).
     document.getElementById("toggle-idea-mode")?.classList.toggle("active", ideaMode.isOn());
-    if (ideaMode.isOn()) {
-      inspector.setTabVisible("ideas", true);
-      document.body.classList.add("idea-mode-active");
-    }
+    if (ideaMode.isOn()) inspector.setTabVisible("ideas", true);
     document.getElementById("toggle-idea-mode")?.addEventListener("click", () => void ideaMode.toggle());
-
-    // While idea mode is on, a click on a SHAPE opens its idea popover instead of
-    // doing normal editing: we clear the selection (no highlight/context pad) and
-    // ignore the root plane (empty canvas) and connections. High priority (2000)
-    // + return false stops bpmn-js's own selection for this click.
-    (modeler.get("eventBus") as any).on("element.click", 2000, (e: { element: any }) => {
-      if (!ideaMode.isOn()) return;
-      let el = e.element;
-      if (el && el.type === "label" && el.labelTarget) el = el.labelTarget; // resolve labels to their shape
-      // Only real shapes get idea popovers — skip the root/plane and connections.
-      if (!el || !el.parent || el.waypoints) return false;
-      (modeler.get("selection") as any).select(null);
-      void ideaMode.onElementClick(el.id);
-      return false;
-    });
 
     const $ = (id: string) => document.getElementById(id)!;
     $("folderchip").innerHTML = `${icon("folder")} <span class="folder-path"></span>`;

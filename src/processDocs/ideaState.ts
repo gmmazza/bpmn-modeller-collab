@@ -3,6 +3,11 @@ export type IdeaState = "pendiente" | "haciendo" | "pausado" | "hecho" | "rechaz
 
 export const IDEA_STATES: IdeaState[] = ["pendiente", "haciendo", "pausado", "hecho", "rechazado"];
 
+// Glyph per state — shown in the state chip and idea rows.
+export const STATE_GLYPH: Record<IdeaState, string> = {
+  pendiente: "○", haciendo: "◑", pausado: "⏸", hecho: "●", rechazado: "✕",
+};
+
 export function isIdeaState(s: string): s is IdeaState {
   return (IDEA_STATES as string[]).includes(s);
 }

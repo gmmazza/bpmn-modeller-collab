@@ -1,23 +1,26 @@
 import type { IdeaNote } from "./ideaNote";
-import { IDEA_STATES, type IdeaState } from "./ideaState";
+import { IDEA_STATES, STATE_GLYPH, type IdeaState } from "./ideaState";
 import type { EstadoFilter, ScopeFilter } from "./ideaFilters";
+import { createStateChip } from "./stateChip";
 
-export const STATE_GLYPH: Record<IdeaState, string> = {
-  pendiente: "○", haciendo: "◑", pausado: "⏸", hecho: "●", rechazado: "✕",
-};
+// Re-exported for consumers that import it from here historically.
+export { STATE_GLYPH };
 
 export interface IdeasPanelState {
   ideas: IdeaNote[];
   estado: EstadoFilter;
   scope: ScopeFilter;
-  selectedLabel: string | null;
+  // When an element is selected on the canvas the panel focuses on it: the list
+  // is filtered to its ideas and the quick-add anchors new ideas to it.
+  focus: { id: string; label: string } | null;
 }
 export interface IdeasPanelHandlers {
-  onAdd(text: string, anchorToSelection: boolean): void;
+  onAdd(text: string): void;
   onEstado(e: EstadoFilter): void;
   onScope(s: ScopeFilter): void;
   onOpen(id: string): void;
   onSetState(id: string, estado: IdeaState): void;
+  onClearFocus(): void;
 }
 
 const ESTADO_OPTS: EstadoFilter[] = ["todas", "activas", "cerradas", ...IDEA_STATES];
@@ -40,21 +43,34 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
   container.innerHTML = "";
   container.className = "ideas-panel";
 
+  // focus header — shown when an element is selected
+  if (state.focus) {
+    const header = document.createElement("div");
+    header.className = "ideas-focus";
+    const label = document.createElement("span");
+    label.className = "ideas-focus-label";
+    label.textContent = `Ideas de: ${state.focus.label}`;
+    const clear = document.createElement("button");
+    clear.dataset.ideaClearFocus = "true";
+    clear.className = "ideas-focus-clear";
+    clear.textContent = "ver todas";
+    clear.addEventListener("click", () => h.onClearFocus());
+    header.append(label, clear);
+    container.append(header);
+  }
+
   // quick-add
   const add = document.createElement("div");
   add.className = "ideas-add";
   const input = document.createElement("input");
   input.dataset.ideaInput = "true";
-  input.placeholder = "Nueva idea…";
-  const anchor = document.createElement("input");
-  anchor.type = "checkbox"; anchor.dataset.ideaAnchor = "true"; anchor.disabled = !state.selectedLabel;
-  const anchorL = document.createElement("label");
-  anchorL.className = "ideas-anchor";
-  anchorL.append(anchor, document.createTextNode(state.selectedLabel ? `Anclar a: ${state.selectedLabel}` : "Sin paso seleccionado"));
+  input.placeholder = state.focus ? `Nueva idea para ${state.focus.label}…` : "Nueva idea…";
+  const submit = (): void => { const t = input.value.trim(); if (t) { input.value = ""; h.onAdd(t); } };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
   const addBtn = document.createElement("button");
   addBtn.dataset.ideaAdd = "true"; addBtn.textContent = "Agregar";
-  addBtn.addEventListener("click", () => { const t = input.value.trim(); if (t) h.onAdd(t, anchor.checked && !anchor.disabled); });
-  add.append(input, anchorL, addBtn);
+  addBtn.addEventListener("click", submit);
+  add.append(input, addBtn);
 
   // filters
   const filters = document.createElement("div");
@@ -71,9 +87,7 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
     const li = document.createElement("li");
     li.className = "idea-row";
     li.dataset.ideaRow = "true";
-    // state chip (select)
-    const chip = select(idea.estado, IDEA_STATES as string[], "ideaState", (v) => h.onSetState(idea.id, v as IdeaState));
-    chip.classList.add("idea-state-chip");
+    const chip = createStateChip(idea.estado, (s) => h.onSetState(idea.id, s));
     // body (click to open)
     const body = document.createElement("button");
     body.dataset.ideaOpen = "true";
@@ -85,6 +99,12 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
     body.addEventListener("click", () => h.onOpen(idea.id));
     li.append(chip, body);
     list.append(li);
+  }
+  if (state.ideas.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "ideas-empty";
+    empty.textContent = state.focus ? "Este elemento no tiene ideas todavía." : "Sin ideas todavía.";
+    list.append(empty);
   }
 
   container.append(add, filters, list);
