@@ -187,8 +187,11 @@ export function renderCompareBar(
     base: "actual" | "latest";
     revId: string;
     revisions: { id: string; label: string }[];
+    copyCount?: number;
+    canCopy?: boolean;
     onBase: (base: "actual" | "latest") => void;
     onRev: (revId: string) => void;
+    onCopy?: () => void;
     onExit: () => void;
   },
 ): void {
@@ -231,6 +234,20 @@ export function renderCompareBar(
   const spacer = document.createElement("span");
   spacer.className = "compare-spacer";
   bar.appendChild(spacer);
+
+  if (opts.onCopy) {
+    const count = opts.copyCount ?? 0;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "compare-copy";
+    copy.textContent = count > 0 ? `📋 Copiar al actual (${count})` : "📋 Copiar al actual";
+    copy.disabled = !opts.canCopy || count === 0;
+    copy.title = opts.canCopy
+      ? "Copiar los elementos seleccionados de esta versión a tu diagrama actual"
+      : "Elegí «Actual» para poder copiar a tu versión editable";
+    copy.addEventListener("click", () => opts.onCopy!());
+    bar.appendChild(copy);
+  }
 
   const exit = document.createElement("button");
   exit.type = "button";

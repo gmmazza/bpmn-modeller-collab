@@ -41,12 +41,19 @@ describe("renderPreviewBar", () => {
 describe("renderCompareBar", () => {
   it("radio switches base, select picks the other version, Salir exits", () => {
     const el = document.createElement("div");
-    let base: string | null = null, rev: string | null = null, exited = false;
+    let base: string | null = null, rev: string | null = null, exited = false, copied = false;
     renderCompareBar(el, {
       base: "actual", revId: "r1",
       revisions: [{ id: "r1", label: "v1" }, { id: "r2", label: "v2" }],
-      onBase: (b) => { base = b; }, onRev: (r) => { rev = r; }, onExit: () => { exited = true; },
+      copyCount: 2, canCopy: true,
+      onBase: (b) => { base = b; }, onRev: (r) => { rev = r; },
+      onCopy: () => { copied = true; }, onExit: () => { exited = true; },
     });
+    const copyBtn = el.querySelector(".compare-copy") as HTMLButtonElement;
+    expect(copyBtn.textContent).toContain("(2)");
+    expect(copyBtn.disabled).toBe(false);
+    copyBtn.click();
+    expect(copied).toBe(true);
     const radios = el.querySelectorAll('input[name="cmp-base"]');
     expect(radios.length).toBe(2);
     const latest = radios[1] as HTMLInputElement;

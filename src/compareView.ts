@@ -8,12 +8,14 @@ export interface ViewerLike {
   destroy(): void;
 }
 
-// A minimal read-only viewer (NavigatedViewer = Viewer + move/zoom, no editing modules,
-// no properties panel / lint / palette). Loaded dynamically to keep it out of the main
-// chunk. diagram-js CSS is already imported by main.ts.
-export async function createBpmnViewer(container: HTMLElement): Promise<ViewerLike> {
-  const { default: NavigatedViewer } = await import("bpmn-js/lib/NavigatedViewer");
-  return new NavigatedViewer({ container }) as unknown as ViewerLike;
+// The historical (right) compare pane. A bare bpmn-js Modeler — not the app's fully
+// loaded one — so it ships selection + copyPaste (to copy elements into the current
+// diagram) but none of the heavy extras (properties panel, lint, minimap…). Its
+// palette / context pad are hidden via CSS (#canvas2) since we only select+copy here,
+// not model. Loaded dynamically; diagram-js CSS is already imported by main.ts.
+export async function createCompareModeler(container: HTMLElement): Promise<ViewerLike> {
+  const { default: BpmnModeler } = await import("bpmn-js/lib/Modeler");
+  return new BpmnModeler({ container }) as unknown as ViewerLike;
 }
 
 interface Syncable {
