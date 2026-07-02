@@ -52,6 +52,23 @@ describe("ideasControllerV2", () => {
     expect(typeof ctrl.openThread).toBe("function");
   });
 
+  it("records an external estado change (edited outside the app) as an IA log entry", async () => {
+    const { ideasClient, ctrl } = setup();
+    // Simulate an agent editing the file directly: estado=hecho in frontmatter but
+    // the last state-log says pendiente (i.e. no matching log line for the change).
+    await ideasClient.writeIdea("x.bpmn", {
+      id: "idea-1", estado: "hecho", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01",
+      motivo: "", mejora: "", description: "x",
+      comments: [{ author: "Ana", date: "2026-07-01", text: "[pendiente]" }],
+    });
+    await ctrl.refresh(); // reload → reconciliation appends an IA log for the external change
+    await flush();
+    const idea = await ideasClient.readIdea("x.bpmn", "idea-1");
+    const last = idea!.comments[idea!.comments.length - 1];
+    expect(last.author).toBe("IA");
+    expect(last.text).toBe("[hecho]");
+  });
+
   it("promotes an idea to a mejora and links it", async () => {
     const { ideasClient, mount, ctrl } = setup();
     await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "la idea", comments: [] });

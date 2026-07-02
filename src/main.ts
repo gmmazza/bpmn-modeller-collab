@@ -25,6 +25,7 @@ import { createIdeasClient } from "./processDocs/ideasClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
 import { createIdeaMode } from "./processDocs/ideaMode";
 import { createIdeasControllerV2 } from "./processDocs/ideasControllerV2";
+import { aiAuthorName } from "./processDocs/aiIdentity";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
@@ -784,6 +785,7 @@ async function bootstrap() {
         const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
         if (el) (modeler?.get("selection") as any)?.select?.(el);
       },
+      aiAuthor: () => aiAuthorName(),
       // in-app modal — window.prompt is unsupported in Electron's renderer.
       promptMotivo: (estado: string) => promptText(`Motivo para marcar la idea como «${estado}»:`),
       onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
