@@ -4,7 +4,6 @@ import type { IdeaNote } from "./ideaNote";
 import { activeAnchoredCounts } from "./ideaFilters";
 import { createIdeaBadges, type BadgeCount } from "./ideaBadges";
 import { openIdeaElementPopover } from "./ideaElementPopover";
-import { isActive } from "./ideaState";
 import type { OverlayHost } from "./ideasOverlays";
 
 export interface IdeaModeDeps {
@@ -17,6 +16,7 @@ export interface IdeaModeDeps {
   elementLabel(elementId: string): string;
   clientRectFor(elementId: string): { left: number; top: number };
   openThreadInPanel(ideaId: string): void;
+  focusElement(elementId: string): void;
   onPanelShouldRefresh(): void;
   persistGet(): boolean;
   persistSet(on: boolean): void;
@@ -76,13 +76,11 @@ export function createIdeaMode(deps: IdeaModeDeps) {
     });
   }
 
-  async function onBadgeClick(elementId: string): Promise<void> {
+  // Clicking a badge focuses the panel on that element (its filtered idea list),
+  // rather than jumping into one specific thread.
+  function onBadgeClick(elementId: string): void {
     if (!on) return;
-    const all = await deps.ideasClient.listIdeas(deps.diagramId());
-    const forEl = all.filter((i) => i.anchor === elementId);
-    const actives = forEl.filter((i) => isActive(i.estado));
-    const target = actives[actives.length - 1] ?? forEl[0];
-    if (target) deps.openThreadInPanel(target.id);
+    deps.focusElement(elementId);
   }
 
   async function addIdea(elementId: string, text: string): Promise<void> {

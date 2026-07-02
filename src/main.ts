@@ -789,7 +789,7 @@ async function bootstrap() {
     // In idea mode, selecting an element on the canvas focuses the ideas panel on
     // it (its ideas + anchored quick-add). syncSelection re-renders from the
     // in-memory list (no async reload) so it can't race with an in-flight write.
-    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) ideasCtl?.syncSelection(); });
+    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) { ideasCtl?.syncSelection(); highlightIdeaElement(selectedId); } });
 
     // Reveal the Ideas inspector tab and focus it (used by idea mode + wiki nav).
     function showIdeasTab(): void {
@@ -799,6 +799,17 @@ async function bootstrap() {
     }
 
     // ---- Idea mode ----
+    // Strong, temporary highlight of the element an idea focus refers to (badge
+    // click, canvas selection, or object-filter pick) — clearer than the thin
+    // default selection outline.
+    let ideaHighlightId: string | null = null;
+    function highlightIdeaElement(id: string | null): void {
+      const canvas = modeler?.get("canvas") as any;
+      if (!canvas) return;
+      if (ideaHighlightId && ideaHighlightId !== id) { try { canvas.removeMarker(ideaHighlightId, "idea-focused"); } catch { /* gone */ } }
+      ideaHighlightId = id;
+      if (id) { try { canvas.addMarker(id, "idea-focused"); } catch { /* not on canvas */ } }
+    }
     const ideaOverlayHost = {
       add: (elementId: string, html: HTMLElement) =>
         // top-LEFT so the badge doesn't collide with the context pad (top-right on selection).
@@ -826,6 +837,13 @@ async function bootstrap() {
         inspector.setTab("ideas");
         void ideasCtl?.openThread(ideaId);
       },
+      focusElement: (elementId) => {
+        // badge click → select the element (panel focuses on it) + surface the tab
+        const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
+        if (el) (modeler?.get("selection") as any)?.select?.(el);
+        inspector.setTabVisible("ideas", true);
+        inspector.setTab("ideas");
+      },
       onPanelShouldRefresh: () => { void ideasCtl?.refresh(); },
       persistGet: () => localStorage.getItem("bpmn-compartida.ideaMode") === "1",
       persistSet: (on) => localStorage.setItem("bpmn-compartida.ideaMode", on ? "1" : "0"),
@@ -837,8 +855,9 @@ async function bootstrap() {
         if (on) {
           inspector.setTab("ideas");
           void ideasCtl?.refresh();
-        } else if (inspector.activeTab() === "ideas") {
-          inspector.setTab("documentacion");
+        } else {
+          highlightIdeaElement(null);
+          if (inspector.activeTab() === "ideas") inspector.setTab("documentacion");
         }
       },
     });
