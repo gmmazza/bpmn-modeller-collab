@@ -33,7 +33,7 @@ export function enableRubberBandSelect(m: Syncable): void {
   // mousedown on the empty root and return false there (which also blocks canvas pan).
   const canvas = m.get("canvas");
   const eventBus = m.get("eventBus");
-  const lassoTool = m.get("lassoTool");
+  const selection = m.get("selection");
   const elementRegistry = m.get("elementRegistry");
   const container: HTMLElement = canvas.getContainer();
 
@@ -61,7 +61,17 @@ export function enableRubberBandSelect(m: Syncable): void {
       const toModel = (cx: number, cy: number) => ({ x: vb.x + (cx - rect.left) / vb.scale, y: vb.y + (cy - rect.top) / vb.scale });
       const a = toModel(Math.min(startX, ev.clientX), Math.min(startY, ev.clientY));
       const b = toModel(Math.max(startX, ev.clientX), Math.max(startY, ev.clientY));
-      try { lassoTool.select(elementRegistry.getAll(), { x: a.x, y: a.y, width: b.x - a.x, height: b.y - a.y }); } catch { /* ignore */ }
+      // Select every shape that INTERSECTS the box (more forgiving than full enclosure,
+      // which selected nothing when the box merely clipped an element). Skip the root,
+      // connections (no x/width) and labels.
+      const hits = elementRegistry.filter((el: any) =>
+        el !== canvas.getRootElement() && !el.labelTarget &&
+        typeof el.x === "number" && typeof el.width === "number" &&
+        el.x < b.x && el.x + el.width > a.x && el.y < b.y && el.y + el.height > a.y,
+      );
+      // Defer so it wins over diagram-js's own mouseup handling (which would otherwise
+      // treat the release on empty canvas as a click and clear the selection).
+      setTimeout(() => selection.select(hits), 0);
     };
     document.addEventListener("mousemove", onMove, true);
     document.addEventListener("mouseup", onUp, true);

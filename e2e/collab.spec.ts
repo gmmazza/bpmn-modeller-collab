@@ -181,11 +181,13 @@ test("compare: rubber-band (box) select several elements and copy them all", asy
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
   await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
 
-  // Rubber-band: drag a box on empty canvas that encloses BOTH tasks in the right pane.
+  // Rubber-band: drag a box that only PARTIALLY overlaps both tasks (left half) — with
+  // intersection selection (not full enclosure) it must still select both.
   const b = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
   const c = (await page.locator('#canvas2 .djs-element[data-element-id="TaskC"]').boundingBox())!;
-  const x1 = Math.min(b.x, c.x) - 25, y1 = Math.min(b.y, c.y) - 25;
-  const x2 = Math.max(b.x + b.width, c.x + c.width) + 25, y2 = Math.max(b.y + b.height, c.y + c.height) + 25;
+  const x1 = Math.min(b.x, c.x) - 10, y1 = Math.min(b.y, c.y) - 10;
+  const x2 = Math.min(b.x, c.x) + Math.min(b.width, c.width) / 2; // only to the tasks' middle
+  const y2 = Math.max(b.y + b.height, c.y + c.height) + 10;
   await page.mouse.move(x1, y1);
   await page.mouse.down();
   await page.mouse.move((x1 + x2) / 2, (y1 + y2) / 2, { steps: 6 });
@@ -194,8 +196,16 @@ test("compare: rubber-band (box) select several elements and copy them all", asy
 
   await expect(page.locator(".compare-copy")).toContainText("(2)");
   await page.locator(".compare-copy").click();
+  // both pasted AND left selected (so they can be dragged together)
+  await expect(page.locator('#canvas .djs-element.selected[data-element-id="TaskB"]')).toHaveCount(1);
+  await expect(page.locator('#canvas .djs-element.selected[data-element-id="TaskC"]')).toHaveCount(1);
+
+  // exiting compare keeps the pasted elements (not discarded) and enables Publicar.
+  await page.locator(".compare-exit").click();
+  await expect(page.locator("#canvasarea.split")).toHaveCount(0);
   await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(1);
   await expect(page.locator('#canvas .djs-element[data-element-id="TaskC"]')).toHaveCount(1);
+  await expect(page.locator("#save")).toBeEnabled();
 });
 
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {

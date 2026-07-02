@@ -109,7 +109,8 @@ async function bootstrap() {
   let compareUnsync: (() => void) | null = null; // viewport-sync teardown
   let compareMarkedLeft: string[] = [];
   let compareMarkedRight: string[] = [];
-  let preCompareXml: string | null = null; // working version to restore on exit
+  let preCompareXml: string | null = null; // working version (updated on paste/base-switch)
+  let compareEdited = false; // did the working version change during compare (paste/move)?
   let comparePoints: Array<{ id: string; label: string }> = []; // revisions for the picker
   let compareDiffTimer: number | null = null;
   let editor: ReturnType<typeof createEditor>;
@@ -1533,6 +1534,7 @@ async function bootstrap() {
     clearPreviewUI(); // preview and compare are mutually exclusive
     await flushDraft();
     preCompareXml = await editor.getXml();
+    compareEdited = false;
     compareRevId = revId;
     compareBase = "actual";
     comparing = true;
@@ -1586,8 +1588,18 @@ async function bootstrap() {
     })().catch(onError), 400);
   }
   function setCompareBase(base: "actual" | "latest"): void {
-    compareBase = base;
-    void renderCompare().then(() => { renderCompareBarNow(); render(); }).catch(onError);
+    void (async () => {
+      // Leaving the editable "Actual" pane: capture its content so pastes/moves aren't
+      // lost when we swap in a revision (and can be restored when switching back).
+      if (compareBase === "actual" && base !== "actual") {
+        preCompareXml = await editor.getXml();
+        if (editor.isDirty()) compareEdited = true;
+      }
+      compareBase = base;
+      await renderCompare();
+      renderCompareBarNow();
+      render();
+    })().catch(onError);
   }
   function setCompareRev(revId: string): void {
     compareRevId = revId;
@@ -1620,8 +1632,13 @@ async function bootstrap() {
     const targetCanvas = modeler.get("canvas");
     modeler.get("clipboard").set(tree);
     const vb = targetCanvas.viewbox();
-    modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
-    showToast(`${selected.length} elemento(s) copiados a tu versión actual`);
+    const pasted = modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
+    // Keep the pasted elements selected so they can be dragged together right away.
+    try { if (Array.isArray(pasted) && pasted.length) modeler.get("selection").select(pasted); } catch { /* ok */ }
+    // The working version now differs — remember it so it survives base switches / exit.
+    preCompareXml = await editor.getXml();
+    compareEdited = true;
+    showToast(`${selected.length} elemento(s) copiados — arrastralos para reubicarlos, o Publicá`);
   }
   function teardownCompare(): void {
     comparing = false;
@@ -1641,13 +1658,22 @@ async function bootstrap() {
   async function exitCompare(): Promise<void> {
     if (!comparing) return;
     const fileId = state.kind === "editing" ? state.fileId : null;
-    const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    // Keep the working version WITH any pastes/moves. When base="Actual" the left modeler
+    // holds it live; otherwise it's the latest snapshot in preCompareXml.
+    const edited = compareEdited || (compareBase === "actual" && editor.isDirty());
+    const working = compareBase === "actual" ? await editor.getXml() : preCompareXml;
+    const restore = working ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
     teardownCompare();
     preCompareXml = null;
     compareRevId = null;
-    if (restore) { await loadIntoEditor(restore); editor.setReadOnly(false); }
+    compareEdited = false;
+    if (restore != null) { await loadIntoEditor(restore); editor.setReadOnly(false); }
+    if (edited && fileId && restore != null) {
+      saveDraft(folderId, fileId, restore); // persist the pasted/edited working version
+      dispatch({ type: "dirtyChanged", dirty: true }); // and enable Publicar
+    }
     render();
-    showToast("Saliste de la comparación");
+    showToast(edited ? "Saliste — tus cambios quedaron en el borrador" : "Saliste de la comparación");
   }
   // Drop compare state without restoring (used on file switch).
   function clearCompareUI(): void {
@@ -1655,6 +1681,7 @@ async function bootstrap() {
     teardownCompare();
     preCompareXml = null;
     compareRevId = null;
+    compareEdited = false;
   }
 
   async function loadHistory(fileId: string) {
