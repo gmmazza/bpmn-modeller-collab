@@ -299,6 +299,9 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .thread-comment-meta { font-size: 11px; color: var(--muted); }
 .thread-comment-bubble { background: var(--hover, rgba(127,127,127,0.12)); border-radius: 10px; padding: 6px 10px; white-space: pre-wrap; word-break: break-word; align-self: flex-start; max-width: 90%; }
 .thread-comment-empty { color: var(--muted); }
+/* state-change log entries interleaved in the thread + their toggle */
+.thread-log-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.thread-log { list-style: none; font-size: 12px; color: var(--muted); padding: 2px 0 2px 4px; border-left: 2px solid var(--border); }
 
 /* Idea mode — canvas overlay popover */
 .idea-badge-clickable { cursor: pointer; }

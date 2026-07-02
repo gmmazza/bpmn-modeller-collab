@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { splitBody, joinBody, addComment, type Comment } from "./ideaComments";
+import { splitBody, joinBody, addComment, parseStateLog, type Comment } from "./ideaComments";
+
+describe("parseStateLog", () => {
+  it("detects a state-change log entry and its motivo", () => {
+    expect(parseStateLog("[haciendo]")).toEqual({ estado: "haciendo", motivo: "" });
+    expect(parseStateLog("[rechazado] fuera de alcance")).toEqual({ estado: "rechazado", motivo: "fuera de alcance" });
+  });
+  it("returns null for a normal comment", () => {
+    expect(parseStateLog("un comentario normal")).toBeNull();
+    expect(parseStateLog("[algo] no es un estado")).toBeNull();
+  });
+});
 
 describe("ideaComments", () => {
   it("splits a body into description and comments", () => {
