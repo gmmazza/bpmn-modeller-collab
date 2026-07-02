@@ -52,6 +52,17 @@ nombre de agente configurado) para que la app las atribuya a la IA:
 
 La app muestra las entradas de autores IA con un marcador 🤖 e intercala los cambios
 de estado con los comentarios por fecha (con un toggle para mostrar/ocultar).
+
+## Bloqueos y pedidos de edición (.bpmn)
+
+Antes de editar un \`<nombre>.bpmn\`, fijate si existe \`<nombre>.bpmn.lock\` (JSON con
+\`lockedByName\`): significa que alguien lo tiene tomado en la app.
+
+- Si NO hay \`.lock\`: podés editar; la app recarga sola tu cambio.
+- Si hay \`.lock\` de otra persona: para pedir el turno, escribí un archivo
+  \`<nombre>.bpmn.req\` con \`{ "by": "IA", "name": "IA", "at": "<fecha ISO>" }\`. La app le
+  avisa a quien lo tiene para que haga Check in y lo libere. Cuando el \`.lock\`
+  desaparezca, editá y borrá tu \`.req\`.
 `;
 
 export async function ensureAgentsFile(api: {

@@ -99,8 +99,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 .btn.primary:hover { filter: brightness(1.05); }
 .btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .lock-chip { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
-.lock-chip.lock-mine { color: var(--accent); font-weight: 600; }
+/* editing = filled accent pill (very notorious); read-only stays muted/amber */
+.lock-chip.lock-mine { color: var(--accent-contrast); background: var(--accent); border-radius: 999px; padding: 2px 10px; font-weight: 600; }
 .lock-chip.lock-theirs { color: #d97706; }
+#editmode.btn-checkin { background: var(--accent); color: var(--accent-contrast); }
+/* notorious frame around the canvas while you hold the edit lock */
+body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
 
 main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
