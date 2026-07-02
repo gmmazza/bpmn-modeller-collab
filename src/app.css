@@ -147,6 +147,8 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 /* Historical (right) compare pane is only for select+copy — hide its editing UI.
    (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
 #canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
+/* Self-drawn rubber-band selection box in the historical pane. */
+.compare-lasso { position: absolute; border: 1px solid #0d9488; background: rgba(13, 148, 136, .12); pointer-events: none; z-index: 5; }
 .inspector { position: relative; width: var(--inspector-width, 300px); box-sizing: border-box; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; transition: margin-right .2s ease; }
 .inspector.collapsed { margin-right: calc(-1 * var(--inspector-width, 300px)); }
 /* Drag handle on the inspector's left edge to resize its width. */

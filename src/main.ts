@@ -71,7 +71,7 @@ import {
   renderPreviewBar,
   renderCompareBar,
 } from "./ui";
-import { createCompareModeler, syncViewport, type ViewerLike } from "./compareView";
+import { createCompareModeler, syncViewport, enableRubberBandSelect, type ViewerLike } from "./compareView";
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1542,6 +1542,7 @@ async function bootstrap() {
     document.body.classList.add("app-comparing");
     if (!compareViewer) {
       compareViewer = await createCompareModeler(c2);
+      enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // drag = box-select several
       // Selecting elements in the historical pane enables "Copiar al actual".
       compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow());
     }
