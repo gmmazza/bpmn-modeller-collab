@@ -205,14 +205,14 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test("compare: both panes are read-only visualization (no copy button, dragging the pane pans not moves)", async ({ page }) => {
+test("compare: left pane read-only, right pane pans, and selecting + copying a historical element lands it in the current draft", async ({ page }) => {
   const shape = (id: string, x: number, y: number, w = 100, h = 80) =>
     `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
   const wrap = (proc: string, di: string) =>
     `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="D" targetNamespace="x"><bpmn:process id="P" isExecutable="false">${proc}</bpmn:process><bpmndi:BPMNDiagram id="Dg"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">${di}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`;
   const CUR = wrap(`<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/>`, shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59));
   const REV = wrap(
-    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Paso viejo"/>`,
+    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Paso viejo"><bpmn:documentation>nota</bpmn:documentation></bpmn:task>`,
     shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59) + shape("TaskB", 250, 200, 120),
   );
   await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
@@ -222,13 +222,13 @@ test("compare: both panes are read-only visualization (no copy button, dragging 
   await page.locator("#history .history-check").nth(1).check();
   await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
 
-  // No copy option anymore — compare is visualization only, both panes read-only.
-  await expect(page.locator(".compare-copy")).toHaveCount(0);
+  // Copy button is present (comparing "Actual") but disabled until something is selected.
+  await expect(page.locator(".compare-copy")).toBeVisible();
+  await expect(page.locator(".compare-copy")).toBeDisabled();
   await expect(page.locator("#save")).toBeDisabled();
   await expect(page.locator("#canvas .djs-palette")).toBeHidden();
 
-  // The LEFT ("newer") pane is read-only too: dragging TaskA must NOT move it. (Regression:
-  // the newest split pane used to stay editable because setReadOnly was a no-op.)
+  // The LEFT ("Actual") pane is read-only: dragging TaskA must NOT move it.
   const taskABefore = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
   await page.mouse.move(taskABefore.x + taskABefore.width / 2, taskABefore.y + taskABefore.height / 2);
   await page.mouse.down();
@@ -237,29 +237,34 @@ test("compare: both panes are read-only visualization (no copy button, dragging 
   const taskAStill = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
   expect(Math.abs(taskAStill.x - taskABefore.x) + Math.abs(taskAStill.y - taskABefore.y)).toBeLessThan(3);
 
-  // Dragging the historical (right) pane PANS it (drag-hand). A NavigatedViewer cannot
-  // MOVE elements, so if TaskB's on-screen position shifts after a background drag, the
-  // view panned (and the model is untouched). Start on empty canvas at the top-center —
-  // away from the bottom-right "Powered by bpmn.io" watermark link, which would swallow
-  // the mousedown and prevent panning.
+  // A PLAIN drag on the right pane's empty canvas PANS it (drag-hand preserved), and the
+  // sync mirrors the pan to the left pane. Start top-center, away from the watermark link.
   const before = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
   const leftBefore = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
   const pane = (await page.locator("#canvas2 .djs-container").boundingBox())!;
-  const startX = pane.x + pane.width / 2, startY = pane.y + 15;
-  await page.mouse.move(startX, startY);
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + 15);
   await page.mouse.down();
-  await page.mouse.move(startX, startY + 130, { steps: 8 });
+  await page.mouse.move(pane.x + pane.width / 2, pane.y + 145, { steps: 8 });
   await page.mouse.up();
   const after = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
   expect(Math.abs(after.x - before.x) + Math.abs(after.y - before.y)).toBeGreaterThan(20); // it panned
-  // Bidirectional sync: panning the right pane also pans the LEFT pane (viewports mirror).
   const leftAfter = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
-  expect(Math.abs(leftAfter.y - leftBefore.y)).toBeGreaterThan(20); // left followed the right pane
+  expect(Math.abs(leftAfter.y - leftBefore.y)).toBeGreaterThan(20); // left mirrored the pan
 
-  // Exit → single canvas back, still nothing to publish (nothing was edited).
+  // Select TaskB in the historical pane (a plain click selects one element) → copy enables.
+  const shapesBefore = await page.locator("#canvas .djs-element[data-element-id]").count();
+  await page.locator('#canvas2 .djs-element[data-element-id="TaskB"] .djs-hit').click({ force: true });
+  await expect(page.locator(".compare-copy")).toBeEnabled();
+  await page.locator(".compare-copy").click();
+
+  // The element lands in the current diagram (one more shape) and it becomes publishable.
+  await expect.poll(async () => page.locator("#canvas .djs-element[data-element-id]").count()).toBe(shapesBefore + 1);
+  await expect(page.locator("#save")).toBeEnabled();
+
+  // Exit → single canvas back; the copied element stays and Publicar is still enabled.
   await page.locator(".compare-exit").click();
   await expect(page.locator("#canvasarea.split")).toHaveCount(0);
-  await expect(page.locator("#save")).toBeDisabled();
+  await expect(page.locator("#save")).toBeEnabled();
 });
 
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {

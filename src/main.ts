@@ -51,6 +51,7 @@ import { createHeatmapController } from "./heatmap";
 import { reduce, initialState, type AppState } from "./state";
 import { readLock, lockState, lockProps, clearProps, isStale, isExpired } from "./lockManager";
 import { saveDraft, loadDraft, hasDraft, clearDraft } from "./draftStore";
+import { getAutosave, setAutosave } from "./draftPrefs";
 import { diffTree } from "./watcher";
 import { computeDiff } from "./bpmnDiff";
 import { createDiffView, type DiffView } from "./diffView";
@@ -71,7 +72,7 @@ import {
   renderPreviewBar,
   renderCompareBar,
 } from "./ui";
-import { createCompareModeler, syncViewport, type ViewerLike } from "./compareView";
+import { createCompareModeler, syncViewport, installViewSelectGuard, enableRubberBandSelect, type ViewerLike } from "./compareView";
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -111,7 +112,8 @@ async function bootstrap() {
   let compareUnsync: (() => void) | null = null; // viewport-sync teardown
   let compareMarkedLeft: string[] = [];
   let compareMarkedRight: string[] = [];
-  let preCompareXml: string | null = null; // working version snapshot (restored on exit)
+  let preCompareXml: string | null = null; // working version snapshot (restored on exit; updated on paste)
+  let compareEdited = false; // did we paste historical elements into the working version this compare session?
   let comparePoints: Array<{ id: string; label: string }> = []; // revisions (for labels)
   let historyPoints: RestorePoint[] = []; // cached so the History panel re-renders on checkbox toggle
   let editor: ReturnType<typeof createEditor>;
@@ -363,7 +365,13 @@ async function bootstrap() {
     tagPools();
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
-    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); });
+    modeler.get("eventBus").on("commandStack.changed", () => {
+      tagPools(); armIdle();
+      if (editor.isLoading()) return; // ignore the load-induced churn (clear + import)
+      draftPending = true; updateLocalStatus(); scheduleDraftSave();
+    });
+    // A brand-new native edit branches history → the coarse redo stack is stale.
+    modeler.get("eventBus").on("commandStack.executed", () => { coarseRedo.length = 0; });
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -729,10 +737,16 @@ async function bootstrap() {
           <button class="btn icon-only" id="newfile" type="button" title="Nuevo diagrama">${icon("new")}</button>
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
-          <button class="btn" id="save" type="button" title="Publicar cambios al equipo (Ctrl+S)">${icon("save")}<span class="btn-label">Publicar</span><span class="dot" id="savedot" hidden></span></button>
         </div>
         <span class="divider"></span>
-        <div class="tgroup">
+        <div class="tgroup" id="localgroup">
+          <span class="glabel">Local</span>
+          <button class="btn toggle-btn" id="autosave-toggle" type="button" role="switch" aria-checked="true" title="Autoguardado del borrador local (privado)"><span class="switch" aria-hidden="true"><span class="switch-knob"></span></span><span class="btn-label">Autoguardado</span></button>
+          <button class="btn" id="savedraft" type="button" title="Guardar borrador local ahora (privado)">${icon("save")}<span class="btn-label">Guardar</span></button>
+          <span class="lstatus" id="localstatus"></span>
+        </div>
+        <span class="divider"></span>
+        <div class="tgroup" data-prio="1">
           <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
           <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
           <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
@@ -742,15 +756,23 @@ async function bootstrap() {
           </div>
         </div>
         <span class="divider"></span>
-        <div class="tgroup">
+        <div class="tgroup" data-prio="2">
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
         </div>
         <span class="spacer"></span>
-        <span class="lock-chip" id="filechip"></span>
-        <button class="btn" id="editmode" type="button" hidden></button>
-        <button class="btn" id="close" type="button" hidden>Cerrar</button>
+        <div class="tgroup" id="sharedgroup">
+          <span class="glabel">Compartido</span>
+          <span class="lock-chip" id="filechip"></span>
+          <button class="btn" id="editmode" type="button" hidden></button>
+          <button class="btn" id="save" type="button" title="Publicar cambios al equipo (Ctrl+S)">${icon("upload")}<span class="btn-label">Publicar</span><span class="dot" id="savedot" hidden></span></button>
+          <button class="btn" id="close" type="button" hidden>Cerrar</button>
+        </div>
+        <div class="menu" id="moremenu" hidden>
+          <button class="btn icon-only" id="more" type="button" title="Más herramientas">${icon("more")}</button>
+          <div id="morepop" class="menu-pop" hidden></div>
+        </div>
         <span class="divider"></span>
         <button class="btn icon-only" id="toggle-inspector" type="button" title="Mostrar panel lateral">${icon("panelRight")}</button>
       </div>
@@ -1046,6 +1068,7 @@ async function bootstrap() {
     else inspector.hide();
     reflectInspectorToggle();
     $("settings").addEventListener("click", () => renderVizSettings());
+    $("more").addEventListener("click", () => { const p = document.getElementById("morepop"); if (p) p.hidden = !p.hidden; });
     $("exportSvg").addEventListener("click", guard(async () => {
       if (state.kind === "editing") await exportSvg(modeler, baseName(state.fileId));
     }));
@@ -1155,9 +1178,22 @@ async function bootstrap() {
       const { html } = await buildManual(manualDeps());
       showManualModal(html);
     })().catch(onError));
-    $("undo").addEventListener("click", () => { try { modeler.get("commandStack").undo(); } catch { /* nothing to undo */ } });
-    $("redo").addEventListener("click", () => { try { modeler.get("commandStack").redo(); } catch { /* nothing to redo */ } });
+    $("undo").addEventListener("click", () => void doUndo().catch(onError));
+    $("redo").addEventListener("click", () => void doRedo().catch(onError));
     $("save").addEventListener("click", guard(async () => { if (state.kind === "editing") await publish(state.fileId); }));
+    // Local group: manual draft save + autosave on/off toggle.
+    $("savedraft").addEventListener("click", guard(async () => {
+      if (state.kind !== "editing") return;
+      await flushDraft();
+      render();
+      showToast("Guardado local");
+    }));
+    $("autosave-toggle").addEventListener("click", () => {
+      const on = !getAutosave();
+      setAutosave(on);
+      render();
+      if (on) scheduleDraftSave(); // catch up any pending edits right away
+    });
     // Reserva control: free → reservar (con duración); mine → liberar; theirs → solicitar turno.
     $("editmode").addEventListener("click", guard(async () => {
       if (state.kind !== "editing") return;
@@ -1198,11 +1234,78 @@ async function bootstrap() {
       }
     });
 
+    // Coarse undo/redo fallback for history-restore. bpmn-js handles Ctrl+Z/Y natively
+    // while its command stack has entries; this CAPTURE-phase listener only steps in
+    // when the native stack is exhausted AND a snapshot exists — pre-empting (and
+    // stopping) the native keyboard so there's no double-fire. When the native stack
+    // can still act, we don't touch the event and it flows to bpmn-js as usual.
+    window.addEventListener("keydown", (ev) => {
+      const t = ev.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      const k = ev.key.toLowerCase();
+      const isRedo = k === "y" || (k === "z" && ev.shiftKey);
+      const isUndo = k === "z" && !ev.shiftKey;
+      if (isUndo && !canNativeUndo() && coarseUndo.length) {
+        ev.preventDefault(); ev.stopPropagation(); void doUndo().catch(onError);
+      } else if (isRedo && !canNativeRedo() && coarseRedo.length) {
+        ev.preventDefault(); ev.stopPropagation(); void doRedo().catch(onError);
+      }
+    }, true);
+
     dispatch({ type: "signedIn" });
     dispatch({ type: "folderSelected", folderId: "local" });
     await refreshFileList();
     pollTimer = window.setInterval(() => void pollChanges().catch(onError), 7000);
     void maybeShowUpdateBanner();
+    // Keep the toolbar on a single row: collapse the lowest-priority groups into "⋯".
+    reflowToolbar();
+    try { new ResizeObserver(() => reflowToolbar()).observe(document.getElementById("toolbar")!); } catch { /* no RO */ }
+  }
+
+  // Single-row toolbar: while it overflows, move the highest-`data-prio` collapsible
+  // group into the "⋯" (#morepop); when space frees up, return them to their anchors.
+  // Media queries already dropped labels/rótulos first, so this only kicks in when very
+  // narrow. Guard against re-entrancy (moving nodes can trigger the ResizeObserver).
+  const tgAnchor = new Map<HTMLElement, Comment>();
+  const tgDivider = new Map<HTMLElement, HTMLElement>();
+  let reflowing = false;
+  function reflowToolbar(): void {
+    if (reflowing) return;
+    reflowing = true;
+    try {
+      const bar = document.getElementById("toolbar");
+      const menu = document.getElementById("moremenu");
+      const pop = document.getElementById("morepop");
+      if (!bar || !menu || !pop) return;
+      // Restore everything to its anchor first (ascending prio → original order).
+      for (const g of Array.from(pop.children) as HTMLElement[]) {
+        const a = tgAnchor.get(g);
+        if (a && a.parentElement) a.parentElement.insertBefore(g, a);
+        const d = tgDivider.get(g);
+        if (d) d.hidden = false;
+      }
+      menu.hidden = true;
+      pop.hidden = true;
+      // Collapse highest-prio first until it fits (or nothing left to collapse).
+      let guard = 0;
+      while (bar.scrollWidth > bar.clientWidth + 1 && guard++ < 30) {
+        // Only groups still DIRECTLY in the toolbar — not ones already inside #morepop
+        // (which lives within #toolbar), else we'd re-pick the same group forever.
+        const groups = (Array.from(bar.querySelectorAll(":scope > .tgroup[data-prio]")) as HTMLElement[])
+          .sort((a, b) => Number(b.dataset.prio || 0) - Number(a.dataset.prio || 0));
+        const g = groups[0];
+        if (!g) break;
+        if (!tgAnchor.has(g)) { const c = document.createComment("tg"); g.parentElement?.insertBefore(c, g); tgAnchor.set(g, c); }
+        const prev = g.previousElementSibling as HTMLElement | null;
+        if (prev && prev.classList.contains("divider")) { tgDivider.set(g, prev); prev.hidden = true; }
+        menu.hidden = false;
+        pop.appendChild(g);
+      }
+      if (pop.children.length === 0) { menu.hidden = true; pop.hidden = true; }
+    } finally {
+      reflowing = false;
+    }
   }
 
   function dispatch(event: Parameters<typeof reduce>[1]) {
@@ -1274,8 +1377,22 @@ async function bootstrap() {
     if (dot) (dot as HTMLElement).hidden = !unpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
-    if (undo) undo.disabled = !editing || previewing || compareRO;
-    if (redo) redo.disabled = !editing || previewing || compareRO;
+    const editable = editing && !previewing && !compareRO;
+    if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
+    if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
+    // Local group: autosave toggle state, manual-save availability, saved status.
+    const auto = document.getElementById("autosave-toggle") as HTMLButtonElement | null;
+    if (auto) {
+      const on = getAutosave();
+      auto.classList.toggle("active", on);
+      auto.setAttribute("aria-checked", on ? "true" : "false");
+      auto.title = on ? "Autoguardado del borrador local: activado (clic para desactivar)"
+                      : "Autoguardado del borrador local: desactivado (clic para activar)";
+    }
+    const savedraft = document.getElementById("savedraft") as HTMLButtonElement | null;
+    if (savedraft) savedraft.disabled = !editable;
+    updateLocalStatus();
+    reflowToolbar(); // button visibility/label changes may alter the toolbar's width
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
@@ -1305,16 +1422,67 @@ async function bootstrap() {
   // ---- Local draft autosave (private, per-machine — see draftStore.ts) ----
   // Every edit is captured to localStorage so nothing is lost before "Publicar".
   let draftTimer: number | null = null;
+  // Tracks edits not yet written to the local draft (distinct from editor.isDirty(),
+  // which is "changed since last load/publish"). Drives the "Local" status label.
+  let draftPending = false;
   function scheduleDraftSave(): void {
+    if (!getAutosave()) return; // autosave OFF → user saves the draft manually
     if (draftTimer) clearTimeout(draftTimer);
     draftTimer = window.setTimeout(() => void flushDraft().catch(onError), 800);
   }
-  // Write the pending draft immediately (used before switching files / on close).
+  // Write the pending draft immediately (used before switching files / on close, and
+  // by the manual "Guardar" button). Runs regardless of the autosave toggle.
   async function flushDraft(): Promise<void> {
     if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
     if (state.kind === "editing" && editor.isDirty()) {
       saveDraft(folderId, state.fileId, await editor.getXml());
+      draftPending = false;
+      updateLocalStatus();
     }
+  }
+  // Refresh the small "Local" section status: ✓ Guardado local vs ● Sin guardar.
+  function updateLocalStatus(): void {
+    const s = document.getElementById("localstatus");
+    if (!s) return;
+    if (state.kind !== "editing") { s.textContent = ""; s.classList.remove("dirty"); return; }
+    s.textContent = draftPending ? "● Sin guardar" : "✓ Guardado local";
+    s.classList.toggle("dirty", draftPending);
+  }
+
+  // ---- Coarse (snapshot) undo/redo, layered ON TOP of bpmn-js' native CommandStack ----
+  // A history-restore replaces the whole diagram via importXML, which wipes the native
+  // command stack — so restoring can't be undone natively. We keep XML snapshots of the
+  // pre-restore working version here; native undo/redo handles the fine edits, and once
+  // it's exhausted this layer reverts the restore itself. Scoped per open file.
+  const coarseUndo: string[] = [];
+  const coarseRedo: string[] = [];
+  const canNativeUndo = (): boolean => { try { return !!modeler.get("commandStack").canUndo(); } catch { return false; } };
+  const canNativeRedo = (): boolean => { try { return !!modeler.get("commandStack").canRedo(); } catch { return false; } };
+  // Load a snapshot back into the editable canvas and persist it as the local draft.
+  async function applyCoarseSnapshot(snap: string): Promise<void> {
+    await loadIntoEditor(snap);
+    editor.setReadOnly(false);
+    if (state.kind === "editing") saveDraft(folderId, state.fileId, snap);
+    draftPending = false;
+    dispatch({ type: "dirtyChanged", dirty: true });
+    updateLocalStatus();
+    render();
+  }
+  async function doUndo(): Promise<void> {
+    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (canNativeUndo()) { try { modeler.get("commandStack").undo(); } catch { /* noop */ } return; }
+    if (!coarseUndo.length) return;
+    coarseRedo.push(await editor.getXml());
+    await applyCoarseSnapshot(coarseUndo.pop() as string);
+    showToast("Se deshizo la restauración");
+  }
+  async function doRedo(): Promise<void> {
+    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (canNativeRedo()) { try { modeler.get("commandStack").redo(); } catch { /* noop */ } return; }
+    if (!coarseRedo.length) return;
+    coarseUndo.push(await editor.getXml());
+    await applyCoarseSnapshot(coarseRedo.pop() as string);
+    showToast("Se rehizo la restauración");
   }
 
   // The advisory reservation, considering expiry: an expired reservation is free.
@@ -1336,6 +1504,8 @@ async function bootstrap() {
     clearPreviewUI(); // leaving any active revision preview
     clearCompareUI(); // leaving any active compare
     await flushDraft();
+    coarseUndo.length = 0; coarseRedo.length = 0; // coarse undo is per-file
+    draftPending = false; // fresh file: whatever we load is already the saved state
     await releaseReserveIfMine();
     let meta;
     try {
@@ -1563,15 +1733,23 @@ async function bootstrap() {
   // (replacing the working version), then leave preview.
   async function restoreRevisionToDraft(fileId: string, rid: string): Promise<void> {
     const xml = await api.getRevisionXml(fileId, rid);
+    // Snapshot the working version you had BEFORE going into history, so Ctrl+Z / the
+    // Deshacer button can revert this restore even though importXML wipes the native
+    // command stack. prePreviewXml holds it (read it before clearPreviewUI nulls it).
+    const preRestore = prePreviewXml ?? loadDraft(folderId, fileId) ?? (await api.getXml(fileId));
+    coarseUndo.push(preRestore);
+    coarseRedo.length = 0;
     clearPreviewUI(); // leaving preview WITHOUT restoring the old working — we replace it
     compareSel = [];
     await loadIntoEditor(xml);
     editor.setReadOnly(false);
     saveDraft(folderId, fileId, xml); // becomes your unpublished draft
+    draftPending = false;
     dispatch({ type: "dirtyChanged", dirty: true });
+    updateLocalStatus();
     renderHistoryPanelNow();
     render();
-    showToast("Restaurado en tu borrador — Publicá para compartirlo");
+    showToast("Restaurado en tu borrador — Ctrl+Z para deshacer, o Publicá para compartir");
   }
   // Drop the preview banner/frame WITHOUT restoring (used by restoreWorking + file switch).
   function clearPreviewUI(): void {
@@ -1627,6 +1805,7 @@ async function bootstrap() {
       if (!comparing) {
         await flushDraft();
         preCompareXml = await editor.getXml();
+        compareEdited = false;
         comparing = true;
         const c2 = $el("canvas2")!;
         c2.hidden = false;
@@ -1634,7 +1813,10 @@ async function bootstrap() {
         applyCompareOrientation();
         document.body.classList.add("app-comparing");
         if (!compareViewer) {
-          compareViewer = await createCompareModeler(c2); // read-only NavigatedViewer (pan + zoom)
+          compareViewer = await createCompareModeler(c2); // BpmnModeler: select + copyPaste + pan
+          installViewSelectGuard(compareViewer as unknown as { get(n: string): any }); // no editing
+          enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // Shift+drag = box-select
+          compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow()); // live copy count
         }
       }
       await renderCompare();
@@ -1681,13 +1863,43 @@ async function bootstrap() {
   }
   function renderCompareBarNow(): void {
     if (!comparing || !compareRight) return;
+    let copyCount = 0;
+    try { copyCount = compareViewer ? compareViewer.get("selection").get().length : 0; } catch { copyCount = 0; }
     renderCompareBar($el("compare")!, {
       leftLabel: compareLabelOf(compareLeft),
       rightLabel: compareLabelOf(compareRight),
       orientation: compareOrientation,
+      copyCount,
+      canCopy: compareLeft === "actual", // paste only into the editable "Actual" pane
       onOrientation: toggleCompareOrientation,
+      onCopy: () => void copySelectionToActual().catch(onError),
       onExit: () => void exitCompare().catch(onError),
     });
+  }
+  // Copy the elements selected in the historical (right) pane into the current working
+  // diagram, with all their properties — reusing bpmn-js copyPaste. Valid only when the
+  // left pane is "Actual" (= the working version underlies the main modeler). The paste is
+  // a native command (undoable while comparing); on the FIRST paste we also push a coarse
+  // snapshot so it stays undoable AFTER exit (importXML on exit wipes the native stack).
+  async function copySelectionToActual(): Promise<void> {
+    if (state.kind !== "editing" || !compareViewer || compareLeft !== "actual") return;
+    const selected = compareViewer.get("selection").get();
+    if (!selected.length) return;
+    if (!compareEdited) { coarseUndo.push(preCompareXml ?? (await editor.getXml())); coarseRedo.length = 0; }
+    const tree = compareViewer.get("copyPaste").copy(selected); // serializable descriptor
+    const targetCanvas = modeler.get("canvas");
+    modeler.get("clipboard").set(tree);
+    const vb = targetCanvas.viewbox();
+    const pasted = modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
+    try { if (Array.isArray(pasted) && pasted.length) modeler.get("selection").select(pasted); } catch { /* ok */ }
+    compareEdited = true;
+    preCompareXml = await editor.getXml(); // exit keeps the paste
+    saveDraft(folderId, state.fileId, preCompareXml); // unpublished draft survives exit (drives Publicar)
+    draftPending = false;
+    dispatch({ type: "dirtyChanged", dirty: true });
+    updateLocalStatus();
+    renderCompareBarNow();
+    showToast(`${selected.length} elemento(s) copiados a tu versión actual — Publicá para compartir`);
   }
   function teardownCompare(): void {
     comparing = false;
@@ -1706,10 +1918,13 @@ async function bootstrap() {
   async function exitCompare(opts: { clearChecks?: boolean } = {}): Promise<void> {
     if (!comparing) return;
     const fileId = state.kind === "editing" ? state.fileId : null;
-    // Compare is read-only, so nothing was edited — just bring back the working version.
+    // Bring back the working version. preCompareXml carries any elements copied from the
+    // historical pane (copySelectionToActual updates it), so those survive exit; the draft
+    // was already persisted at copy time so Publicar stays enabled afterwards.
     const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
     teardownCompare();
     preCompareXml = null;
+    compareEdited = false;
     compareRight = null;
     if (opts.clearChecks !== false) compareSel = []; // "Salir" clears checks; unchecking keeps them
     if (restore != null) { await loadIntoEditor(restore); editor.setReadOnly(false); }
@@ -1722,6 +1937,7 @@ async function bootstrap() {
     if (!comparing) return;
     teardownCompare();
     preCompareXml = null;
+    compareEdited = false;
     compareRight = null;
     compareSel = [];
   }
