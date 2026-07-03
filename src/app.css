@@ -169,6 +169,10 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 /* Historical (right) compare pane is a read-only viewer; hide any editing chrome just in
    case. (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
 #canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
+/* While previewing/comparing the MAIN canvas is read-only too — hide its editing chrome
+   (the interaction veto in editor.ts blocks the actual edits; this hides the affordances). */
+body.app-previewing #canvas .djs-palette, body.app-previewing #canvas .djs-context-pad,
+body.app-comparing #canvas .djs-palette, body.app-comparing #canvas .djs-context-pad { display: none; }
 .inspector { position: relative; width: var(--inspector-width, 300px); box-sizing: border-box; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; transition: margin-right .2s ease; }
 .inspector.collapsed { margin-right: calc(-1 * var(--inspector-width, 300px)); }
 /* Drag handle on the inspector's left edge to resize its width. */
