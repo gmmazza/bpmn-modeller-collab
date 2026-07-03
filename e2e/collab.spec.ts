@@ -97,6 +97,19 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   // "↩ Restaurar esta versión" lives in the preview bar (not the row).
   await expect(page.locator(".preview-restore")).toBeVisible();
 
+  // Read-only is really enforced: trying to DRAG the shape must NOT move it, and the
+  // palette (editing chrome) is hidden. (Regression: setReadOnly used to be a no-op.)
+  await expect(page.locator("#canvas .djs-palette")).toBeHidden();
+  const shape = page.locator('#canvas .djs-element[data-element-id="Task_DRAFT"]');
+  const posBefore = (await shape.boundingBox())!;
+  await page.mouse.move(posBefore.x + posBefore.width / 2, posBefore.y + posBefore.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(posBefore.x + 140, posBefore.y + 90, { steps: 8 });
+  await page.mouse.up();
+  const posAfter = (await shape.boundingBox())!;
+  expect(Math.abs(posAfter.x - posBefore.x) + Math.abs(posAfter.y - posBefore.y)).toBeLessThan(3); // did not move
+  await expect(page.locator("#save")).toBeDisabled(); // and nothing became publishable
+
   // "Volver" → banner/frame gone, current version back, and the checkbox unticks.
   await page.locator(".preview-exit").click();
   await expect(page.locator(".preview-bar")).toHaveCount(0);
@@ -212,6 +225,17 @@ test("compare: both panes are read-only visualization (no copy button, dragging 
   // No copy option anymore — compare is visualization only, both panes read-only.
   await expect(page.locator(".compare-copy")).toHaveCount(0);
   await expect(page.locator("#save")).toBeDisabled();
+  await expect(page.locator("#canvas .djs-palette")).toBeHidden();
+
+  // The LEFT ("newer") pane is read-only too: dragging TaskA must NOT move it. (Regression:
+  // the newest split pane used to stay editable because setReadOnly was a no-op.)
+  const taskABefore = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
+  await page.mouse.move(taskABefore.x + taskABefore.width / 2, taskABefore.y + taskABefore.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(taskABefore.x + 120, taskABefore.y + 70, { steps: 8 });
+  await page.mouse.up();
+  const taskAStill = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
+  expect(Math.abs(taskAStill.x - taskABefore.x) + Math.abs(taskAStill.y - taskABefore.y)).toBeLessThan(3);
 
   // Dragging the historical (right) pane PANS it (drag-hand). A NavigatedViewer cannot
   // MOVE elements, so if TaskB's on-screen position shifts after a background drag, the
