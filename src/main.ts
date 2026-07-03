@@ -1538,21 +1538,44 @@ async function bootstrap() {
     document.body.classList.add("app-previewing");
     renderPreviewBar(document.getElementById("preview")!, label, {
       onExit: () => void exitPreview(fileId).catch(onError),
+      onRestore: () => void restoreRevisionToDraft(fileId, rid).catch(onError),
     });
     render();
   }
-  async function exitPreview(fileId: string): Promise<void> {
+  // Silently return the editor to the working version (draft/shared) and drop the preview
+  // banner, WITHOUT touching the selection or toasting. Used by mode transitions
+  // (preview→compare, preview→working). Callers own the checkbox state and any toast.
+  async function restoreWorking(): Promise<void> {
     if (previewingRid === null) return;
-    const xml = prePreviewXml ?? loadDraft(folderId, fileId) ?? (await api.getXml(fileId));
-    previewingRid = null;
-    prePreviewXml = null;
-    await loadIntoEditor(xml);
-    editor.setReadOnly(false);
-    clearPreviewUI();
+    const fileId = state.kind === "editing" ? state.fileId : null;
+    const xml = prePreviewXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    clearPreviewUI(); // drops banner/frame + nulls previewingRid/prePreviewXml
+    if (xml != null) { await loadIntoEditor(xml); editor.setReadOnly(false); }
+  }
+  // "Volver a la versión actual" (preview bar): restore working, untick the checkbox, toast.
+  async function exitPreview(_fileId: string): Promise<void> {
+    if (previewingRid === null) return;
+    await restoreWorking();
+    compareSel = [];
+    renderHistoryPanelNow();
     render();
     showToast("Volviste a la versión actual");
   }
-  // Drop the preview banner/frame WITHOUT restoring (used by Restaurar and file switch).
+  // "↩ Restaurar esta versión" (preview bar): bring the previewed revision into your draft
+  // (replacing the working version), then leave preview.
+  async function restoreRevisionToDraft(fileId: string, rid: string): Promise<void> {
+    const xml = await api.getRevisionXml(fileId, rid);
+    clearPreviewUI(); // leaving preview WITHOUT restoring the old working — we replace it
+    compareSel = [];
+    await loadIntoEditor(xml);
+    editor.setReadOnly(false);
+    saveDraft(folderId, fileId, xml); // becomes your unpublished draft
+    dispatch({ type: "dirtyChanged", dirty: true });
+    renderHistoryPanelNow();
+    render();
+    showToast("Restaurado en tu borrador — Publicá para compartirlo");
+  }
+  // Drop the preview banner/frame WITHOUT restoring (used by restoreWorking + file switch).
   function clearPreviewUI(): void {
     previewingRid = null;
     prePreviewXml = null;
@@ -1588,36 +1611,53 @@ async function bootstrap() {
     renderHistoryPanelNow();
     void applyCompareSelection().catch(onError);
   }
-  // Enter/update compare from the current 2 checkboxes (or exit if not exactly 2).
+  // The single dispatcher for the checkbox selection. It routes to one of three modes by
+  // how many rows are checked: 2 → compare, 1 revision → preview, 0/only-"Actual" → working.
   async function applyCompareSelection(): Promise<void> {
     if (state.kind !== "editing") return;
-    if (compareSel.length !== 2) {
-      if (comparing) await exitCompare({ clearChecks: false });
+    const fileId = state.fileId;
+
+    // --- 2 checked → compare ---
+    if (compareSel.length === 2) {
+      // Coming from preview? Restore the working version first, so the "Actual" left pane
+      // and the exit-restore use the real working version — not the previewed revision.
+      if (previewingRid !== null) await restoreWorking();
+      const [a, b] = [...compareSel].sort((x, y) => recencyOf(y) - recencyOf(x)); // a newer, b older
+      compareLeft = a;
+      compareRight = b; // always a revision id ("actual" is newest → always left)
+      if (!comparing) {
+        await flushDraft();
+        preCompareXml = await editor.getXml();
+        compareEdited = false;
+        comparing = true;
+        const c2 = $el("canvas2")!;
+        c2.hidden = false;
+        $el("canvasarea")?.classList.add("split");
+        applyCompareOrientation();
+        document.body.classList.add("app-comparing");
+        if (!compareViewer) {
+          compareViewer = await createCompareModeler(c2);
+          enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // drag = box-select several
+          compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow());
+        }
+      }
+      await renderCompare();
+      renderCompareBarNow();
+      render();
       return;
     }
-    const [a, b] = [...compareSel].sort((x, y) => recencyOf(y) - recencyOf(x)); // a newer, b older
-    compareLeft = a;
-    compareRight = b; // always a revision id ("actual" is newest → always left)
-    if (!comparing) {
-      clearPreviewUI(); // preview and compare are mutually exclusive
-      await flushDraft();
-      preCompareXml = await editor.getXml();
-      compareEdited = false;
-      comparing = true;
-      const c2 = $el("canvas2")!;
-      c2.hidden = false;
-      $el("canvasarea")?.classList.add("split");
-      applyCompareOrientation();
-      document.body.classList.add("app-comparing");
-      if (!compareViewer) {
-        compareViewer = await createCompareModeler(c2);
-        enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // drag = box-select several
-        compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow());
-      }
+
+    // --- <2 checked → not comparing (restores the working version, keeps the checks) ---
+    if (comparing) await exitCompare({ clearChecks: false });
+
+    // --- 1 revision checked → preview it (works from working OR just-exited compare) ---
+    const singleRev = compareSel.length === 1 && compareSel[0] !== "actual" ? compareSel[0] : null;
+    if (singleRev) {
+      await enterPreview(fileId, singleRev, compareLabelOf(singleRev));
+      return;
     }
-    await renderCompare();
-    renderCompareBarNow();
-    render();
+    // --- 0 checked, or only "Actual" → back to the editable working version ---
+    if (previewingRid !== null) { await restoreWorking(); render(); showToast("Volviste a la versión actual"); }
   }
   async function renderCompare(): Promise<void> {
     if (!comparing || state.kind !== "editing" || !compareRight || !compareViewer) return;
@@ -1733,26 +1773,13 @@ async function bootstrap() {
     compareSel = [];
   }
 
-  // Render the History panel from the cached points + current compare checkbox state.
+  // Render the History panel from the cached points + current checkbox state. The
+  // checkbox IS the version picker: toggleCompareSel routes to preview (1) / compare (2).
+  // Per-version actions (Restaurar) live in the preview bar, not the rows.
   function renderHistoryPanelNow(): void {
     const panel = document.getElementById("history");
     if (!panel) return;
     renderHistoryPanel(panel, historyPoints, {
-      onPreview: (rid) => void (async () => {
-        if (state.kind !== "editing") return;
-        await enterPreview(state.fileId, rid, compareLabelOf(rid));
-      })().catch(onError),
-      onRestore: (rid) => void (async () => {
-        if (state.kind !== "editing") return;
-        clearPreviewUI(); // Restaurar supersedes any active preview
-        const xml = await api.getRevisionXml(state.fileId, rid);
-        await loadIntoEditor(xml);
-        editor.setReadOnly(false);
-        saveDraft(folderId, state.fileId, xml); // becomes your unpublished draft
-        dispatch({ type: "dirtyChanged", dirty: true });
-        showToast("Restaurado en tu borrador — Publicá para compartirlo");
-      })().catch(onError),
-      // Checkbox selection drives compare: an "Actual (editable)" row + each revision.
       compare: { selected: compareSel, onToggle: toggleCompareSel },
     });
   }

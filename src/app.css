@@ -122,6 +122,8 @@ body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
 body.app-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
 .preview-bar { display: flex; align-items: center; gap: 10px; background: #e0e7ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
 .preview-bar .preview-spacer { flex: 1; }
+.preview-bar .preview-restore { background: #fff; color: #3730a3; border: 1px solid #6366f1; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.preview-bar .preview-restore:hover { background: #eef2ff; }
 .preview-bar .preview-exit { background: #4f46e5; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .preview-bar .preview-exit:hover { filter: brightness(1.08); }
 
@@ -164,9 +166,9 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 .history-row.checked { background: #f0fdfa; border-color: #0d9488; }
 .history-side { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: #0d9488; border-radius: 4px; padding: 1px 5px; }
 .history-side.der { background: #64748b; }
-.history-actions { display: flex; gap: 6px; width: 100%; }
-.history-actions button { background: #fff; color: #334155; border: 1px solid var(--border); border-radius: 5px; padding: 3px 9px; cursor: pointer; font-family: inherit; font-size: 12px; }
-.history-actions button:hover { background: #f8fafc; border-color: #94a3b8; }
+/* Single-select preview badge: indigo, matching the preview banner/frame theme. */
+.history-side.preview { background: #4f46e5; padding: 1px 4px; }
+.history-row.previewing { background: #eef2ff; border-color: #6366f1; }
 /* Historical (right) compare pane is only for select+copy — hide its editing UI.
    (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
 #canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
