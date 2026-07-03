@@ -12,7 +12,7 @@ const { packager } = require("@electron/packager");
 // Exclude everything that isn't needed at runtime. Anchored at the repo root so
 // dist/ (the built renderer) and electron/ (main+preload) are kept.
 const EXCLUDE =
-  /^[\\/](release|node_modules|src|docs|e2e|coverage|scratchpad|build|test|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
+  /^[\\/](release|node_modules|src|docs|e2e|coverage|scratchpad|build|test|test-results|playwright-report|playwright\.config\.ts|qa-workspace|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
 
 packager({
   dir: ".",

@@ -60,6 +60,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
         lockedByEmail: j.lockedByEmail ?? "",
         lockedByName: j.lockedByName ?? "",
         lockedAt: j.lockedAt ?? "",
+        lockedUntil: j.lockedUntil ?? "",
       };
     } catch {
       return {};

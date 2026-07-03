@@ -1,6 +1,7 @@
 .diff-added .djs-visual > :nth-child(1) { stroke: #16a34a !important; stroke-width: 3px !important; }
 .diff-removed .djs-visual > :nth-child(1) { stroke: #dc2626 !important; stroke-width: 3px !important; stroke-dasharray: 4 !important; }
 .diff-changed .djs-visual > :nth-child(1) { stroke: #d97706 !important; stroke-width: 3px !important; }
+.diff-moved .djs-visual > :nth-child(1) { stroke: #2563eb !important; stroke-width: 3px !important; stroke-dasharray: 2 2 !important; }
 .sync-warning { background: #fde68a; color: #92400e; padding: 6px 10px; font-size: 13px; }
 .conflict-bar { background: #fee2e2; color: #991b1b; padding: 6px 10px; }
 
@@ -9,3 +10,6 @@
 .modal-msg { margin: 0 0 8px; }
 .modal-input { width: 100%; box-sizing: border-box; margin: 0 0 12px; padding: 6px 8px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.modal-choices { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 0 0 12px; }
+.modal-choice { padding: 8px 10px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; cursor: pointer; font-family: inherit; }
+.modal-choice:hover { border-color: var(--accent); }

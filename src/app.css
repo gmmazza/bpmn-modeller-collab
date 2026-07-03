@@ -22,7 +22,14 @@
   --shadow: 0 1px 3px rgba(0,0,0,.5);
 }
 
+html, body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; }
+/* Root is a full-height flex column: header/toolbar keep their natural height and
+   main.app fills the rest. This is immune to the toolbar wrapping to a 2nd row (a
+   long lock-chip + Publicar + Solicitar/Cerrar) — the canvas shrinks instead of the
+   whole page growing and forcing a scrollbar. */
+#app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+#appheader, #toolbar, #sync, #conflict, #preview, #compare, #appupdate { flex: none; }
 
 #appheader {
   display: flex; align-items: center; gap: 12px;
@@ -98,12 +105,74 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 .btn.primary { background: var(--accent); color: var(--accent-contrast); }
 .btn.primary:hover { filter: brightness(1.05); }
 .btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.lock-chip { font-size: 12px; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
+.btn .btn-label { font-size: 12px; }
+/* Publicar draws attention (accent) only while there are unpublished changes. */
+#save:not(:disabled) { background: var(--accent); color: var(--accent-contrast); }
+#save:not(:disabled):hover { filter: brightness(1.05); }
+#save:not(:disabled) .dot { background: var(--accent-contrast); }
+.lock-chip { font-size: 12px; color: var(--muted); display: inline-block; min-width: 0; max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* my reservation = filled accent pill (notorious); someone else's stays amber */
+.lock-chip.lock-mine { color: var(--accent-contrast); background: var(--accent); border-radius: 999px; padding: 2px 10px; font-weight: 600; }
+.lock-chip.lock-theirs { color: #d97706; }
+/* notorious frame around the canvas while you hold a reservation on this diagram */
+body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Revision preview: a calm-but-notorious indigo frame + banner (distinct from the
+   blue reservation frame, the amber sync bar and the red conflict bar) so it's
+   unmistakable you're viewing an OLD version, without being strident. */
+body.app-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
+.preview-bar { display: flex; align-items: center; gap: 10px; background: #e0e7ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
+.preview-bar .preview-spacer { flex: 1; }
+.preview-bar .preview-restore { background: #fff; color: #3730a3; border: 1px solid #6366f1; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.preview-bar .preview-restore:hover { background: #eef2ff; }
+.preview-bar .preview-exit { background: #4f46e5; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.preview-bar .preview-exit:hover { filter: brightness(1.08); }
 
-main.app { display: flex; height: calc(100vh - 92px); overflow: hidden; }
+main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
 #files.collapsed { margin-left: -240px; }
-#canvas { flex: 1; min-width: 0; }
+#canvasarea { flex: 1; min-width: 0; display: flex; }
+#canvasarea.vertical { flex-direction: column; }
+#canvas { flex: 1; min-width: 0; min-height: 0; }
+#canvasarea.split #canvas { flex: 0 0 var(--split, 50%); }
+#canvas2 { flex: 1 1 0; min-width: 0; min-height: 0; }
+#canvas2[hidden] { display: none; }
+/* Draggable split separator between the two compare panes (shown only while comparing). */
+.canvas-resizer { display: none; flex: none; background: var(--border); z-index: 4; }
+#canvasarea.split .canvas-resizer { display: block; }
+#canvasarea:not(.vertical) .canvas-resizer { width: 6px; cursor: col-resize; }
+#canvasarea.vertical .canvas-resizer { height: 6px; cursor: row-resize; }
+.canvas-resizer:hover, body.col-resizing .canvas-resizer { background: #0d9488; }
+/* Compare mode: teal frame on both panes + banner (distinct from indigo preview). */
+body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
+.compare-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #ccfbf1; color: #115e59; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #99f6e4; }
+.compare-bar .compare-spacer { flex: 1; }
+.compare-bar .compare-title { font-weight: 600; }
+.compare-bar .compare-legend { color: #0f766e; font-size: 12px; }
+.compare-bar .compare-orient { background: #fff; color: #115e59; border: 1px solid #0d9488; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.compare-bar .compare-orient:hover { background: #f0fdfa; }
+.compare-bar .compare-exit { background: #0d9488; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.compare-bar .compare-exit:hover { filter: brightness(1.08); }
+
+/* History panel: fixed "Actual" row on top + revision rows, each with a compare
+   checkbox. Checked rows are highlighted with an izq/der (or arriba/abajo) side badge. */
+#history h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #334155; }
+.history-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; background: #fff; transition: background .12s, border-color .12s; }
+.history-row:hover { border-color: #99f6e4; }
+.history-row .history-check { margin: 0; cursor: pointer; accent-color: #0d9488; }
+.history-row .history-label { flex: 1; min-width: 0; font-size: 12.5px; color: #1e293b; }
+.history-row.checked { background: #f0fdfa; border-color: #0d9488; }
+.history-side { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: #0d9488; border-radius: 4px; padding: 1px 5px; }
+.history-side.der { background: #64748b; }
+/* Single-select preview badge: indigo, matching the preview banner/frame theme. */
+.history-side.preview { background: #4f46e5; padding: 1px 4px; }
+.history-row.previewing { background: #eef2ff; border-color: #6366f1; }
+/* Historical (right) compare pane is a read-only viewer; hide any editing chrome just in
+   case. (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
+#canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
+/* While previewing/comparing the MAIN canvas is read-only too — hide its editing chrome
+   (the interaction veto in editor.ts blocks the actual edits; this hides the affordances). */
+body.app-previewing #canvas .djs-palette, body.app-previewing #canvas .djs-context-pad,
+body.app-comparing #canvas .djs-palette, body.app-comparing #canvas .djs-context-pad { display: none; }
 .inspector { position: relative; width: var(--inspector-width, 300px); box-sizing: border-box; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; transition: margin-right .2s ease; }
 .inspector.collapsed { margin-right: calc(-1 * var(--inspector-width, 300px)); }
 /* Drag handle on the inspector's left edge to resize its width. */
@@ -274,4 +343,67 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ideas-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1 1 auto; }
 .ideas-list .idea { display: flex; gap: 6px; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .ideas-list .idea.done .idea-body { text-decoration: line-through; color: var(--muted); }
-.idea-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 10px; padding: 1px 6px; font-size: 11px; cursor: default; box-shadow: var(--shadow); }
+.idea-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; line-height: 1.2; cursor: default; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--accent-contrast); }
+.idea-badge-clickable:hover { filter: brightness(1.1); }
+
+/* Ideas panel v2 */
+.ideas-filters { display: flex; gap: 8px; margin: 6px 0; }
+.ideas-filters select { flex: 1; }
+.idea-row { display: flex; gap: 6px; align-items: flex-start; padding: 5px 0; border-bottom: 1px solid var(--border); }
+.idea-open { flex: 1; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; }
+.idea-desc { flex: 1 1 auto; min-width: 0; }
+.idea-meta { color: var(--muted); font-size: 12px; }
+/* anchored vs general differentiation */
+.idea-tag { flex: none; font-size: 11px; border-radius: 999px; padding: 0 7px; line-height: 1.6; }
+.idea-tag.anchored { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+.idea-tag.general { background: var(--hover, rgba(127,127,127,0.14)); color: var(--muted); }
+.idea-thread { display: flex; flex-direction: column; gap: 8px; height: 100%; box-sizing: border-box; }
+.thread-head { display: flex; justify-content: space-between; }
+.thread-meta { font-size: 12px; color: var(--muted); }
+.thread-desc { width: 100%; min-height: 80px; box-sizing: border-box; }
+.thread-promote { align-self: flex-start; }
+/* comments as a chat */
+.thread-comments { list-style: none; margin: 0; padding: 0; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.thread-comment { display: flex; flex-direction: column; gap: 2px; }
+.thread-comment-meta { font-size: 11px; color: var(--muted); }
+.thread-comment-bubble { background: var(--hover, rgba(127,127,127,0.12)); border-radius: 10px; padding: 6px 10px; white-space: pre-wrap; word-break: break-word; align-self: flex-start; max-width: 90%; }
+.thread-comment-empty { color: var(--muted); }
+/* state-change log entries interleaved in the thread + their toggle */
+.thread-log-toggle { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.thread-log { list-style: none; font-size: 12px; color: var(--muted); padding: 2px 0 2px 4px; border-left: 2px solid var(--border); }
+
+/* Idea mode — canvas overlay popover */
+.idea-badge-clickable { cursor: pointer; }
+/* strong temporary highlight of the element an idea focus refers to */
+.djs-element.idea-focused .djs-visual > :is(rect, circle, polygon, path, ellipse) {
+  stroke: var(--accent) !important; stroke-width: 3px !important;
+}
+.idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
+
+/* Ideas panel — focus header (shown when an element is selected) */
+.ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ideas-focus-clear { flex: none; background: transparent; border: none; color: var(--accent, #2563eb); cursor: pointer; font-size: 12px; }
+.ideas-empty { list-style: none; color: var(--muted); font-size: 13px; padding: 6px 0; }
+
+/* Idea-mode toggle — clearly evident when active */
+#toggle-idea-mode.active { background: var(--accent); color: var(--accent-contrast); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+#toggle-idea-mode.active svg { color: var(--accent-contrast); }
+
+/* State chip — icon-only, colored per state; label in tooltip + menu */
+.idea-state-chip { flex: none; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; padding: 0; }
+.idea-state-chip.state-pendiente { color: #6b7280; }
+.idea-state-chip.state-haciendo  { color: #2563eb; }
+.idea-state-chip.state-pausado   { color: #d97706; }
+.idea-state-chip.state-hecho     { color: #16a34a; }
+.idea-state-chip.state-rechazado { color: #dc2626; }
+.idea-state-menu { min-width: 150px; }
+.idea-state-option { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
+.idea-state-option:hover { background: var(--hover, rgba(127,127,127,0.12)); }
+.idea-state-option.current { font-weight: 600; }
+.idea-pop-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; color: var(--muted); }
+.idea-pop-empty { font-size: 12px; color: var(--muted); padding: 4px 0; }
+.idea-pop-row { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
+.idea-pop-row:hover { background: var(--hover); }
+.idea-pop-add { display: flex; gap: 6px; margin-top: 6px; }
+.idea-pop-add input { flex: 1; }

@@ -1,25 +1,33 @@
 import { describe, it, expect } from "vitest";
-import { createNotePanelController, type DiagramElement } from "./notePanelController";
+import { createNotePanelController, type DiagramElement, type NoteControllerApi } from "./notePanelController";
 import { createDocsClient } from "./docsClient";
 import { createFsClient } from "../fsClient";
 import { createFakeDir } from "../testHelpers/fakeDir";
 
-function setup(elements: DiagramElement[], selected: DiagramElement | null) {
+function makeBaseApi(elements: DiagramElement[], selected: DiagramElement | null) {
   const fs = createFsClient(createFakeDir());
   const docs = createDocsClient(fs);
   const mount = document.createElement("div");
   let sel = selected;
   const listeners: Array<() => void> = [];
-  const api = {
+  return {
     docs,
     mount,
-    diagramId: () => "x.bpmn",
-    processName: () => "Proc",
-    listElements: () => elements,
-    getSelected: () => sel,
-    onSelectionChange: (cb: () => void) => listeners.push(cb),
-    setSel: (e: DiagramElement | null) => { sel = e; listeners.forEach((l) => l()); },
+    api: {
+      docs,
+      mount,
+      diagramId: () => "x.bpmn",
+      processName: () => "Proc",
+      listElements: () => elements,
+      getSelected: () => sel,
+      onSelectionChange: (cb: () => void) => listeners.push(cb),
+      setSel: (e: DiagramElement | null) => { sel = e; listeners.forEach((l) => l()); },
+    } as NoteControllerApi & { setSel(e: DiagramElement | null): void },
   };
+}
+
+function setup(elements: DiagramElement[], selected: DiagramElement | null) {
+  const { docs, mount, api } = makeBaseApi(elements, selected);
   const ctrl = createNotePanelController(api);
   return { docs, mount, api, ctrl };
 }

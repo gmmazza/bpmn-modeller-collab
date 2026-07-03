@@ -9,9 +9,39 @@ export interface ModelerLike {
   get(name: string): any;
 }
 
+// bpmn-js 18 has NO built-in read-only mode, so we enforce it ourselves: veto every
+// editing-initiation interaction (drag-move, create, resize, connect, bendpoints, direct
+// edit) at high priority, and disable the keyboard. Pan/zoom/selection are untouched —
+// they don't flow through these events. Returns a toggle fn; installs listeners once.
+function installReadOnlyGuard(modeler: ModelerLike): (ro: boolean) => void {
+  let eventBus: any, keyboard: any;
+  try { eventBus = modeler.get("eventBus"); } catch { /* no bus (test stub) */ }
+  try { keyboard = modeler.get("keyboard"); } catch { /* optional */ }
+  let active = false;
+  let kbdNode: unknown = null;
+  // Firing any of these returns false while read-only → diagram-js aborts the interaction.
+  const BLOCK = [
+    "shape.move.start", "create.start", "resize.start", "connect.start",
+    "connectionSegment.move.start", "bendpoint.move.start", "directEditing.activate",
+    "element.dblclick", "spaceTool.selection.start", "lasso.selection.start",
+  ];
+  const veto = (): false | undefined => (active ? false : undefined);
+  if (eventBus?.on) for (const e of BLOCK) eventBus.on(e, 20000, veto);
+  return (ro: boolean): void => {
+    if (ro === active) return;
+    active = ro;
+    if (!keyboard) return;
+    try {
+      if (ro) { kbdNode = keyboard._node ?? null; keyboard.unbind(); }
+      else if (kbdNode) { keyboard.bind(kbdNode); kbdNode = null; }
+    } catch { /* keyboard API drift — veto still blocks mouse editing */ }
+  };
+}
+
 export function createEditor(modeler: ModelerLike) {
   let dirty = false;
   let loading = false;
+  let readOnlyToggle: ((ro: boolean) => void) | null = null;
   const dirtyCbs: Array<(d: boolean) => void> = [];
 
   function setDirty(value: boolean) {
@@ -39,10 +69,10 @@ export function createEditor(modeler: ModelerLike) {
       return xml ?? "";
     },
     setReadOnly(ro: boolean): void {
-      // diagram-js exposes read-only toggling via the "editorActions"/"keyboard" stack;
-      // bpmn-js supports it through the optional "bpmn-js" read-only mixin.
-      const actions = modeler.get("editorActions");
-      if (actions && typeof actions.readOnly === "function") actions.readOnly(ro);
+      // bpmn-js 18 has no native read-only mode; enforce it via an interaction-veto guard
+      // (installed lazily, once). Pan/zoom/selection stay; all editing is blocked.
+      if (!readOnlyToggle) readOnlyToggle = installReadOnlyGuard(modeler);
+      readOnlyToggle(ro);
     },
     isDirty: (): boolean => dirty,
     onDirtyChange(cb: (d: boolean) => void): void {
