@@ -97,7 +97,7 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toHaveCount(0);
 });
 
-test("compare mode: split with diff on both panes (incl. moved), radio switches to read-only, exit restores", async ({ page }) => {
+test("compare mode: split with diff on both panes (incl. moved), orientation toggle + draggable separator, exit restores", async ({ page }) => {
   // current: Start, TaskA@250, End.  revision: Start, TaskA@350 (moved), TaskB (extra).
   const di = (id: string, x: number, y: number, w = 100, h = 80) =>
     `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
@@ -114,21 +114,42 @@ test("compare mode: split with diff on both panes (incl. moved), radio switches 
   await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
+  // Select "Actual (editable)" + the revision (checkboxes) → 2 checked enters compare.
+  await page.locator('#history [data-compare="actual"]').check();
+  await page.locator("#history .history-check").nth(1).check();
 
   // Split + compare bar + a mounted second viewer.
   await expect(page.locator("#canvasarea.split")).toHaveCount(1);
   await expect(page.locator(".compare-bar")).toBeVisible();
   await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
+  // The checked history rows are highlighted, tagged izq (actual, newest) / der (revision).
+  await expect(page.locator('#history [data-compare="actual"]').locator("xpath=ancestor::div[contains(@class,'history-row')]")).toHaveClass(/checked/);
+  await expect(page.locator("#history .history-side.izq")).toHaveCount(1);
+  await expect(page.locator("#history .history-side.der")).toHaveCount(1);
   // Left (current/new): End added, TaskA moved. Right (revision/old): TaskB removed, TaskA moved.
   await expect(page.locator('#canvas .djs-element.diff-added[data-element-id="End"]')).toHaveCount(1);
   await expect(page.locator('#canvas .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
   await expect(page.locator('#canvas2 .djs-element.diff-removed[data-element-id="TaskB"]')).toHaveCount(1);
   await expect(page.locator('#canvas2 .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
+  // Left pane is "Actual" → still editable (undo available in principle, not read-only).
+  await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
 
-  // Radio → "Versión más actual" makes the left pane read-only.
-  await page.locator('input[name="cmp-base"]').nth(1).check();
-  await expect(page.locator("#undo")).toBeDisabled();
+  // Orientation toggle → stacks the panes (adds .vertical); button relabels.
+  await page.locator(".compare-orient").click();
+  await expect(page.locator("#canvasarea.vertical")).toHaveCount(1);
+  await expect(page.locator(".compare-orient")).toContainText("Lado a lado");
+  await page.locator(".compare-orient").click(); // back to side-by-side
+  await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
+
+  // Draggable separator → dragging #canvassplit changes the --split ratio.
+  const splitBefore = await page.locator("#canvasarea").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
+  const sep = (await page.locator("#canvassplit").boundingBox())!;
+  await page.mouse.move(sep.x + sep.width / 2, sep.y + sep.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(sep.x - 120, sep.y + sep.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const splitAfter = await page.locator("#canvasarea").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
+  expect(splitAfter).not.toBe(splitBefore);
 
   // Exit → single canvas back, no split, no overflow.
   await page.locator(".compare-exit").click();
@@ -153,7 +174,8 @@ test("compare: copy an element from the historical pane into the current diagram
   await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
+  await page.locator('#history [data-compare="actual"]').check();
+  await page.locator("#history .history-check").nth(1).check();
 
   // current diagram has no TaskB yet.
   await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(0);
@@ -179,7 +201,8 @@ test("compare: rubber-band (box) select several elements and copy them all", asy
   await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator("#history").getByRole("button", { name: "Comparar" }).first().click();
+  await page.locator('#history [data-compare="actual"]').check();
+  await page.locator("#history .history-check").nth(1).check();
 
   // Rubber-band: drag a box that only PARTIALLY overlaps both tasks (left half) — with
   // intersection selection (not full enclosure) it must still select both.

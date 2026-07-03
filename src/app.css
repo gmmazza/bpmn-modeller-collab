@@ -129,21 +129,44 @@ main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 #files { width: 240px; box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
 #files.collapsed { margin-left: -240px; }
 #canvasarea { flex: 1; min-width: 0; display: flex; }
-#canvas { flex: 1; min-width: 0; }
-#canvas2 { flex: 1; min-width: 0; border-left: 2px solid var(--border); }
+#canvasarea.vertical { flex-direction: column; }
+#canvas { flex: 1; min-width: 0; min-height: 0; }
+#canvasarea.split #canvas { flex: 0 0 var(--split, 50%); }
+#canvas2 { flex: 1 1 0; min-width: 0; min-height: 0; }
 #canvas2[hidden] { display: none; }
+/* Draggable split separator between the two compare panes (shown only while comparing). */
+.canvas-resizer { display: none; flex: none; background: var(--border); z-index: 4; }
+#canvasarea.split .canvas-resizer { display: block; }
+#canvasarea:not(.vertical) .canvas-resizer { width: 6px; cursor: col-resize; }
+#canvasarea.vertical .canvas-resizer { height: 6px; cursor: row-resize; }
+.canvas-resizer:hover, body.col-resizing .canvas-resizer { background: #0d9488; }
 /* Compare mode: teal frame on both panes + banner (distinct from indigo preview). */
 body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 .compare-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #ccfbf1; color: #115e59; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #99f6e4; }
 .compare-bar .compare-spacer { flex: 1; }
-.compare-bar label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-.compare-bar select { font-family: inherit; font-size: 13px; padding: 2px 4px; border-radius: 4px; border: 1px solid #99f6e4; background: #fff; color: #115e59; }
+.compare-bar .compare-title { font-weight: 600; }
 .compare-bar .compare-legend { color: #0f766e; font-size: 12px; }
+.compare-bar .compare-orient,
 .compare-bar .compare-copy { background: #fff; color: #115e59; border: 1px solid #0d9488; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.compare-bar .compare-orient:hover,
 .compare-bar .compare-copy:hover:not(:disabled) { background: #f0fdfa; }
 .compare-bar .compare-copy:disabled { opacity: .5; cursor: default; }
 .compare-bar .compare-exit { background: #0d9488; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .compare-bar .compare-exit:hover { filter: brightness(1.08); }
+
+/* History panel: fixed "Actual" row on top + revision rows, each with a compare
+   checkbox. Checked rows are highlighted teal with an izq/der side badge. */
+#history h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #334155; }
+.history-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; background: #fff; transition: background .12s, border-color .12s; }
+.history-row:hover { border-color: #99f6e4; }
+.history-row .history-check { margin: 0; cursor: pointer; accent-color: #0d9488; }
+.history-row .history-label { flex: 1; min-width: 0; font-size: 12.5px; color: #1e293b; }
+.history-row.checked { background: #f0fdfa; border-color: #0d9488; }
+.history-side { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #fff; background: #0d9488; border-radius: 4px; padding: 1px 5px; }
+.history-side.der { background: #64748b; }
+.history-actions { display: flex; gap: 6px; width: 100%; }
+.history-actions button { background: #fff; color: #334155; border: 1px solid var(--border); border-radius: 5px; padding: 3px 9px; cursor: pointer; font-family: inherit; font-size: 12px; }
+.history-actions button:hover { background: #f8fafc; border-color: #94a3b8; }
 /* Historical (right) compare pane is only for select+copy — hide its editing UI.
    (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
 #canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
