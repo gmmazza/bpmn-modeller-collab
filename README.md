@@ -3,16 +3,18 @@
 Editor de diagramas **BPMN 2.0** para equipos que trabajan sobre una **carpeta
 compartida** (Google Drive, OneDrive, Dropbox, Syncthing, red local…). Sin
 servidor y sin base de datos: cada diagrama es un archivo `.bpmn` en una carpeta
-sincronizada, y la colaboración se resuelve con **bloqueos por archivo**
-(check-out / check-in) e **historial de versiones** local. Se distribuye como
-**`.exe` portable de Windows** (Electron) y también corre en el navegador.
+sincronizada. La colaboración usa un modelo **optimista Borrador → Publicar**:
+editás en un **borrador privado** y **Publicás** cuando querés compartir; el
+historial, la documentación, las ideas y hasta los agentes de IA conviven en
+archivos de texto junto a cada diagrama. Se distribuye como **`.exe` portable de
+Windows** (Electron) y también corre en el navegador.
 
-![Vista general](docs/screenshots/01-overview.png)
+![Vista general: barra, lienzo del diagrama e inspector](docs/screenshots/01-overview.png)
 
-> 📘 **[Manual de uso completo →](docs/MANUAL.md)** — guía operativa de todas las
-> funciones (guardado/publicar, sincronización, historial, documentación, ideas,
-> colaboración con IA, capas, ajustes y actualización). También disponible **dentro
-> de la app**, en el botón de **Ayuda**.
+> 📘 **[Manual de uso completo →](docs/MANUAL.md)** — guía operativa con capturas y
+> **casos de uso**: guardado/publicar, sincronización, historial, documentación,
+> ideas, colaboración con IA, capas, ajustes y actualización. También disponible
+> **dentro de la app**, en el botón de **Ayuda** (índice navegable).
 
 ---
 
@@ -24,45 +26,87 @@ propiedades, selector de color, minimapa, grilla, **validación en vivo**
 (bpmnlint), **simulación de tokens**, modo de dibujo *sketchy* (a mano alzada) y
 mapa de calor. Exportá a **SVG** o **PNG**.
 
-![Panel de propiedades](docs/screenshots/02-properties.png)
+### Guardado local y publicación (Borrador → Publicar)
+Editar **nunca requiere pedir permiso ni bloquear**. Cada cambio se guarda en un
+**borrador privado en tu máquina** (autoguardado con interruptor on/off + botón
+**Guardar** manual, e indicador *✓ Guardado local / ● Sin guardar*). Cuando está
+listo, **Publicar** (`Ctrl+S`) comparte con el equipo y crea una versión en el
+historial. La barra separa lo **Local** de lo **Compartido**.
+
+![Barra: grupo Local (Autoguardado, Guardar, estado) y grupo Compartido (Reservar, Publicar)](docs/screenshots/02-barra.png)
+
+### Historial: previsualizar, comparar y rescatar
+Cada publicación queda como versión en `.history/<nombre>/` (con **poda
+automática**). El panel Historial usa **casillas** como selector: 1 marcada →
+**previsualizás** (solo lectura, marco índigo); 2 marcadas → **comparás** en un
+split sincronizado con diff a color (🟢 nuevo · 🔴 eliminado · 🟡 cambiado ·
+🔵 movido). Podés **Restaurar** una versión a tu borrador, o **copiar elementos
+sueltos** de una versión histórica a la actual (clic / **Shift+arrastre**,
+conservando el *drag-hand*). Todo es **deshacible** con `Ctrl+Z`.
+
+![Vista previa de una revisión, en solo-lectura](docs/screenshots/04-preview.png)
+![Comparación con diff coloreado y "Copiar al actual"](docs/screenshots/05-comparar.png)
+
+### Documentación de procesos
+Cada diagrama tiene una carpeta hermana `<diagrama>.docs/` con documentación en
+**Markdown**: una página del proceso y una nota por paso, con **wikilinks**
+`[[proceso#elemento]]`, imágenes pegadas y un índice autogenerado. El botón
+**Manual** arma un documento completo del proceso para **imprimir** o **exportar
+HTML** autocontenido.
+
+![Editor de documentación de un paso, con Markdown y wikilinks](docs/screenshots/06-documentacion.png)
+
+### Ideas y mejoras (con colaboración de IA)
+Capturá **ideas** ancladas a cada elemento, en hilos con descripción, comentarios
+y **estados** (pendiente / haciendo / pausado / hecho / rechazado). Badges 💡
+clicables sobre el canvas, filtros, y **promoción de idea a *mejora*** vinculada.
+Como todo es Markdown en la carpeta, **agentes de IA externos** (p. ej. Claude
+Code sobre la misma carpeta) pueden leer y proponer cambios; se firman como autor
+`IA` (🤖) siguiendo el protocolo `AGENTS.md`. **No hay API de LLM integrada**: es
+colaboración basada en archivos.
+
+![Panel de Ideas con ideas ancladas y el badge 💡 en el diagrama](docs/screenshots/07-ideas.png)
 
 ### Capas de color (sin tocar el `.bpmn`)
-Pintá los elementos por **categoría** (p. ej. madurez de automatización,
-actores) y agregá anotaciones. Los colores se guardan en un *sidecar*
+Pintá los elementos por **categoría** (p. ej. madurez de automatización, actores)
+y agregá anotaciones. Los colores se guardan en un *sidecar*
 `<diagrama>.layers.json`, así que **no modifican el archivo BPMN**: no generan
-ruido en el control de versiones ni conflictos al colaborar.
+ruido en el control de versiones ni conflictos al colaborar. Guardá conjuntos de
+capas como **plantillas** reutilizables.
 
-### Colaboración basada en archivos
-- **Bloqueos optimistas**: *Check-out* toma el archivo para vos
-  (`<nombre>.bpmn.lock`); *Check-in* lo libera. Si otra persona lo edita, se
-  avisa el conflicto y se ofrece *Steal*.
-- **Historial de versiones**: cada guardado conserva revisiones en
-  `.history/<nombre>/` (con poda automática), con previsualización y
-  restauración.
-- **Detección de cambios externos**: la app vigila los archivos; si llega una
-  versión nueva recarga (si no tenés cambios) o muestra una barra de conflicto
-  con **Ver diferencias** (overlay de colores + tecla `d` para alternar).
-- Tolerante a la sincronización en la nube (reintentos ante bloqueos de
-  Drive/OneDrive al escribir).
+![El proceso coloreado por madurez de automatización](docs/screenshots/08-capas.png)
 
-### Gestión de archivos integrada
-Árbol de archivos con **subcarpetas**: crear, abrir, renombrar, duplicar, mover,
-copiar y borrar diagramas y carpetas desde el menú de cada fila.
+### Coordinación de equipo y sincronización
+- **Reserva** advisory (un aviso, no un bloqueo): "estoy trabajando en esto hasta
+  tal hora", con duración elegible y expiración por inactividad. Si otra persona
+  reservó, podés **solicitar turno**.
+- **Detección de cambios externos**: si llega una versión nueva y no tenés
+  cambios, se recarga sola; si hay conflicto al Publicar, aparece una barra con
+  **Ver diferencias** (colores + tecla `d` para alternar), **Descartar** o
+  **Conservar lo mío**.
+- Detecta y avisa los **archivos en conflicto** que crea el cliente de sync
+  (`proceso (1).bpmn`, `.sync-conflict-…`, etc.).
+
+![Selector de duración de la reserva](docs/screenshots/09-reserva.png)
 
 ### Productividad
-- **Atajos de teclado** para herramientas (mano, lazo, conexión, espacio…) y
-  edición (deshacer/rehacer, copiar/pegar, borrar, zoom, buscar).
-- **Paneles laterales colapsables** e independientes.
-- **Tema claro / oscuro**.
-- Página de **ayuda** integrada con todas las funciones y atajos.
+- **Gestión de archivos** con subcarpetas: crear, abrir, renombrar, duplicar,
+  mover, copiar y borrar desde el menú **⋯** de cada fila.
+- **Atajos de teclado** para herramientas y edición; **deshacer/rehacer** robusto
+  (incluye restaurar y copiar del historial).
+- **Barra responsive**: en ventanas chicas colapsa a iconos y pliega lo
+  secundario en un menú **"⋯ Más"** (nunca salta a dos líneas).
+- **Paneles laterales colapsables**, **tema claro / oscuro**, y **manual de uso**
+  integrado en **Ayuda**.
 
-![Ayuda y atajos](docs/screenshots/03-help.png)
+![La barra en una ventana angosta: iconos + menú "⋯"](docs/screenshots/10-responsive.png)
 
 ---
 
 ## 🚀 Uso (versión portable de Windows)
 
-1. Descargá y **descomprimí la carpeta completa** (`BPMN-compartida-portable`).
+1. Descargá el `.zip` de la última **[Release](https://github.com/gmmazza/bpmn-modeller-collab/releases/latest)**
+   y **descomprimí la carpeta completa**.
 2. Ejecutá **`BPMN compartida.exe`** desde dentro de esa carpeta. La primera vez
    Windows SmartScreen puede advertir (app sin firmar) → *Más información* →
    *Ejecutar de todos modos*.
@@ -122,23 +166,26 @@ comprimí la carpeta resultante en un `.zip`.
   - **Electron**: IPC contra el proceso principal, que es el **único dueño** de
     la carpeta autorizada (el *renderer* nunca elige rutas → defensa ante un
     `.bpmn` malicioso). Las escrituras son atómicas y tolerantes a bloqueos.
-- Esta abstracción deja la puerta abierta a futuros *backends* (p. ej. plugin de
-  Obsidian o servicio web remoto) sin tocar la UI.
+- El **borrador privado** vive por máquina (localStorage); solo **Publicar**
+  escribe en la carpeta compartida. La documentación, ideas y capas son
+  *sidecars* de texto junto al `.bpmn`.
 - Cobertura de pruebas amplia con Vitest (happy-dom).
 
 ---
 
-## 🤝 Probar la colaboración (dos equipos sobre la misma carpeta)
+## 🤝 Probar la colaboración (dos personas sobre la misma carpeta)
 
 1. PC A: *Elegir carpeta*, nombre "Ana". PC B: misma carpeta, nombre "Beto".
-2. A: *Nuevo diagrama* `demo.bpmn`, agrega una tarea, *Guardar*, *Check in*.
+2. A: *Nuevo diagrama* `demo.bpmn`, agrega una tarea, **Publicar**.
 3. B: tras la sync, `demo.bpmn` aparece en la lista. Abrir → se ve la tarea.
-4. A: abrir `demo.bpmn` (queda 🔒 para B). B ve "lo edita Ana" y el botón *Steal*.
-5. A: editar y *Guardar*. B (con el archivo abierto y SIN cambios): se recarga solo.
-6. Conflicto: A y B editan a la vez; el segundo en guardar ve la barra de
+4. A: **Reservar** `demo.bpmn` (aviso al equipo). B ve "Reservado por Ana" y puede
+   **Solicitar turno** — sin quedar bloqueado.
+5. A: editar y **Publicar**. B (con el archivo abierto y SIN cambios): se recarga solo.
+6. Conflicto: A y B editan a la vez; el segundo en publicar ve la barra de
    conflicto → *Ver diferencias* (colores + tecla `d`), luego *Descartar* o
    *Conservar lo mío*.
-7. Historial: varias guardadas → panel de historial → *Preview* y *Restore*.
+7. Historial: varias publicaciones → panel Historial → **previsualizar**,
+   **comparar** y **restaurar**.
 
 ---
 
