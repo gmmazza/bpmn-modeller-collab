@@ -4,6 +4,36 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.4.0] — 2026-07-03
+
+Versión de **experiencia de uso y documentación**: hace visible el guardado local,
+robustece el deshacer, recupera el copiar-desde-historial y suma un manual de uso
+ilustrado (en GitHub y dentro de la app).
+
+### Agregado
+- **Guardado local visible (Borrador→Publicar).** La barra se reorganizó en grupos
+  **Local** y **Compartido**. El autoguardado es ahora un **interruptor** on/off, con
+  botón **Guardar** manual e indicador *✓ Guardado local / ● Sin guardar*.
+- **Copiar elementos desde una versión histórica** (en modo comparación): **clic** o
+  **Shift+arrastre** para seleccionar en el panel histórico y **"📋 Copiar al actual"**
+  para pegarlos en tu borrador. El arrastre normal conserva el *drag-hand* (paneo).
+- **Barra de herramientas responsive**: en ventanas chicas colapsa a iconos y pliega los
+  grupos secundarios en un menú **"⋯ Más"** por prioridad; nunca salta a dos líneas.
+- **Manual de uso** completo (`docs/MANUAL.md`) con **capturas** y una sección de
+  **casos de uso y flujos**. Integrado **dentro de la app** (Ayuda → "Abrir manual de
+  uso completo") con índice lateral navegable, y enlazado desde el README.
+
+### Corregido
+- **Deshacer que se reseteaba**: al restaurar una versión del historial o copiar
+  elementos desde comparación, `importXML` vaciaba el *command stack* nativo. Se agregó
+  una **capa de undo por snapshots**, de modo que `Ctrl+Z` revierte esas operaciones y
+  el historial de deshacer deja de perderse.
+
+### Cambiado
+- El **toggle de autoguardado** pasó de un estado apenas visible a un interruptor claro.
+- El panel histórico de comparación (derecha) vuelve a permitir **selección** para
+  copiar, manteniéndose de solo-lectura para edición.
+
 ## [0.3.0] — 2026-07-03
 
 Versión mayor de **colaboración e ideas**: captura de ideas por elemento, un modelo de
