@@ -82,19 +82,46 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator("#history").getByRole("button", { name: "Vista previa" }).first().click();
+  // Checking a SINGLE revision (nth 0 is "Actual") previews it — no "Vista previa" button.
+  const revCheck = page.locator("#history .history-check").nth(1);
+  await revCheck.check();
 
-  // Preview: banner + indigo frame, publish disabled, and the OLD revision is loaded.
+  // Preview: banner + indigo frame, publish disabled, the OLD revision loaded, 👁 badge.
   await expect(page.locator(".preview-bar")).toContainText("versión anterior");
   await expect(page.locator("body.app-previewing")).toHaveCount(1);
   await expect(page.locator("#save")).toBeDisabled();
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toBeVisible();
+  await expect(page.locator("#history .history-side.preview")).toHaveText("👁");
+  await expect(revCheck).toBeChecked();
 
-  // Exit → banner/frame gone and the current version is back.
+  // "↩ Restaurar esta versión" lives in the preview bar (not the row).
+  await expect(page.locator(".preview-restore")).toBeVisible();
+
+  // "Volver" → banner/frame gone, current version back, and the checkbox unticks.
   await page.locator(".preview-exit").click();
   await expect(page.locator(".preview-bar")).toHaveCount(0);
   await expect(page.locator("body.app-previewing")).toHaveCount(0);
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toHaveCount(0);
+  await expect(page.locator("#history .history-check").nth(1)).not.toBeChecked();
+});
+
+test("preview: 'Restaurar esta versión' brings the revision into the draft and enables Publicar", async ({ page }) => {
+  await openApp(page, {
+    "test.bpmn": SEED_BPMN,
+    ".history/test/1782700000000~Beto.bpmn": DRAFT_BPMN,
+  });
+  await page.getByText("📄 test.bpmn").click();
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  await page.locator("#history .history-check").nth(1).check(); // preview the revision
+  await expect(page.locator("body.app-previewing")).toHaveCount(1);
+
+  // Restaurar from the preview bar → revision becomes the editable draft; leaves preview.
+  await page.locator(".preview-restore").click();
+  await expect(page.locator("body.app-previewing")).toHaveCount(0);
+  await expect(page.locator(".preview-bar")).toHaveCount(0);
+  await expect(page.locator('[data-element-id="Task_DRAFT"]')).toBeVisible(); // restored content stays
+  await expect(page.locator("#save")).toBeEnabled(); // it's an unpublished draft now
+  await expect(page.locator("#history .history-check").nth(1)).not.toBeChecked();
 });
 
 test("compare mode: split with diff on both panes (incl. moved), orientation toggle + draggable separator, exit restores", async ({ page }) => {

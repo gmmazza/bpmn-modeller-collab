@@ -33,8 +33,20 @@ describe("renderPreviewBar", () => {
     expect(msg).toContain("Beto");
     const exit = el.querySelector(".preview-exit") as HTMLElement;
     expect(exit.textContent).toBe("Volver a la versión actual");
+    // No onRestore given → no Restaurar button.
+    expect(el.querySelector(".preview-restore")).toBeNull();
     exit.click();
     expect(exited).toBe(true);
+  });
+
+  it("renders '↩ Restaurar esta versión' when onRestore is given and fires it", () => {
+    const el = document.createElement("div");
+    let restored = false;
+    renderPreviewBar(el, "30/6/2026 — Beto", { onExit: () => {}, onRestore: () => { restored = true; } });
+    const restore = el.querySelector(".preview-restore") as HTMLButtonElement;
+    expect(restore.textContent).toContain("Restaurar esta versión");
+    restore.click();
+    expect(restored).toBe(true);
   });
 });
 
@@ -101,12 +113,26 @@ describe("ui", () => {
     expect(toRestorePoint(mineRev, me).isExternal).toBe(false);
   });
 
-  it("renders restore points with a working restore button", () => {
+  it("renders history rows without any per-row action buttons (actions live in the preview bar)", () => {
     const container = document.createElement("div");
-    const onRestore = vi.fn();
-    renderHistoryPanel(container, [{ id: "r1", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Agent", authorEmail: "a@x.com", isExternal: true }], { onPreview: vi.fn(), onRestore });
-    (container.querySelector("[data-restore]") as HTMLButtonElement).click();
-    expect(onRestore).toHaveBeenCalledWith("r1");
+    renderHistoryPanel(container, [{ id: "r1", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Agent", authorEmail: "a@x.com", isExternal: true }], { compare: { selected: [], onToggle: vi.fn() } });
+    expect(container.querySelector("[data-restore]")).toBeNull();
+    expect(container.querySelector("[data-preview]")).toBeNull();
+    expect(container.querySelector(".history-actions")).toBeNull();
+    expect(container.querySelector('[data-compare="r1"]')).not.toBeNull(); // but the checkbox is there
+  });
+
+  it("marks a single checked revision as a 👁 preview (no izq/der sides)", () => {
+    const container = document.createElement("div");
+    const points: RestorePoint[] = [
+      { id: "20", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Beto", authorEmail: "b@x.com", isExternal: false },
+    ];
+    renderHistoryPanel(container, points, { compare: { selected: ["20"], onToggle: vi.fn() } });
+    const row = container.querySelector('[data-compare="20"]')!.closest(".history-row")!;
+    expect(row.classList.contains("previewing")).toBe(true);
+    expect(row.querySelector(".history-side.preview")!.textContent).toBe("👁");
+    expect(container.querySelector(".history-side.izq")).toBeNull();
+    expect(container.querySelector(".history-side.der")).toBeNull();
   });
 
   it("adds an 'Actual (editable)' row and compare checkboxes, highlights + sides the checked rows", () => {
@@ -117,7 +143,7 @@ describe("ui", () => {
       { id: "10", modifiedTime: "2026-06-20T10:00:00Z", authorName: "Ana", authorEmail: "a@x.com", isExternal: false },
     ];
     // "actual" (newest → izq) + revision "20" (→ der) are checked.
-    renderHistoryPanel(container, points, { onPreview: vi.fn(), onRestore: vi.fn(), compare: { selected: ["actual", "20"], onToggle } });
+    renderHistoryPanel(container, points, { compare: { selected: ["actual", "20"], onToggle } });
 
     // The pseudo-row "Actual (editable)" sits on top with its own checkbox.
     const checks = container.querySelectorAll<HTMLInputElement>(".history-check");

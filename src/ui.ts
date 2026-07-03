@@ -56,10 +56,9 @@ export function renderHistoryPanel(
   container: HTMLElement,
   points: RestorePoint[],
   handlers: {
-    onPreview: (id: string) => void;
-    onRestore: (id: string) => void;
-    // When present, each row gets a compare checkbox (plus a fixed "Actual (editable)"
-    // row on top). Check any 2 to compare; the checked rows are highlighted.
+    // Each row is a compare checkbox (plus a fixed "Actual (editable)" row on top). The
+    // checkbox IS the version picker: 1 revision checked → preview, 2 checked → compare.
+    // Row-level Preview/Restore buttons are gone — those actions live in the preview bar.
     compare?: { selected: string[]; onToggle: (id: string, checked: boolean) => void };
   },
 ): void {
@@ -69,7 +68,16 @@ export function renderHistoryPanel(
   // Which side each checked id maps to: newer → left, older → right ("actual" newest).
   const recency = (id: string): number => (id === "actual" ? Infinity : Number(id) || 0);
   const ordered = [...sel].sort((a, b) => recency(b) - recency(a));
-  const sideOf = (id: string): "izq" | "der" | null => (ordered[0] === id ? "izq" : ordered[1] === id ? "der" : null);
+  // 2 checked → izq/der (compare); 1 revision checked → 👁 (preview); else no badge.
+  const badgeOf = (id: string): { cls: string; text: string } | null => {
+    if (sel.length === 2) {
+      if (ordered[0] === id) return { cls: "izq", text: "izq" };
+      if (ordered[1] === id) return { cls: "der", text: "der" };
+      return null;
+    }
+    if (sel.length === 1 && sel[0] === id && id !== "actual") return { cls: "preview", text: "👁" };
+    return null;
+  };
 
   const rowHead = (id: string, text: string): HTMLElement => {
     const row = document.createElement("div");
@@ -84,12 +92,13 @@ export function renderHistoryPanel(
       cb.dataset.compare = id;
       cb.addEventListener("change", () => cmp.onToggle(id, cb.checked));
       row.appendChild(cb);
-      const side = sideOf(id);
-      if (side) {
-        const badge = document.createElement("span");
-        badge.className = `history-side ${side}`;
-        badge.textContent = side;
-        row.appendChild(badge);
+      const badge = badgeOf(id);
+      if (badge) {
+        if (badge.cls === "preview") row.classList.add("previewing");
+        const el = document.createElement("span");
+        el.className = `history-side ${badge.cls}`;
+        el.textContent = badge.text;
+        row.appendChild(el);
       }
     }
     const label = document.createElement("span");
@@ -105,21 +114,7 @@ export function renderHistoryPanel(
   for (const p of points) {
     const who = p.isExternal ? " (externo)" : p.authorEmail ? " (vos)" : "";
     const when = (() => { const d = new Date(p.modifiedTime); return isNaN(d.getTime()) ? p.modifiedTime : d.toLocaleString(); })();
-    const row = rowHead(p.id, `${when} — ${p.authorName}${who}`);
-    const actions = document.createElement("div");
-    actions.className = "history-actions";
-    const preview = document.createElement("button");
-    preview.textContent = "Vista previa";
-    preview.dataset.preview = p.id;
-    preview.addEventListener("click", () => handlers.onPreview(p.id));
-    actions.appendChild(preview);
-    const restore = document.createElement("button");
-    restore.textContent = "Restaurar";
-    restore.dataset.restore = p.id;
-    restore.addEventListener("click", () => handlers.onRestore(p.id));
-    actions.appendChild(restore);
-    row.appendChild(actions);
-    container.appendChild(row);
+    container.appendChild(rowHead(p.id, `${when} — ${p.authorName}${who}`));
   }
 }
 
@@ -182,11 +177,12 @@ export function renderSyncWarning(container: HTMLElement, names: string[]): void
 }
 
 // Banner shown while previewing an older revision (read-only). `label` is the
-// revision's date/author. The exit button returns to the current working version.
+// revision's date/author. Contextual per-version actions live here (not in the history
+// rows): optional "Restaurar esta versión", plus "Volver a la versión actual".
 export function renderPreviewBar(
   container: HTMLElement,
   label: string,
-  handlers: { onExit: () => void },
+  handlers: { onExit: () => void; onRestore?: () => void },
 ): void {
   container.innerHTML = "";
   const bar = document.createElement("div");
@@ -198,6 +194,16 @@ export function renderPreviewBar(
   const spacer = document.createElement("span");
   spacer.className = "preview-spacer";
   bar.appendChild(spacer);
+  if (handlers.onRestore) {
+    const restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "preview-restore";
+    restore.textContent = "↩ Restaurar esta versión";
+    restore.title = "Traer esta versión a tu borrador editable (después Publicá para compartirla)";
+    restore.dataset.restorePreview = "1";
+    restore.addEventListener("click", handlers.onRestore);
+    bar.appendChild(restore);
+  }
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "preview-exit";
