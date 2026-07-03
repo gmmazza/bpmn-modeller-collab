@@ -149,24 +149,29 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   await expect(page.locator("#canvasarea.split")).toHaveCount(1);
   await expect(page.locator(".compare-bar")).toBeVisible();
   await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
-  // The checked history rows are highlighted, tagged izq (actual, newest) / der (revision).
+  // The checked history rows are highlighted; side-by-side badges read izq / der.
   await expect(page.locator('#history [data-compare="actual"]').locator("xpath=ancestor::div[contains(@class,'history-row')]")).toHaveClass(/checked/);
-  await expect(page.locator("#history .history-side.izq")).toHaveCount(1);
-  await expect(page.locator("#history .history-side.der")).toHaveCount(1);
+  await expect(page.locator("#history .history-side.izq")).toHaveText("izq");
+  await expect(page.locator("#history .history-side.der")).toHaveText("der");
   // Left (current/new): End added, TaskA moved. Right (revision/old): TaskB removed, TaskA moved.
   await expect(page.locator('#canvas .djs-element.diff-added[data-element-id="End"]')).toHaveCount(1);
   await expect(page.locator('#canvas .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
   await expect(page.locator('#canvas2 .djs-element.diff-removed[data-element-id="TaskB"]')).toHaveCount(1);
   await expect(page.locator('#canvas2 .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
-  // Left pane is "Actual" → still editable (undo available in principle, not read-only).
+  // Compare is pure visualization → both panes read-only, so Publicar stays disabled.
+  await expect(page.locator("#save")).toBeDisabled();
   await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
 
-  // Orientation toggle → stacks the panes (adds .vertical); button relabels.
+  // Orientation toggle → stacks the panes (adds .vertical); button relabels AND the
+  // History badges switch from izq/der to arriba/abajo.
   await page.locator(".compare-orient").click();
   await expect(page.locator("#canvasarea.vertical")).toHaveCount(1);
   await expect(page.locator(".compare-orient")).toContainText("Lado a lado");
+  await expect(page.locator("#history .history-side.izq")).toHaveText("arriba");
+  await expect(page.locator("#history .history-side.der")).toHaveText("abajo");
   await page.locator(".compare-orient").click(); // back to side-by-side
   await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
+  await expect(page.locator("#history .history-side.izq")).toHaveText("izq");
 
   // Draggable separator → dragging #canvassplit changes the --split ratio.
   const splitBefore = await page.locator("#canvasarea").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
@@ -187,15 +192,14 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test("compare: copy an element from the historical pane into the current diagram", async ({ page }) => {
+test("compare: both panes are read-only visualization (no copy button, dragging the pane pans not moves)", async ({ page }) => {
   const shape = (id: string, x: number, y: number, w = 100, h = 80) =>
     `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
   const wrap = (proc: string, di: string) =>
     `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="D" targetNamespace="x"><bpmn:process id="P" isExecutable="false">${proc}</bpmn:process><bpmndi:BPMNDiagram id="Dg"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">${di}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`;
   const CUR = wrap(`<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/>`, shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59));
-  // revision has an extra TaskB (with a documentation child) that we'll copy back in.
   const REV = wrap(
-    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Paso viejo"><bpmn:documentation>nota</bpmn:documentation></bpmn:task>`,
+    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskA" name="Recibir"/><bpmn:task id="TaskB" name="Paso viejo"/>`,
     shape("Start", 156, 81, 36, 36) + shape("TaskA", 250, 59) + shape("TaskB", 250, 200, 120),
   );
   await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
@@ -203,59 +207,35 @@ test("compare: copy an element from the historical pane into the current diagram
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
   await page.locator('#history [data-compare="actual"]').check();
   await page.locator("#history .history-check").nth(1).check();
+  await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
 
-  // current diagram has no TaskB yet.
-  await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(0);
-  // select TaskB in the historical (right) pane → copy button enables.
-  await page.locator('#canvas2 .djs-element[data-element-id="TaskB"] .djs-hit').click();
-  await expect(page.locator(".compare-copy")).toBeEnabled();
-  await page.locator(".compare-copy").click();
-  // it lands in the current editable diagram, which becomes publishable.
-  await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(1);
-  await expect(page.locator("#save")).toBeEnabled();
-});
+  // No copy option anymore — compare is visualization only, both panes read-only.
+  await expect(page.locator(".compare-copy")).toHaveCount(0);
+  await expect(page.locator("#save")).toBeDisabled();
 
-test("compare: rubber-band (box) select several elements and copy them all", async ({ page }) => {
-  const shape = (id: string, x: number, y: number, w = 100, h = 80) =>
-    `<bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"><dc:Bounds x="${x}" y="${y}" width="${w}" height="${h}"/></bpmndi:BPMNShape>`;
-  const wrap = (proc: string, di: string) =>
-    `<?xml version="1.0" encoding="UTF-8"?><bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="D" targetNamespace="x"><bpmn:process id="P" isExecutable="false">${proc}</bpmn:process><bpmndi:BPMNDiagram id="Dg"><bpmndi:BPMNPlane id="Pl" bpmnElement="P">${di}</bpmndi:BPMNPlane></bpmndi:BPMNDiagram></bpmn:definitions>`;
-  const CUR = wrap(`<bpmn:startEvent id="Start"/>`, shape("Start", 156, 81, 36, 36));
-  const REV = wrap(
-    `<bpmn:startEvent id="Start"/><bpmn:task id="TaskB" name="B"/><bpmn:task id="TaskC" name="C"/>`,
-    shape("Start", 156, 81, 36, 36) + shape("TaskB", 250, 160, 100) + shape("TaskC", 250, 280, 100),
-  );
-  await openApp(page, { "test.bpmn": CUR, ".history/test/1782700000000~Beto.bpmn": REV });
-  await page.getByText("📄 test.bpmn").click();
-  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator('#history [data-compare="actual"]').check();
-  await page.locator("#history .history-check").nth(1).check();
-
-  // Rubber-band: drag a box that only PARTIALLY overlaps both tasks (left half) — with
-  // intersection selection (not full enclosure) it must still select both.
-  const b = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
-  const c = (await page.locator('#canvas2 .djs-element[data-element-id="TaskC"]').boundingBox())!;
-  const x1 = Math.min(b.x, c.x) - 10, y1 = Math.min(b.y, c.y) - 10;
-  const x2 = Math.min(b.x, c.x) + Math.min(b.width, c.width) / 2; // only to the tasks' middle
-  const y2 = Math.max(b.y + b.height, c.y + c.height) + 10;
-  await page.mouse.move(x1, y1);
+  // Dragging the historical (right) pane PANS it (drag-hand). A NavigatedViewer cannot
+  // MOVE elements, so if TaskB's on-screen position shifts after a background drag, the
+  // view panned (and the model is untouched). Start on empty canvas at the top-center —
+  // away from the bottom-right "Powered by bpmn.io" watermark link, which would swallow
+  // the mousedown and prevent panning.
+  const before = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
+  const leftBefore = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
+  const pane = (await page.locator("#canvas2 .djs-container").boundingBox())!;
+  const startX = pane.x + pane.width / 2, startY = pane.y + 15;
+  await page.mouse.move(startX, startY);
   await page.mouse.down();
-  await page.mouse.move((x1 + x2) / 2, (y1 + y2) / 2, { steps: 6 });
-  await page.mouse.move(x2, y2, { steps: 6 });
+  await page.mouse.move(startX, startY + 130, { steps: 8 });
   await page.mouse.up();
+  const after = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
+  expect(Math.abs(after.x - before.x) + Math.abs(after.y - before.y)).toBeGreaterThan(20); // it panned
+  // Bidirectional sync: panning the right pane also pans the LEFT pane (viewports mirror).
+  const leftAfter = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
+  expect(Math.abs(leftAfter.y - leftBefore.y)).toBeGreaterThan(20); // left followed the right pane
 
-  await expect(page.locator(".compare-copy")).toContainText("(2)");
-  await page.locator(".compare-copy").click();
-  // both pasted AND left selected (so they can be dragged together)
-  await expect(page.locator('#canvas .djs-element.selected[data-element-id="TaskB"]')).toHaveCount(1);
-  await expect(page.locator('#canvas .djs-element.selected[data-element-id="TaskC"]')).toHaveCount(1);
-
-  // exiting compare keeps the pasted elements (not discarded) and enables Publicar.
+  // Exit → single canvas back, still nothing to publish (nothing was edited).
   await page.locator(".compare-exit").click();
   await expect(page.locator("#canvasarea.split")).toHaveCount(0);
-  await expect(page.locator('#canvas .djs-element[data-element-id="TaskB"]')).toHaveCount(1);
-  await expect(page.locator('#canvas .djs-element[data-element-id="TaskC"]')).toHaveCount(1);
-  await expect(page.locator("#save")).toBeEnabled();
+  await expect(page.locator("#save")).toBeDisabled();
 });
 
 test("a wrapping toolbar (long reserved + draft chip) does not overflow the page vertically", async ({ page }) => {

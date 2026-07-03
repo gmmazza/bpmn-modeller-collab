@@ -51,43 +51,40 @@ describe("renderPreviewBar", () => {
 });
 
 describe("renderCompareBar", () => {
-  it("shows the two labels, toggles orientation, copies and exits", () => {
+  it("shows the two labels (↔ side-by-side), toggles orientation, exits — no copy button", () => {
     const el = document.createElement("div");
-    let oriented = false, exited = false, copied = false;
+    let oriented = false, exited = false;
     renderCompareBar(el, {
       leftLabel: "Actual (editable)", rightLabel: "2/7/2026 — Beto",
-      orientation: "h", copyCount: 2, canCopy: true,
+      orientation: "h",
       onOrientation: () => { oriented = true; },
-      onCopy: () => { copied = true; }, onExit: () => { exited = true; },
+      onExit: () => { exited = true; },
     });
     const title = el.querySelector(".compare-title")!.textContent!;
     expect(title).toContain("Actual (editable)");
     expect(title).toContain("Beto");
+    expect(title).toContain("↔"); // side-by-side arrow
 
     const orient = el.querySelector(".compare-orient") as HTMLButtonElement;
     expect(orient.textContent).toContain("Apilar"); // h → offers stacking
     orient.click();
     expect(oriented).toBe(true);
 
-    const copyBtn = el.querySelector(".compare-copy") as HTMLButtonElement;
-    expect(copyBtn.textContent).toContain("(2)");
-    expect(copyBtn.disabled).toBe(false);
-    copyBtn.click();
-    expect(copied).toBe(true);
+    // Compare is read-only visualization — there is no copy button.
+    expect(el.querySelector(".compare-copy")).toBeNull();
 
     (el.querySelector(".compare-exit") as HTMLElement).click();
     expect(exited).toBe(true);
   });
 
-  it("labels the orientation toggle for vertical and disables copy when not editable", () => {
+  it("uses the ↕ arrow and 'Lado a lado' toggle label when stacked (vertical)", () => {
     const el = document.createElement("div");
     renderCompareBar(el, {
       leftLabel: "v2", rightLabel: "v1", orientation: "v",
-      copyCount: 0, canCopy: false, onOrientation: () => {},
-      onCopy: () => {}, onExit: () => {},
+      onOrientation: () => {}, onExit: () => {},
     });
+    expect(el.querySelector(".compare-title")!.textContent).toContain("↕");
     expect((el.querySelector(".compare-orient") as HTMLElement).textContent).toContain("Lado a lado");
-    expect((el.querySelector(".compare-copy") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -159,11 +156,26 @@ describe("ui", () => {
     // Unchecked revision "10" has no side badge.
     expect(container.querySelector('[data-compare="10"]')!.closest(".history-row")!.querySelector(".history-side")).toBeNull();
 
+    // Default (side-by-side) badges read izq/der.
+    expect(container.querySelector('[data-compare="actual"]')!.closest(".history-row")!.querySelector(".history-side")!.textContent).toBe("izq");
+    expect(container.querySelector('[data-compare="20"]')!.closest(".history-row")!.querySelector(".history-side")!.textContent).toBe("der");
+
     // Toggling a checkbox fires onToggle with (id, checked).
     const rev10 = container.querySelector<HTMLInputElement>('[data-compare="10"]')!;
     rev10.checked = true;
     rev10.dispatchEvent(new Event("change"));
     expect(onToggle).toHaveBeenCalledWith("10", true);
+  });
+
+  it("labels the compare sides arriba/abajo when stacked (orientation 'v')", () => {
+    const container = document.createElement("div");
+    const points: RestorePoint[] = [
+      { id: "20", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Beto", authorEmail: "b@x.com", isExternal: false },
+    ];
+    // actual (newest → arriba) + revision "20" (→ abajo), stacked.
+    renderHistoryPanel(container, points, { compare: { selected: ["actual", "20"], onToggle: vi.fn(), orientation: "v" } });
+    expect(container.querySelector('[data-compare="actual"]')!.closest(".history-row")!.querySelector(".history-side.izq")!.textContent).toBe("arriba");
+    expect(container.querySelector('[data-compare="20"]')!.closest(".history-row")!.querySelector(".history-side.der")!.textContent).toBe("abajo");
   });
 });
 

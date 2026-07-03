@@ -71,7 +71,7 @@ import {
   renderPreviewBar,
   renderCompareBar,
 } from "./ui";
-import { createCompareModeler, syncViewport, enableRubberBandSelect, type ViewerLike } from "./compareView";
+import { createCompareModeler, syncViewport, type ViewerLike } from "./compareView";
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
@@ -104,17 +104,15 @@ async function bootstrap() {
   // ---- compare mode (side-by-side version diff, driven by History checkboxes) ----
   let comparing = false;
   let compareSel: string[] = []; // up to 2 checked ids: "actual" or a revision id
-  let compareLeft = "actual"; // derived: the NEWER of the two (editable iff "actual")
+  let compareLeft = "actual"; // derived: the NEWER of the two (left/top pane)
   let compareRight: string | null = null; // derived: the OLDER of the two (a revision id)
   let compareOrientation: "h" | "v" = (localStorage.getItem("bpmn-compartida.compareOrientation") as "h" | "v") || "h";
   let compareViewer: ViewerLike | null = null; // right pane read-only viewer
   let compareUnsync: (() => void) | null = null; // viewport-sync teardown
   let compareMarkedLeft: string[] = [];
   let compareMarkedRight: string[] = [];
-  let preCompareXml: string | null = null; // working version (updated on paste/edit)
-  let compareEdited = false; // did the working version change during compare (paste/move)?
+  let preCompareXml: string | null = null; // working version snapshot (restored on exit)
   let comparePoints: Array<{ id: string; label: string }> = []; // revisions (for labels)
-  let compareDiffTimer: number | null = null;
   let historyPoints: RestorePoint[] = []; // cached so the History panel re-renders on checkbox toggle
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
@@ -365,7 +363,7 @@ async function bootstrap() {
     tagPools();
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
-    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); scheduleCompareDiff(); });
+    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); });
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -1230,8 +1228,8 @@ async function bootstrap() {
     const mine = st?.lock === "mine";
     const theirs = st?.lock === "theirs";
     const previewing = previewingRid !== null;
-    // While comparing, editing/publishing is only allowed when the left pane is "Actual".
-    const compareRO = comparing && compareLeft !== "actual";
+    // Compare is pure visualization — both panes read-only, so editing/publishing is off.
+    const compareRO = comparing;
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
     // Notorious frame means "you hold a reservation" — suppressed while previewing or
     // comparing, where the indigo preview / teal compare frame takes over instead.
@@ -1599,6 +1597,7 @@ async function bootstrap() {
     try { localStorage.setItem("bpmn-compartida.compareOrientation", compareOrientation); } catch { /* ignore */ }
     applyCompareOrientation();
     renderCompareBarNow();
+    renderHistoryPanelNow(); // badges follow orientation (izq/der ↔ arriba/abajo)
   }
   // History checkbox toggled: keep at most 2 (FIFO), then compare (2) or exit (<2).
   function toggleCompareSel(id: string, checked: boolean): void {
@@ -1628,7 +1627,6 @@ async function bootstrap() {
       if (!comparing) {
         await flushDraft();
         preCompareXml = await editor.getXml();
-        compareEdited = false;
         comparing = true;
         const c2 = $el("canvas2")!;
         c2.hidden = false;
@@ -1636,9 +1634,7 @@ async function bootstrap() {
         applyCompareOrientation();
         document.body.classList.add("app-comparing");
         if (!compareViewer) {
-          compareViewer = await createCompareModeler(c2);
-          enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // drag = box-select several
-          compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow());
+          compareViewer = await createCompareModeler(c2); // read-only NavigatedViewer (pan + zoom)
         }
       }
       await renderCompare();
@@ -1665,7 +1661,7 @@ async function bootstrap() {
     const rightXml = await api.getRevisionXml(fileId, compareRight);
     const leftXml = compareLeft === "actual" ? (preCompareXml ?? (await api.getXml(fileId))) : (await api.getRevisionXml(fileId, compareLeft));
     await editor.load(leftXml);
-    editor.setReadOnly(compareLeft !== "actual"); // editable only when the left pane is "Actual"
+    editor.setReadOnly(true); // compare is pure visualization — the left pane is read-only too
     try { modeler.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
     await compareViewer.importXML(rightXml);
     try { compareViewer.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
@@ -1683,53 +1679,19 @@ async function bootstrap() {
     compareMarkedLeft = applyDiffMarkers(leftCanvas, changes, "new"); // left = newer
     compareMarkedRight = applyDiffMarkers(rightCanvas, changes, "old"); // right = older
   }
-  // Recompute the diff live while editing the "Actual" left pane (debounced).
-  function scheduleCompareDiff(): void {
-    if (!comparing || compareLeft !== "actual" || !compareRight) return;
-    if (compareDiffTimer) clearTimeout(compareDiffTimer);
-    compareDiffTimer = window.setTimeout(() => void (async () => {
-      if (!comparing || !compareRight || state.kind !== "editing") return;
-      const rightXml = await api.getRevisionXml(state.fileId, compareRight);
-      await applyCompareDiff(rightXml, await editor.getXml());
-    })().catch(onError), 400);
-  }
   function renderCompareBarNow(): void {
     if (!comparing || !compareRight) return;
-    let copyCount = 0;
-    try { copyCount = compareViewer ? compareViewer.get("selection").get().length : 0; } catch { copyCount = 0; }
     renderCompareBar($el("compare")!, {
       leftLabel: compareLabelOf(compareLeft),
       rightLabel: compareLabelOf(compareRight),
       orientation: compareOrientation,
-      copyCount,
-      canCopy: compareLeft === "actual", // paste only into the editable "Actual" pane
       onOrientation: toggleCompareOrientation,
-      onCopy: () => void copySelectionToActual().catch(onError),
       onExit: () => void exitCompare().catch(onError),
     });
-  }
-  // Copy the elements selected in the historical (right) pane into the current editable
-  // diagram, with all their properties — reusing bpmn-js copyPaste. Only valid when the
-  // left pane is "Actual" (the live working modeler).
-  async function copySelectionToActual(): Promise<void> {
-    if (!compareViewer || compareLeft !== "actual") return;
-    const selected = compareViewer.get("selection").get();
-    if (!selected.length) return;
-    const tree = compareViewer.get("copyPaste").copy(selected); // serializable descriptor
-    const targetCanvas = modeler.get("canvas");
-    modeler.get("clipboard").set(tree);
-    const vb = targetCanvas.viewbox();
-    const pasted = modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
-    // Keep the pasted elements selected so they can be dragged together right away.
-    try { if (Array.isArray(pasted) && pasted.length) modeler.get("selection").select(pasted); } catch { /* ok */ }
-    preCompareXml = await editor.getXml(); // remember so it survives / isn't lost on exit
-    compareEdited = true;
-    showToast(`${selected.length} elemento(s) copiados — arrastralos para reubicarlos, o Publicá`);
   }
   function teardownCompare(): void {
     comparing = false;
     if (compareUnsync) { compareUnsync(); compareUnsync = null; }
-    if (compareDiffTimer) { clearTimeout(compareDiffTimer); compareDiffTimer = null; }
     try { clearDiffMarkers(modeler.get("canvas"), compareMarkedLeft); } catch { /* ok */ }
     compareMarkedLeft = [];
     compareMarkedRight = [];
@@ -1744,24 +1706,16 @@ async function bootstrap() {
   async function exitCompare(opts: { clearChecks?: boolean } = {}): Promise<void> {
     if (!comparing) return;
     const fileId = state.kind === "editing" ? state.fileId : null;
-    // Keep the working version WITH any pastes/moves. When the left pane is "Actual" the
-    // modeler holds it live; otherwise it's the latest snapshot in preCompareXml.
-    const edited = compareEdited || (compareLeft === "actual" && editor.isDirty());
-    const working = compareLeft === "actual" ? await editor.getXml() : preCompareXml;
-    const restore = working ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    // Compare is read-only, so nothing was edited — just bring back the working version.
+    const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
     teardownCompare();
     preCompareXml = null;
     compareRight = null;
-    compareEdited = false;
     if (opts.clearChecks !== false) compareSel = []; // "Salir" clears checks; unchecking keeps them
     if (restore != null) { await loadIntoEditor(restore); editor.setReadOnly(false); }
-    if (edited && fileId && restore != null) {
-      saveDraft(folderId, fileId, restore); // persist the pasted/edited working version
-      dispatch({ type: "dirtyChanged", dirty: true }); // and enable Publicar
-    }
     renderHistoryPanelNow(); // reflect cleared/kept checkboxes
     render();
-    showToast(edited ? "Saliste — tus cambios quedaron en el borrador" : "Saliste de la comparación");
+    showToast("Saliste de la comparación");
   }
   // Drop compare state without restoring (used on file switch).
   function clearCompareUI(): void {
@@ -1769,7 +1723,6 @@ async function bootstrap() {
     teardownCompare();
     preCompareXml = null;
     compareRight = null;
-    compareEdited = false;
     compareSel = [];
   }
 
@@ -1780,7 +1733,7 @@ async function bootstrap() {
     const panel = document.getElementById("history");
     if (!panel) return;
     renderHistoryPanel(panel, historyPoints, {
-      compare: { selected: compareSel, onToggle: toggleCompareSel },
+      compare: { selected: compareSel, onToggle: toggleCompareSel, orientation: compareOrientation },
     });
   }
 
