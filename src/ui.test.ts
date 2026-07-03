@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderFileList, toRestorePoint, renderHistoryPanel, renderSyncWarning, renderConflictBar, renderPreviewBar, renderCompareBar, reservationUntilIso, parseReserveMinutes } from "./ui";
-import type { DriveFile, User, Revision } from "./types";
+import type { DriveFile, User, Revision, RestorePoint } from "./types";
 
 const me: User = { name: "Ana", email: "ana@x.com" };
 
@@ -39,35 +39,43 @@ describe("renderPreviewBar", () => {
 });
 
 describe("renderCompareBar", () => {
-  it("radio switches base, select picks the other version, Salir exits", () => {
+  it("shows the two labels, toggles orientation, copies and exits", () => {
     const el = document.createElement("div");
-    let base: string | null = null, rev: string | null = null, exited = false, copied = false;
+    let oriented = false, exited = false, copied = false;
     renderCompareBar(el, {
-      base: "actual", revId: "r1",
-      revisions: [{ id: "r1", label: "v1" }, { id: "r2", label: "v2" }],
-      copyCount: 2, canCopy: true,
-      onBase: (b) => { base = b; }, onRev: (r) => { rev = r; },
+      leftLabel: "Actual (editable)", rightLabel: "2/7/2026 — Beto",
+      orientation: "h", copyCount: 2, canCopy: true,
+      onOrientation: () => { oriented = true; },
       onCopy: () => { copied = true; }, onExit: () => { exited = true; },
     });
+    const title = el.querySelector(".compare-title")!.textContent!;
+    expect(title).toContain("Actual (editable)");
+    expect(title).toContain("Beto");
+
+    const orient = el.querySelector(".compare-orient") as HTMLButtonElement;
+    expect(orient.textContent).toContain("Apilar"); // h → offers stacking
+    orient.click();
+    expect(oriented).toBe(true);
+
     const copyBtn = el.querySelector(".compare-copy") as HTMLButtonElement;
     expect(copyBtn.textContent).toContain("(2)");
     expect(copyBtn.disabled).toBe(false);
     copyBtn.click();
     expect(copied).toBe(true);
-    const radios = el.querySelectorAll('input[name="cmp-base"]');
-    expect(radios.length).toBe(2);
-    const latest = radios[1] as HTMLInputElement;
-    latest.checked = true;
-    latest.dispatchEvent(new Event("change"));
-    expect(base).toBe("latest");
-
-    const sel = el.querySelector("select.compare-rev") as HTMLSelectElement;
-    sel.value = "r2";
-    sel.dispatchEvent(new Event("change"));
-    expect(rev).toBe("r2");
 
     (el.querySelector(".compare-exit") as HTMLElement).click();
     expect(exited).toBe(true);
+  });
+
+  it("labels the orientation toggle for vertical and disables copy when not editable", () => {
+    const el = document.createElement("div");
+    renderCompareBar(el, {
+      leftLabel: "v2", rightLabel: "v1", orientation: "v",
+      copyCount: 0, canCopy: false, onOrientation: () => {},
+      onCopy: () => {}, onExit: () => {},
+    });
+    expect((el.querySelector(".compare-orient") as HTMLElement).textContent).toContain("Lado a lado");
+    expect((el.querySelector(".compare-copy") as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -99,6 +107,37 @@ describe("ui", () => {
     renderHistoryPanel(container, [{ id: "r1", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Agent", authorEmail: "a@x.com", isExternal: true }], { onPreview: vi.fn(), onRestore });
     (container.querySelector("[data-restore]") as HTMLButtonElement).click();
     expect(onRestore).toHaveBeenCalledWith("r1");
+  });
+
+  it("adds an 'Actual (editable)' row and compare checkboxes, highlights + sides the checked rows", () => {
+    const container = document.createElement("div");
+    const onToggle = vi.fn();
+    const points: RestorePoint[] = [
+      { id: "20", modifiedTime: "2026-06-23T10:00:00Z", authorName: "Beto", authorEmail: "b@x.com", isExternal: false },
+      { id: "10", modifiedTime: "2026-06-20T10:00:00Z", authorName: "Ana", authorEmail: "a@x.com", isExternal: false },
+    ];
+    // "actual" (newest → izq) + revision "20" (→ der) are checked.
+    renderHistoryPanel(container, points, { onPreview: vi.fn(), onRestore: vi.fn(), compare: { selected: ["actual", "20"], onToggle } });
+
+    // The pseudo-row "Actual (editable)" sits on top with its own checkbox.
+    const checks = container.querySelectorAll<HTMLInputElement>(".history-check");
+    expect(checks.length).toBe(3); // actual + 2 revisions
+    const actualCheck = container.querySelector<HTMLInputElement>('[data-compare="actual"]')!;
+    expect(actualCheck.checked).toBe(true);
+
+    // Checked rows are highlighted and labelled izq/der by recency (actual newest → izq).
+    const checkedRows = container.querySelectorAll(".history-row.checked");
+    expect(checkedRows.length).toBe(2);
+    expect(container.querySelector('[data-compare="actual"]')!.closest(".history-row")!.querySelector(".history-side.izq")).not.toBeNull();
+    expect(container.querySelector('[data-compare="20"]')!.closest(".history-row")!.querySelector(".history-side.der")).not.toBeNull();
+    // Unchecked revision "10" has no side badge.
+    expect(container.querySelector('[data-compare="10"]')!.closest(".history-row")!.querySelector(".history-side")).toBeNull();
+
+    // Toggling a checkbox fires onToggle with (id, checked).
+    const rev10 = container.querySelector<HTMLInputElement>('[data-compare="10"]')!;
+    rev10.checked = true;
+    rev10.dispatchEvent(new Event("change"));
+    expect(onToggle).toHaveBeenCalledWith("10", true);
   });
 });
 

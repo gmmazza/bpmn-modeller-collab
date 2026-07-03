@@ -55,40 +55,70 @@ export function toRestorePoint(rev: Revision, me: User): RestorePoint {
 export function renderHistoryPanel(
   container: HTMLElement,
   points: RestorePoint[],
-  handlers: { onPreview: (id: string) => void; onRestore: (id: string) => void; onCompare?: (id: string) => void },
+  handlers: {
+    onPreview: (id: string) => void;
+    onRestore: (id: string) => void;
+    // When present, each row gets a compare checkbox (plus a fixed "Actual (editable)"
+    // row on top). Check any 2 to compare; the checked rows are highlighted.
+    compare?: { selected: string[]; onToggle: (id: string, checked: boolean) => void };
+  },
 ): void {
   container.innerHTML = "<h3>Historial</h3>";
-  for (const p of points) {
+  const cmp = handlers.compare;
+  const sel = cmp ? cmp.selected : [];
+  // Which side each checked id maps to: newer → left, older → right ("actual" newest).
+  const recency = (id: string): number => (id === "actual" ? Infinity : Number(id) || 0);
+  const ordered = [...sel].sort((a, b) => recency(b) - recency(a));
+  const sideOf = (id: string): "izq" | "der" | null => (ordered[0] === id ? "izq" : ordered[1] === id ? "der" : null);
+
+  const rowHead = (id: string, text: string): HTMLElement => {
     const row = document.createElement("div");
     row.className = "history-row";
+    if (cmp) {
+      const checked = sel.includes(id);
+      if (checked) row.classList.add("checked");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.className = "history-check";
+      cb.checked = checked;
+      cb.dataset.compare = id;
+      cb.addEventListener("change", () => cmp.onToggle(id, cb.checked));
+      row.appendChild(cb);
+      const side = sideOf(id);
+      if (side) {
+        const badge = document.createElement("span");
+        badge.className = `history-side ${side}`;
+        badge.textContent = side;
+        row.appendChild(badge);
+      }
+    }
     const label = document.createElement("span");
-    // Own entries are marked "(vos)", others' "(externo)" — matching the app's
-    // "por vos" language elsewhere; the raw ISO is shown as a readable local date.
+    label.className = "history-label";
+    label.textContent = text;
+    row.appendChild(label);
+    return row;
+  };
+
+  // Fixed "Actual (editable)" row on top (only when comparing is available).
+  if (cmp) container.appendChild(rowHead("actual", "Actual (editable)"));
+
+  for (const p of points) {
     const who = p.isExternal ? " (externo)" : p.authorEmail ? " (vos)" : "";
     const when = (() => { const d = new Date(p.modifiedTime); return isNaN(d.getTime()) ? p.modifiedTime : d.toLocaleString(); })();
-    label.textContent = `${when} — ${p.authorName}${who}`;
-    row.appendChild(label);
-
+    const row = rowHead(p.id, `${when} — ${p.authorName}${who}`);
+    const actions = document.createElement("div");
+    actions.className = "history-actions";
     const preview = document.createElement("button");
     preview.textContent = "Vista previa";
     preview.dataset.preview = p.id;
     preview.addEventListener("click", () => handlers.onPreview(p.id));
-    row.appendChild(preview);
-
+    actions.appendChild(preview);
     const restore = document.createElement("button");
     restore.textContent = "Restaurar";
     restore.dataset.restore = p.id;
     restore.addEventListener("click", () => handlers.onRestore(p.id));
-    row.appendChild(restore);
-
-    if (handlers.onCompare) {
-      const compare = document.createElement("button");
-      compare.textContent = "Comparar";
-      compare.dataset.compare = p.id;
-      compare.addEventListener("click", () => handlers.onCompare!(p.id));
-      row.appendChild(compare);
-    }
-
+    actions.appendChild(restore);
+    row.appendChild(actions);
     container.appendChild(row);
   }
 }
@@ -178,19 +208,18 @@ export function renderPreviewBar(
   container.appendChild(bar);
 }
 
-// Compare-mode bar: a 2-option radio for the base (left) pane — "Actual" (editable) vs
-// "Versión más actual" (latest published, read-only) — plus a picker for the "otra
-// versión" (right pane), a colour legend, and an exit button.
+// Compare-mode bar. The version SELECTION now lives in the History panel (checkboxes),
+// so the bar only shows what's being compared, the colour legend, a split-orientation
+// toggle, "Copiar al actual", and exit.
 export function renderCompareBar(
   container: HTMLElement,
   opts: {
-    base: "actual" | "latest";
-    revId: string;
-    revisions: { id: string; label: string }[];
+    leftLabel: string;
+    rightLabel: string;
+    orientation: "h" | "v";
     copyCount?: number;
     canCopy?: boolean;
-    onBase: (base: "actual" | "latest") => void;
-    onRev: (revId: string) => void;
+    onOrientation: () => void;
     onCopy?: () => void;
     onExit: () => void;
   },
@@ -199,32 +228,10 @@ export function renderCompareBar(
   const bar = document.createElement("div");
   bar.className = "compare-bar";
 
-  const mk = (base: "actual" | "latest", text: string): HTMLLabelElement => {
-    const l = document.createElement("label");
-    const r = document.createElement("input");
-    r.type = "radio";
-    r.name = "cmp-base";
-    r.checked = opts.base === base;
-    r.addEventListener("change", () => { if (r.checked) opts.onBase(base); });
-    l.append(r, document.createTextNode(text));
-    return l;
-  };
-  bar.append(mk("actual", "Actual (editable)"), mk("latest", "Versión más actual"));
-
-  const vs = document.createElement("span");
-  vs.textContent = "↔ otra versión:";
-  bar.appendChild(vs);
-  const sel = document.createElement("select");
-  sel.className = "compare-rev";
-  for (const rev of opts.revisions) {
-    const o = document.createElement("option");
-    o.value = rev.id;
-    o.textContent = rev.label;
-    if (rev.id === opts.revId) o.selected = true;
-    sel.appendChild(o);
-  }
-  sel.addEventListener("change", () => opts.onRev(sel.value));
-  bar.appendChild(sel);
+  const title = document.createElement("span");
+  title.className = "compare-title";
+  title.textContent = `Comparando: ${opts.leftLabel} ↔ ${opts.rightLabel}`;
+  bar.appendChild(title);
 
   const legend = document.createElement("span");
   legend.className = "compare-legend";
@@ -234,6 +241,15 @@ export function renderCompareBar(
   const spacer = document.createElement("span");
   spacer.className = "compare-spacer";
   bar.appendChild(spacer);
+
+  const orient = document.createElement("button");
+  orient.type = "button";
+  orient.className = "compare-orient";
+  orient.textContent = opts.orientation === "h" ? "⬍ Apilar" : "⬌ Lado a lado";
+  orient.title = "Cambiar la orientación del split (lado a lado / apilado)";
+  orient.dataset.orient = "1";
+  orient.addEventListener("click", opts.onOrientation);
+  bar.appendChild(orient);
 
   if (opts.onCopy) {
     const count = opts.copyCount ?? 0;
