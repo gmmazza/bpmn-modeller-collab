@@ -9,6 +9,11 @@ sincronizada, y la colaboración se resuelve con **bloqueos por archivo**
 
 ![Vista general](docs/screenshots/01-overview.png)
 
+> 📘 **[Manual de uso completo →](docs/MANUAL.md)** — guía operativa de todas las
+> funciones (guardado/publicar, sincronización, historial, documentación, ideas,
+> colaboración con IA, capas, ajustes y actualización). También disponible **dentro
+> de la app**, en el botón de **Ayuda**.
+
 ---
 
 ## ✨ Características

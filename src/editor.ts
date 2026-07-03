@@ -75,6 +75,9 @@ export function createEditor(modeler: ModelerLike) {
       readOnlyToggle(ro);
     },
     isDirty: (): boolean => dirty,
+    // True while an importXML is in flight — lets callers ignore the load-induced
+    // commandStack.changed churn (diagram.clear + import) and react only to real edits.
+    isLoading: (): boolean => loading,
     onDirtyChange(cb: (d: boolean) => void): void {
       dirtyCbs.push(cb);
     },
