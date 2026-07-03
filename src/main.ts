@@ -21,7 +21,11 @@ import { BUNDLED_BPMN_JS_VERSION, checkLatestBpmnJs } from "./version";
 import { evaluateUpdate } from "./appUpdate";
 import { createFsClient, type FsClient } from "./fsClient";
 import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
+import { createIdeasClient } from "./processDocs/ideasClient";
 import { createNotePanelController } from "./processDocs/notePanelController";
+import { createIdeaMode } from "./processDocs/ideaMode";
+import { createIdeasControllerV2 } from "./processDocs/ideasControllerV2";
+import { aiAuthorName } from "./processDocs/aiIdentity";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile } from "./processDocs/agentsFile";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
@@ -45,12 +49,13 @@ import { graphFromModeler } from "./processDocs/flowOrder";
 import { buildManual, exportManualHtml } from "./processDocs/manualController";
 import { createHeatmapController } from "./heatmap";
 import { reduce, initialState, type AppState } from "./state";
-import { readLock, lockState, lockProps, clearProps, canCheckOut } from "./lockManager";
+import { readLock, lockState, lockProps, clearProps, isStale, isExpired } from "./lockManager";
+import { saveDraft, loadDraft, hasDraft, clearDraft } from "./draftStore";
 import { diffTree } from "./watcher";
 import { computeDiff } from "./bpmnDiff";
 import { createDiffView, type DiffView } from "./diffView";
 import { isSyncConflict } from "./syncConflict";
-import type { User, TreeEntry } from "./types";
+import type { User, TreeEntry, LockInfo, LockState, RestorePoint } from "./types";
 import { renderFileTree } from "./fileTree";
 import { openContextMenu } from "./contextMenu";
 import { pickFolder } from "./folderPicker";
@@ -61,7 +66,13 @@ import {
   toRestorePoint,
   showToast,
   promptText,
+  confirmModal,
+  pickReservationDuration,
+  renderPreviewBar,
+  renderCompareBar,
 } from "./ui";
+import { createCompareModeler, syncViewport, type ViewerLike } from "./compareView";
+import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -86,6 +97,23 @@ async function bootstrap() {
   let openHeadRevisionId: string | null = null;
   let forceOverwrite = false;
   let pollTimer: number | null = null;
+  let openLock: LockInfo = {}; // reservation info for the currently-open file (display + expiry)
+  let folderId = "default"; // stable id of the current shared folder; namespaces local drafts
+  let previewingRid: string | null = null; // revision id being previewed (read-only), or null
+  let prePreviewXml: string | null = null; // working state snapshot to restore on exit-preview
+  // ---- compare mode (side-by-side version diff, driven by History checkboxes) ----
+  let comparing = false;
+  let compareSel: string[] = []; // up to 2 checked ids: "actual" or a revision id
+  let compareLeft = "actual"; // derived: the NEWER of the two (left/top pane)
+  let compareRight: string | null = null; // derived: the OLDER of the two (a revision id)
+  let compareOrientation: "h" | "v" = (localStorage.getItem("bpmn-compartida.compareOrientation") as "h" | "v") || "h";
+  let compareViewer: ViewerLike | null = null; // right pane read-only viewer
+  let compareUnsync: (() => void) | null = null; // viewport-sync teardown
+  let compareMarkedLeft: string[] = [];
+  let compareMarkedRight: string[] = [];
+  let preCompareXml: string | null = null; // working version snapshot (restored on exit)
+  let comparePoints: Array<{ id: string; label: string }> = []; // revisions (for labels)
+  let historyPoints: RestorePoint[] = []; // cached so the History panel re-renders on checkbox toggle
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
   let modeler: ModelerLike;
@@ -93,7 +121,10 @@ async function bootstrap() {
   let applyingViz = false;
   let layersClient: ReturnType<typeof createLayersClient>;
   let docsClient: DocsClient;
+  let ideasClientV2: ReturnType<typeof createIdeasClient>;
   let docsController: ReturnType<typeof createNotePanelController> | null = null;
+  let ideasCtl: ReturnType<typeof createIdeasControllerV2> | null = null;
+  let ideaMode: ReturnType<typeof createIdeaMode>;
   let docsFileId = "";
   const docsSelectionCbs: Array<() => void> = [];
   let layerView: LayerView | null = null;
@@ -189,17 +220,36 @@ async function bootstrap() {
       void (async () => {
         const dir = await pickDir();
         if (dir) {
-          rootHandle = dir;
-          api = createFsClient(dir);
-          layersClient = createLayersClient(api);
-          docsClient = createDocsClient(api);
-          void ensureAgentsFile(api);
+          await useFolder(dir);
           await ensureNameThenApp();
         } else {
           showToast("No se eligió una carpeta usable");
         }
       })().catch(onError);
     });
+  }
+
+  // A stable id for the current shared folder, used to namespace local drafts so
+  // switching projects/teams never resumes another project's draft. Electron exposes
+  // the folder's absolute path (unique); the web only exposes the folder name.
+  async function computeFolderId(): Promise<string> {
+    const fsapi = typeof window !== "undefined" ? (window as unknown as { fsapi?: { getRoot?: () => Promise<string | null> } }).fsapi : null;
+    if (fsapi && typeof fsapi.getRoot === "function") {
+      try { const root = await fsapi.getRoot(); if (root) return String(root); } catch { /* fall back to name */ }
+    }
+    return rootHandle?.name ?? "default";
+  }
+
+  // Wire up all folder-scoped clients for a freshly-selected working folder. Shared
+  // by the first-launch gate, the change-folder modal, and the saved-folder restore.
+  async function useFolder(dir: FileSystemDirectoryHandle): Promise<void> {
+    rootHandle = dir;
+    api = createFsClient(dir);
+    layersClient = createLayersClient(api);
+    docsClient = createDocsClient(api);
+    ideasClientV2 = createIdeasClient(api);
+    folderId = await computeFolderId();
+    void ensureAgentsFile(api);
   }
 
   // Floating modal to change the working folder WITHOUT tearing down the app, so
@@ -227,11 +277,7 @@ async function bootstrap() {
         const dir = await pickDir();
         if (!dir) { showToast("No se eligió una carpeta usable"); return; } // keep modal open to retry/cancel
         close();
-        rootHandle = dir;
-        api = createFsClient(dir);
-        layersClient = createLayersClient(api);
-        docsClient = createDocsClient(api);
-        void ensureAgentsFile(api);
+        await useFolder(dir);
         await ensureNameThenApp();
       })().catch(onError);
     });
@@ -317,7 +363,7 @@ async function bootstrap() {
     tagPools();
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
-    modeler.get("eventBus").on("commandStack.changed", () => tagPools());
+    modeler.get("eventBus").on("commandStack.changed", () => { tagPools(); armIdle(); scheduleDraftSave(); });
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
@@ -401,14 +447,13 @@ async function bootstrap() {
     applyingViz = true;
     try {
       setVizSettings(next);
-      // Preserve the open file across the modeler rebuild.
+      // Preserve the open file (and any unpublished draft) across the modeler rebuild.
       const open = state.kind === "editing" ? state.fileId : null;
-      if (open && state.kind === "editing" && state.dirty) await save(open);
+      if (open) await flushDraft(); // capture pending edits locally — do NOT publish
       await mountModeler();
       if (open) {
-        const xml = await api.getXml(open);
-        await loadIntoEditor(xml);
-        editor.setReadOnly(state.kind === "editing" && state.lock !== "mine");
+        await loadIntoEditor(loadDraft(folderId, open) ?? (await api.getXml(open)));
+        editor.setReadOnly(false); // canvas is always editable in the draft model
       }
     } finally {
       applyingViz = false;
@@ -461,6 +506,36 @@ async function bootstrap() {
       dragging = true;
       startX = e.clientX;
       startW = insp.getBoundingClientRect().width;
+      document.body.classList.add("col-resizing");
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
+  // Draggable separator between the two compare panes. Sets --split (a %) on the area;
+  // the axis follows the orientation (row → width, column → height). Clamped 15–85%.
+  function setupCanvasSplitResize(): void {
+    const area = document.getElementById("canvasarea");
+    const resizer = document.getElementById("canvassplit");
+    if (!area || !resizer) return;
+    let dragging = false;
+    const onMove = (e: MouseEvent): void => {
+      if (!dragging) return;
+      const r = area.getBoundingClientRect();
+      const vertical = area.classList.contains("vertical");
+      const pct = vertical ? ((e.clientY - r.top) / r.height) * 100 : ((e.clientX - r.left) / r.width) * 100;
+      area.style.setProperty("--split", `${Math.min(85, Math.max(15, pct))}%`);
+    };
+    const onUp = (): void => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("col-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    resizer.addEventListener("mousedown", (e) => {
+      dragging = true;
       document.body.classList.add("col-resizing");
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -654,7 +729,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="newfile" type="button" title="Nuevo diagrama">${icon("new")}</button>
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
-          <button class="btn" id="save" type="button" title="Guardar (Ctrl+S)">${icon("save")}<span class="dot" id="savedot" hidden></span></button>
+          <button class="btn" id="save" type="button" title="Publicar cambios al equipo (Ctrl+S)">${icon("save")}<span class="btn-label">Publicar</span><span class="dot" id="savedot" hidden></span></button>
         </div>
         <span class="divider"></span>
         <div class="tgroup">
@@ -674,17 +749,23 @@ async function bootstrap() {
         </div>
         <span class="spacer"></span>
         <span class="lock-chip" id="filechip"></span>
-        <button class="btn" id="checkin" type="button" hidden>Check in</button>
+        <button class="btn" id="editmode" type="button" hidden></button>
         <button class="btn" id="close" type="button" hidden>Cerrar</button>
         <span class="divider"></span>
         <button class="btn icon-only" id="toggle-inspector" type="button" title="Mostrar panel lateral">${icon("panelRight")}</button>
       </div>
       <div id="sync"></div>
       <div id="conflict"></div>
+      <div id="preview"></div>
+      <div id="compare"></div>
       <div id="appupdate"></div>
       <main class="app">
         <aside id="files"></aside>
-        <section id="canvas"></section>
+        <section id="canvasarea">
+          <section id="canvas"></section>
+          <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
+          <section id="canvas2" hidden></section>
+        </section>
         <div id="inspector"></div>
       </main>`;
 
@@ -693,7 +774,13 @@ async function bootstrap() {
       { id: "propiedades", label: "Propiedades" },
       { id: "historial", label: "Historial" },
       { id: "documentacion", label: "Documentación" },
-    ]);
+      { id: "ideas", label: "Ideas" },
+    ], (tabId) => {
+      // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
+      const on = tabId === "ideas";
+      void ideaMode?.setEnabled(on);
+      if (on) void ideasCtl?.refresh();
+    });
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
     inspector.paneEl("propiedades").id = "propspanel";
     inspector.paneEl("capas").id = "layerspanel";
@@ -701,6 +788,7 @@ async function bootstrap() {
     inspector.paneEl("historial").id = "history";
     inspector.hide();
     setupInspectorResize();
+    setupCanvasSplitResize();
 
     await mountModeler();
 
@@ -742,17 +830,99 @@ async function bootstrap() {
             selectElementById(target.element);
           })().catch(onError);
         } else if (target.kind === "idea") {
-          inspector.setTab("documentacion");
-          docsController?.openIdeasTab?.();
+          showIdeasTab();
         }
       },
-      ideasOverlays: {
-        add: (elementId: string, html: HTMLElement) =>
-          modeler.get("overlays").add(elementId, "ideas", { position: { top: -12, right: 12 }, html }),
-        remove: (id: string) => modeler.get("overlays").remove(id),
-      },
+    });
+
+    // ---- Ideas panel (own inspector tab, shown only in idea mode) ----
+    // Mount into a CHILD of the pane, not the pane itself: the ideas views call
+    // `container.className = ...` which would otherwise wipe the pane's
+    // "inspector-pane" class and break the `[hidden]` hide-when-inactive rule
+    // (making the panel bleed into every tab).
+    const ideasPaneHost = document.createElement("div");
+    inspector.paneEl("ideas").appendChild(ideasPaneHost);
+    ideasCtl = createIdeasControllerV2({
+      ideasClient: ideasClientV2,
+      mount: ideasPaneHost,
+      diagramId: () => docsFileId,
+      processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
       identity: () => me.name,
       today: () => new Date().toISOString().slice(0, 10),
+      getSelected: () => {
+        const sel = (modeler?.get("selection")?.get?.() ?? []) as Array<{ id: string; businessObject?: { name?: string; $type?: string } }>;
+        return sel[0] ? toDiagramElement(sel[0]) : null;
+      },
+      clearSelection: () => (modeler?.get("selection") as any)?.select?.(null),
+      selectElement: (elementId) => {
+        const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
+        if (el) (modeler?.get("selection") as any)?.select?.(el);
+      },
+      aiAuthor: () => aiAuthorName(),
+      // in-app modal — window.prompt is unsupported in Electron's renderer.
+      promptMotivo: (estado: string) => promptText(`Motivo para marcar la idea como «${estado}»:`),
+      onAnchoredCounts: (counts) => ideaMode?.setCounts(counts),
+    });
+    // In idea mode, selecting an element on the canvas focuses the ideas panel on
+    // it (its ideas + anchored quick-add). syncSelection re-renders from the
+    // in-memory list (no async reload) so it can't race with an in-flight write.
+    docsSelectionCbs.push(() => { if (ideaMode?.isOn()) { ideasCtl?.syncSelection(); highlightIdeaElement(selectedId); } });
+
+    // Open the Ideas tab (selecting it enables idea mode via the inspector onChange).
+    function showIdeasTab(): void {
+      inspector.setTab("ideas");
+    }
+
+    // ---- Idea mode ----
+    // Strong, temporary highlight of the element an idea focus refers to (badge
+    // click, canvas selection, or object-filter pick) — clearer than the thin
+    // default selection outline.
+    let ideaHighlightId: string | null = null;
+    function highlightIdeaElement(id: string | null): void {
+      const canvas = modeler?.get("canvas") as any;
+      if (!canvas) return;
+      if (ideaHighlightId && ideaHighlightId !== id) { try { canvas.removeMarker(ideaHighlightId, "idea-focused"); } catch { /* gone */ } }
+      ideaHighlightId = id;
+      if (id) { try { canvas.addMarker(id, "idea-focused"); } catch { /* not on canvas */ } }
+    }
+    const ideaOverlayHost = {
+      add: (elementId: string, html: HTMLElement) =>
+        // top-LEFT so the badge doesn't collide with the context pad (top-right on selection).
+        (modeler.get("overlays") as any).add(elementId, "ideas", { position: { top: -14, left: -10 }, html }),
+      remove: (id: string) => (modeler.get("overlays") as any).remove(id),
+    };
+    ideaMode = createIdeaMode({
+      overlayHost: ideaOverlayHost,
+      ideasClient: ideasClientV2,
+      diagramId: () => docsFileId,
+      processName: () => docsFileId.replace(/\.bpmn$/i, "").split("/").pop() ?? docsFileId,
+      identity: () => me.name,
+      today: () => new Date().toISOString().slice(0, 10),
+      elementLabel: (id) => {
+        const el = (modeler.get("elementRegistry") as any).get(id);
+        return (el && el.businessObject && el.businessObject.name) || id;
+      },
+      clientRectFor: (id) => {
+        const gfx = (modeler.get("elementRegistry") as any).getGraphics(id) as SVGElement | undefined;
+        const r = gfx?.getBoundingClientRect();
+        return r ? { left: r.right, top: r.top } : { left: 100, top: 100 };
+      },
+      openThreadInPanel: (ideaId) => {
+        inspector.setTab("ideas");
+        void ideasCtl?.openThread(ideaId);
+      },
+      focusElement: (elementId) => {
+        // badge click → select the element (panel focuses on it) + surface the tab
+        const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
+        if (el) (modeler?.get("selection") as any)?.select?.(el);
+        inspector.setTab("ideas");
+      },
+      onPanelShouldRefresh: () => { void ideasCtl?.refresh(); },
+      // Idea mode is now driven by the Ideas tab being active (see inspector
+      // onChange), not a persisted toggle — so it's ephemeral.
+      persistGet: () => false,
+      persistSet: () => { /* no-op: tab-driven */ },
+      onModeChange: (on) => { if (!on) highlightIdeaElement(null); },
     });
 
     const $ = (id: string) => document.getElementById(id)!;
@@ -987,14 +1157,23 @@ async function bootstrap() {
     })().catch(onError));
     $("undo").addEventListener("click", () => { try { modeler.get("commandStack").undo(); } catch { /* nothing to undo */ } });
     $("redo").addEventListener("click", () => { try { modeler.get("commandStack").redo(); } catch { /* nothing to redo */ } });
-    $("save").addEventListener("click", guard(async () => { if (state.kind === "editing" && state.lock === "mine") await save(state.fileId); }));
-    $("checkin").addEventListener("click", guard(async () => {
-      if (state.kind === "editing") await checkIn(state.fileId);
+    $("save").addEventListener("click", guard(async () => { if (state.kind === "editing") await publish(state.fileId); }));
+    // Reserva control: free → reservar (con duración); mine → liberar; theirs → solicitar turno.
+    $("editmode").addEventListener("click", guard(async () => {
+      if (state.kind !== "editing") return;
+      if (state.lock === "mine") await releaseReserve(state.fileId);
+      else if (state.lock === "theirs") await requestEdit(state.fileId, "edit");
+      else await reserve(state.fileId);
     }));
     $("close").addEventListener("click", guard(async () => {
-      if (state.kind === "editing" && state.lock === "mine") await checkIn(state.fileId);
-      else dispatch({ type: "closedFile" });
+      if (state.kind === "editing") await closeFile(state.fileId);
     }));
+    // Best-effort: drop our reservation if the window closes while we hold it. The
+    // draft is already persisted by the debounced autosave (getXml is async, so it
+    // cannot be snapshotted synchronously here).
+    window.addEventListener("beforeunload", () => {
+      if (state.kind === "editing" && state.lock === "mine") { void api.setLock(state.fileId, clearProps()).catch(() => {}); }
+    });
 
     // Fast-switch: press "d" to blink between mine/theirs while a diff is shown.
     window.addEventListener("keydown", (ev) => {
@@ -1015,7 +1194,7 @@ async function bootstrap() {
       if (!(ev.ctrlKey || ev.metaKey)) return;
       if (ev.key.toLowerCase() === "s") {
         ev.preventDefault();
-        if (state.kind === "editing" && state.lock === "mine") void save(state.fileId).catch(onError);
+        if (state.kind === "editing") void publish(state.fileId).catch(onError);
       }
     });
 
@@ -1031,28 +1210,73 @@ async function bootstrap() {
     render();
   }
 
+  // Short "hasta HH:MM" (or "· día HH:MM" for a far expiry) for a reservation.
+  function untilLabel(lock: LockInfo): string {
+    if (!lock.lockedUntil) return " · permanente";
+    const d = new Date(lock.lockedUntil);
+    const hhmm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const sameDay = new Date().toDateString() === d.toDateString();
+    return sameDay ? ` hasta ${hhmm}` : ` hasta ${d.toLocaleDateString()} ${hhmm}`;
+  }
+
   function render() {
-    const editing = state.kind === "editing";
+    const st = state.kind === "editing" ? state : null;
+    const editing = st !== null;
     const el = (id: string) => document.getElementById(id);
+    // In the optimistic model the canvas is ALWAYS editable; `lock` is now the
+    // optional advisory "Reserva", not a gate. `unpublished` drives Publicar.
+    const mine = st?.lock === "mine";
+    const theirs = st?.lock === "theirs";
+    const previewing = previewingRid !== null;
+    // Compare is pure visualization — both panes read-only, so editing/publishing is off.
+    const compareRO = comparing;
+    const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
+    // Notorious frame means "you hold a reservation" — suppressed while previewing or
+    // comparing, where the indigo preview / teal compare frame takes over instead.
+    document.body.classList.toggle("app-editing", mine && !previewing && !comparing);
+    document.body.classList.remove("app-readonly");
     const chip = el("filechip");
-    if (chip) chip.textContent = state.kind === "editing" ? state.fileId : "";
-    const ci = el("checkin");
+    if (chip) {
+      if (st) {
+        const who = openLock.lockedByName || openLock.lockedByEmail || "otra persona";
+        const reserva = mine ? `🔒 Reservado por vos${untilLabel(openLock)}`
+          : theirs ? `🔒 Reservado por ${who}${untilLabel(openLock)}`
+          : "";
+        const draft = unpublished ? "✏️ Borrador sin publicar" : "";
+        chip.textContent = [reserva || st.fileId, draft].filter(Boolean).join(" · ");
+        chip.classList.toggle("lock-mine", mine);
+        chip.classList.toggle("lock-theirs", theirs);
+      } else {
+        chip.textContent = "";
+        chip.classList.remove("lock-mine", "lock-theirs");
+      }
+    }
+    const em = el("editmode") as HTMLButtonElement | null;
     const cl = el("close");
-    if (ci) (ci as HTMLElement).hidden = !editing || (state.kind === "editing" && state.lock !== "mine");
+    if (em) {
+      em.hidden = !editing;
+      em.classList.remove("primary", "btn-checkin");
+      if (mine) { em.textContent = "🔓 Liberar reserva"; em.title = "Soltar tu reserva de este diagrama"; }
+      else if (theirs) { em.textContent = "🔔 Solicitar turno"; em.title = "Avisar a quien lo reservó que querés editar/publicar"; }
+      else { em.textContent = "🔒 Reservar"; em.title = "Avisar al equipo que estás editando esto (opcional)"; }
+    }
     if (cl) (cl as HTMLElement).hidden = !editing;
     if (!editing) {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
+      if (el("preview")) (el("preview") as HTMLElement).innerHTML = "";
+      if (el("compare")) (el("compare") as HTMLElement).innerHTML = "";
     }
-    const canEdit = state.kind === "editing" && state.lock === "mine";
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
-    if (saveBtn) saveBtn.disabled = !canEdit || !(state.kind === "editing" && state.dirty);
+    // Never publish from a read-only preview / read-only compare (would push an old version).
+    if (saveBtn) saveBtn.disabled = !unpublished || previewing || compareRO;
     const dot = document.getElementById("savedot");
-    if (dot) (dot as HTMLElement).hidden = !(state.kind === "editing" && state.dirty);
+    if (dot) (dot as HTMLElement).hidden = !unpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
-    if (undo) undo.disabled = !canEdit;
-    if (redo) redo.disabled = !canEdit;
+    if (undo) undo.disabled = !editing || previewing || compareRO;
+    if (redo) redo.disabled = !editing || previewing || compareRO;
+    armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
   async function refreshFileList() {
@@ -1078,7 +1302,41 @@ async function bootstrap() {
     treeVersions = new Map(clean.filter((e) => e.kind === "file" && e.version).map((e) => [e.path, e.version as string]));
   }
 
+  // ---- Local draft autosave (private, per-machine — see draftStore.ts) ----
+  // Every edit is captured to localStorage so nothing is lost before "Publicar".
+  let draftTimer: number | null = null;
+  function scheduleDraftSave(): void {
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = window.setTimeout(() => void flushDraft().catch(onError), 800);
+  }
+  // Write the pending draft immediately (used before switching files / on close).
+  async function flushDraft(): Promise<void> {
+    if (draftTimer) { clearTimeout(draftTimer); draftTimer = null; }
+    if (state.kind === "editing" && editor.isDirty()) {
+      saveDraft(folderId, state.fileId, await editor.getXml());
+    }
+  }
+
+  // The advisory reservation, considering expiry: an expired reservation is free.
+  function effectiveLock(lock: LockInfo): LockState {
+    return isExpired(lock, Date.now()) ? "free" : lockState(lock, me);
+  }
+
+  // Release the reservation we hold on the currently-open file (used when switching
+  // files). Advisory only — never publishes; the draft stays local.
+  async function releaseReserveIfMine(): Promise<void> {
+    if (state.kind === "editing" && state.lock === "mine") {
+      try { await api.setLock(state.fileId, clearProps()); } catch { /* best-effort */ }
+    }
+  }
+
   async function openFile(fileId: string) {
+    // Optimistic model: opening a file is immediately editable (no lock needed).
+    // Flush the previous file's draft and drop any reservation we still hold.
+    clearPreviewUI(); // leaving any active revision preview
+    clearCompareUI(); // leaving any active compare
+    await flushDraft();
+    await releaseReserveIfMine();
     let meta;
     try {
       meta = await api.getMeta(fileId);
@@ -1086,26 +1344,63 @@ async function bootstrap() {
       await refreshFileList();
       return;
     }
-    const lock = readLock(meta);
-    let lockKind = lockState(lock, me);
-    if (canCheckOut(lock, me)) {
-      await api.setLock(fileId, lockProps(me, new Date().toISOString()));
-      const after = await api.getMeta(fileId);
-      lockKind = lockState(readLock(after), me);
-      if (lockKind !== "mine") showToast("Otra persona lo tomó — abriendo en solo lectura");
-    }
-    const xml = await api.getXml(fileId);
-    await editor.load(xml);
-    editor.setReadOnly(lockKind !== "mine");
+    openLock = readLock(meta);
+    const lockKind = effectiveLock(openLock); // "mine" only if we hold a live reservation
+    const shared = await api.getXml(fileId);
+    await editor.load(shared);
+    editor.setReadOnly(false); // canvas is always editable in the draft model
     openHeadRevisionId = meta.headRevisionId ?? null;
     forceOverwrite = false;
     dispatch({ type: "openedFile", fileId, lock: lockKind });
+    // Resume a private unpublished draft if one exists for this file.
+    if (hasDraft(folderId, fileId)) {
+      const resume = await confirmModal(
+        "Tenés un borrador sin publicar de este diagrama. ¿Seguir editándolo?",
+        "Seguir con mi borrador",
+      );
+      if (resume) { await loadIntoEditor(loadDraft(folderId, fileId) ?? shared); showToast("Retomaste tu borrador — Publicá cuando quieras"); }
+      else { clearDraft(folderId, fileId); }
+      render(); // refresh the "borrador sin publicar" indicator
+    }
     await loadHistory(fileId);
     await loadLayers(fileId);
     await loadDocs(fileId);
+    await ideasClientV2.migrateIfNeeded(fileId);
+    await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
+    // keep the element index (_index.md) fresh even after external structural edits
+    try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
+    void ideasCtl?.refresh();
+    if (ideaMode?.isOn()) void ideaMode.refresh();
+  }
+
+  // Reserve the open file (optional advisory lock with a duration). Editing never
+  // depends on this — it only tells the team "Ana is working on this until HH:MM".
+  async function reserve(fileId: string) {
+    const before = readLock(await api.getMeta(fileId));
+    if (effectiveLock(before) === "theirs") {
+      const who = before.lockedByName || before.lockedByEmail || "otra persona";
+      const stale = isStale(before, Date.now());
+      const ok = await confirmModal(
+        `Lo reservó ${who}${stale ? " (parece vencida)" : ""}. ¿Reservarlo igual para vos?`,
+        "Reservar igual",
+      );
+      if (!ok) return;
+    }
+    const until = await pickReservationDuration(Date.now());
+    if (until === null) return; // cancelled
+    await api.setLock(fileId, lockProps(me, new Date().toISOString(), until));
+    const after = await api.getMeta(fileId);
+    openLock = readLock(after);
+    if (effectiveLock(openLock) !== "mine") { showToast("No se pudo reservar — otra persona lo reservó"); await refreshFileList(); return; }
+    await clearMyRequest(fileId); // I'm on it now — drop any pending request of mine
+    dispatch({ type: "lockChanged", lock: "mine" });
+    await refreshFileList();
+    showToast(`Reservado${untilLabel(openLock)} — el equipo lo verá`);
   }
 
 
+  // Low-level write to the SHARED version (= "Publicar"). Reuses the version-check
+  // + conflict bar; on success the private draft is cleared (it's now published).
   async function save(fileId: string) {
     if (!forceOverwrite && openHeadRevisionId !== null) {
       const meta = await api.getMeta(fileId);
@@ -1120,47 +1415,339 @@ async function bootstrap() {
     openHeadRevisionId = res.headRevisionId ?? openHeadRevisionId;
     forceOverwrite = false;
     editor.markSaved();
+    clearDraft(folderId, fileId); // published → the local draft is no longer needed
     dispatch({ type: "dirtyChanged", dirty: false });
     // Retention/prune runs inside fsClient.putXml (decay = deletion); nothing to do here.
     await loadHistory(fileId);
-    showToast("Guardado");
+    showToast("Publicado");
   }
 
-  async function checkIn(fileId: string) {
-    if (state.kind === "editing" && state.dirty) await save(fileId);
+  // "Publicar": share the current version with the team, with a confirmation. If
+  // someone else reserved the file, warn and offer to notify them.
+  async function publish(fileId: string) {
+    if (state.kind !== "editing") return;
+    if (state.lock === "theirs") {
+      const who = openLock.lockedByName || openLock.lockedByEmail || "otra persona";
+      const ok = await confirmModal(`Lo reservó ${who}. ¿Publicar igual y avisarle?`, "Publicar y avisar");
+      if (!ok) return;
+      await save(fileId);
+      await requestEdit(fileId, "publish"); // courtesy notice to the holder
+      return;
+    }
+    const ok = await confirmModal("¿Publicar tus cambios para el equipo?", "Publicar");
+    if (!ok) return;
+    await save(fileId);
+  }
+
+  // Release my reservation (advisory). Does NOT publish — the draft stays local.
+  async function releaseReserve(fileId: string) {
     await api.setLock(fileId, clearProps());
+    openLock = {};
+    dispatch({ type: "lockChanged", lock: "free" });
+    await refreshFileList();
+    showToast("Reserva liberada");
+  }
+
+  // Close the file and go back to browsing. Flush the draft, release any reservation.
+  async function closeFile(fileId: string) {
+    await flushDraft();
+    if (state.kind === "editing" && state.lock === "mine") {
+      try { await api.setLock(fileId, clearProps()); } catch { /* best-effort */ }
+    }
+    openLock = {};
     dispatch({ type: "closedFile" });
     await refreshFileList();
   }
 
+  // ---- Request-to-edit (ask the current holder — human or LLM agent — to release) ----
+  // A plain `<file>.req` JSON sidecar reuses the same synced-folder + watcher flow:
+  // the requester writes it; the holder's poll surfaces it; releasing frees the file.
+  let pendingRequestFile: string | null = null;
+  let lastReqNotice = "";
+  type ReqKind = "edit" | "publish";
+  async function requestEdit(fileId: string, kind: ReqKind = "edit") {
+    await api.writePath(`${fileId}.req`, JSON.stringify({ by: me.email, name: me.name, at: new Date().toISOString(), kind }));
+    pendingRequestFile = fileId;
+    if (kind === "edit") showToast("Aviso enviado — te aviso cuando libere la reserva");
+  }
+  async function clearMyRequest(fileId: string) {
+    try { await api.deletePath(`${fileId}.req`); } catch { /* already gone */ }
+    if (pendingRequestFile === fileId) pendingRequestFile = null;
+  }
+  // Called each poll: nudge the reservation holder if someone asked; notify the
+  // requester once the reservation is freed.
+  async function pollEditRequests() {
+    if (state.kind !== "editing") return;
+    const fileId = state.fileId;
+    if (state.lock === "mine") {
+      const raw = await api.readPath(`${fileId}.req`).catch(() => null);
+      if (raw) {
+        try {
+          const req = JSON.parse(raw) as { by?: string; name?: string; kind?: ReqKind };
+          if (req.by && req.by !== me.email) {
+            const key = `${fileId}:${req.by}:${req.kind ?? "edit"}`;
+            if (lastReqNotice !== key) {
+              lastReqNotice = key;
+              const msg = req.kind === "publish"
+                ? `🔔 ${req.name || req.by} quiere publicar — revisá y liberá la reserva`
+                : `🔔 ${req.name || req.by} quiere editar — ¿le cedés? (Liberar reserva)`;
+              showToast(msg);
+            }
+          }
+        } catch { /* ignore malformed */ }
+      } else { lastReqNotice = ""; }
+    } else if (pendingRequestFile === fileId && state.lock === "free") {
+      // the holder released — my turn
+      await clearMyRequest(fileId);
+      showToast(`✅ ${fileId} quedó libre — ya podés editar/publicar`);
+    }
+  }
+
+  // ---- Idle auto-release: drop the reservation after a while with no edits, so a
+  // forgotten reservation doesn't linger. Reset whenever the file is edited.
+  const IDLE_RELEASE_MS = 8 * 60 * 1000; // 8 minutes
+  let idleTimer: number | null = null;
+  function clearIdle(): void { if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; } }
+  function armIdle(): void {
+    clearIdle();
+    if (!(state.kind === "editing" && state.lock === "mine")) return;
+    idleTimer = window.setTimeout(() => void (async () => {
+      if (state.kind === "editing" && state.lock === "mine") {
+        await releaseReserve(state.fileId);
+        showToast("Reserva liberada por inactividad (tu borrador sigue intacto)");
+      }
+    })().catch(onError), IDLE_RELEASE_MS);
+  }
+
+  // ---- Revision preview (read-only, with a notorious banner + canvas frame) ----
+  // Enter loads a past revision read-only; exit restores the working version you had
+  // before (your draft if any, else the shared latest). Publicar/undo/redo are
+  // disabled while previewing so you can't accidentally publish an old version.
+  async function enterPreview(fileId: string, rid: string, label: string): Promise<void> {
+    if (state.kind !== "editing") return;
+    if (previewingRid === null) {
+      await flushDraft(); // persist any pending edits before the canvas shows the revision
+      prePreviewXml = await editor.getXml(); // snapshot the working version once
+    }
+    const xml = await api.getRevisionXml(fileId, rid);
+    await loadIntoEditor(xml);
+    editor.setReadOnly(true);
+    previewingRid = rid;
+    document.body.classList.add("app-previewing");
+    renderPreviewBar(document.getElementById("preview")!, label, {
+      onExit: () => void exitPreview(fileId).catch(onError),
+      onRestore: () => void restoreRevisionToDraft(fileId, rid).catch(onError),
+    });
+    render();
+  }
+  // Silently return the editor to the working version (draft/shared) and drop the preview
+  // banner, WITHOUT touching the selection or toasting. Used by mode transitions
+  // (preview→compare, preview→working). Callers own the checkbox state and any toast.
+  async function restoreWorking(): Promise<void> {
+    if (previewingRid === null) return;
+    const fileId = state.kind === "editing" ? state.fileId : null;
+    const xml = prePreviewXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    clearPreviewUI(); // drops banner/frame + nulls previewingRid/prePreviewXml
+    if (xml != null) { await loadIntoEditor(xml); editor.setReadOnly(false); }
+  }
+  // "Volver a la versión actual" (preview bar): restore working, untick the checkbox, toast.
+  async function exitPreview(_fileId: string): Promise<void> {
+    if (previewingRid === null) return;
+    await restoreWorking();
+    compareSel = [];
+    renderHistoryPanelNow();
+    render();
+    showToast("Volviste a la versión actual");
+  }
+  // "↩ Restaurar esta versión" (preview bar): bring the previewed revision into your draft
+  // (replacing the working version), then leave preview.
+  async function restoreRevisionToDraft(fileId: string, rid: string): Promise<void> {
+    const xml = await api.getRevisionXml(fileId, rid);
+    clearPreviewUI(); // leaving preview WITHOUT restoring the old working — we replace it
+    compareSel = [];
+    await loadIntoEditor(xml);
+    editor.setReadOnly(false);
+    saveDraft(folderId, fileId, xml); // becomes your unpublished draft
+    dispatch({ type: "dirtyChanged", dirty: true });
+    renderHistoryPanelNow();
+    render();
+    showToast("Restaurado en tu borrador — Publicá para compartirlo");
+  }
+  // Drop the preview banner/frame WITHOUT restoring (used by restoreWorking + file switch).
+  function clearPreviewUI(): void {
+    previewingRid = null;
+    prePreviewXml = null;
+    document.body.classList.remove("app-previewing");
+    const pv = document.getElementById("preview");
+    if (pv) pv.innerHTML = "";
+  }
+
+  // ---- Compare mode: side-by-side revision diff (left = actual/latest, right = a
+  // revision), viewport-synced, coloured on both panes; the "actual" left is editable. ----
+  const $el = (id: string): HTMLElement | null => document.getElementById(id);
+  // Ordering: "actual" is the newest; revision ids are numeric timestamps.
+  const recencyOf = (id: string): number => (id === "actual" ? Infinity : Number(id) || 0);
+  const compareLabelOf = (id: string): string =>
+    id === "actual" ? "Actual (editable)" : (comparePoints.find((p) => p.id === id)?.label ?? id);
+  function applyCompareOrientation(): void {
+    $el("canvasarea")?.classList.toggle("vertical", compareOrientation === "v");
+  }
+  function toggleCompareOrientation(): void {
+    compareOrientation = compareOrientation === "h" ? "v" : "h";
+    try { localStorage.setItem("bpmn-compartida.compareOrientation", compareOrientation); } catch { /* ignore */ }
+    applyCompareOrientation();
+    renderCompareBarNow();
+    renderHistoryPanelNow(); // badges follow orientation (izq/der ↔ arriba/abajo)
+  }
+  // History checkbox toggled: keep at most 2 (FIFO), then compare (2) or exit (<2).
+  function toggleCompareSel(id: string, checked: boolean): void {
+    if (checked) {
+      if (!compareSel.includes(id)) compareSel.push(id);
+      while (compareSel.length > 2) compareSel.shift();
+    } else {
+      compareSel = compareSel.filter((x) => x !== id);
+    }
+    renderHistoryPanelNow();
+    void applyCompareSelection().catch(onError);
+  }
+  // The single dispatcher for the checkbox selection. It routes to one of three modes by
+  // how many rows are checked: 2 → compare, 1 revision → preview, 0/only-"Actual" → working.
+  async function applyCompareSelection(): Promise<void> {
+    if (state.kind !== "editing") return;
+    const fileId = state.fileId;
+
+    // --- 2 checked → compare ---
+    if (compareSel.length === 2) {
+      // Coming from preview? Restore the working version first, so the "Actual" left pane
+      // and the exit-restore use the real working version — not the previewed revision.
+      if (previewingRid !== null) await restoreWorking();
+      const [a, b] = [...compareSel].sort((x, y) => recencyOf(y) - recencyOf(x)); // a newer, b older
+      compareLeft = a;
+      compareRight = b; // always a revision id ("actual" is newest → always left)
+      if (!comparing) {
+        await flushDraft();
+        preCompareXml = await editor.getXml();
+        comparing = true;
+        const c2 = $el("canvas2")!;
+        c2.hidden = false;
+        $el("canvasarea")?.classList.add("split");
+        applyCompareOrientation();
+        document.body.classList.add("app-comparing");
+        if (!compareViewer) {
+          compareViewer = await createCompareModeler(c2); // read-only NavigatedViewer (pan + zoom)
+        }
+      }
+      await renderCompare();
+      renderCompareBarNow();
+      render();
+      return;
+    }
+
+    // --- <2 checked → not comparing (restores the working version, keeps the checks) ---
+    if (comparing) await exitCompare({ clearChecks: false });
+
+    // --- 1 revision checked → preview it (works from working OR just-exited compare) ---
+    const singleRev = compareSel.length === 1 && compareSel[0] !== "actual" ? compareSel[0] : null;
+    if (singleRev) {
+      await enterPreview(fileId, singleRev, compareLabelOf(singleRev));
+      return;
+    }
+    // --- 0 checked, or only "Actual" → back to the editable working version ---
+    if (previewingRid !== null) { await restoreWorking(); render(); showToast("Volviste a la versión actual"); }
+  }
+  async function renderCompare(): Promise<void> {
+    if (!comparing || state.kind !== "editing" || !compareRight || !compareViewer) return;
+    const fileId = state.fileId;
+    const rightXml = await api.getRevisionXml(fileId, compareRight);
+    const leftXml = compareLeft === "actual" ? (preCompareXml ?? (await api.getXml(fileId))) : (await api.getRevisionXml(fileId, compareLeft));
+    await editor.load(leftXml);
+    editor.setReadOnly(true); // compare is pure visualization — the left pane is read-only too
+    try { modeler.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
+    await compareViewer.importXML(rightXml);
+    try { compareViewer.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
+    await applyCompareDiff(rightXml, leftXml);
+    if (compareUnsync) compareUnsync();
+    compareUnsync = syncViewport(modeler, compareViewer as unknown as { get(n: string): any });
+  }
+  async function applyCompareDiff(oldXml: string, newXml: string): Promise<void> {
+    if (!compareViewer) return;
+    const changes = await computeDiff(oldXml, newXml); // old = right (older), new = left (newer)
+    const leftCanvas = modeler.get("canvas");
+    const rightCanvas = compareViewer.get("canvas");
+    clearDiffMarkers(leftCanvas, compareMarkedLeft);
+    clearDiffMarkers(rightCanvas, compareMarkedRight);
+    compareMarkedLeft = applyDiffMarkers(leftCanvas, changes, "new"); // left = newer
+    compareMarkedRight = applyDiffMarkers(rightCanvas, changes, "old"); // right = older
+  }
+  function renderCompareBarNow(): void {
+    if (!comparing || !compareRight) return;
+    renderCompareBar($el("compare")!, {
+      leftLabel: compareLabelOf(compareLeft),
+      rightLabel: compareLabelOf(compareRight),
+      orientation: compareOrientation,
+      onOrientation: toggleCompareOrientation,
+      onExit: () => void exitCompare().catch(onError),
+    });
+  }
+  function teardownCompare(): void {
+    comparing = false;
+    if (compareUnsync) { compareUnsync(); compareUnsync = null; }
+    try { clearDiffMarkers(modeler.get("canvas"), compareMarkedLeft); } catch { /* ok */ }
+    compareMarkedLeft = [];
+    compareMarkedRight = [];
+    if (compareViewer) { try { compareViewer.destroy(); } catch { /* ok */ } compareViewer = null; }
+    const c2 = $el("canvas2");
+    if (c2) { c2.hidden = true; c2.innerHTML = ""; }
+    $el("canvasarea")?.classList.remove("split");
+    document.body.classList.remove("app-comparing");
+    const bar = $el("compare");
+    if (bar) bar.innerHTML = "";
+  }
+  async function exitCompare(opts: { clearChecks?: boolean } = {}): Promise<void> {
+    if (!comparing) return;
+    const fileId = state.kind === "editing" ? state.fileId : null;
+    // Compare is read-only, so nothing was edited — just bring back the working version.
+    const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
+    teardownCompare();
+    preCompareXml = null;
+    compareRight = null;
+    if (opts.clearChecks !== false) compareSel = []; // "Salir" clears checks; unchecking keeps them
+    if (restore != null) { await loadIntoEditor(restore); editor.setReadOnly(false); }
+    renderHistoryPanelNow(); // reflect cleared/kept checkboxes
+    render();
+    showToast("Saliste de la comparación");
+  }
+  // Drop compare state without restoring (used on file switch).
+  function clearCompareUI(): void {
+    if (!comparing) return;
+    teardownCompare();
+    preCompareXml = null;
+    compareRight = null;
+    compareSel = [];
+  }
+
+  // Render the History panel from the cached points + current checkbox state. The
+  // checkbox IS the version picker: toggleCompareSel routes to preview (1) / compare (2).
+  // Per-version actions (Restaurar) live in the preview bar, not the rows.
+  function renderHistoryPanelNow(): void {
+    const panel = document.getElementById("history");
+    if (!panel) return;
+    renderHistoryPanel(panel, historyPoints, {
+      compare: { selected: compareSel, onToggle: toggleCompareSel, orientation: compareOrientation },
+    });
+  }
+
   async function loadHistory(fileId: string) {
     const revs = await api.listRevisions(fileId);
-    const points = revs
+    historyPoints = revs
       .map((r) => toRestorePoint(r, me))
       .sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime));
+    comparePoints = historyPoints.map((p) => ({
+      id: p.id,
+      label: `${new Date(p.modifiedTime).toLocaleString()} — ${p.authorName}${p.isExternal ? " (externo)" : ""}`,
+    }));
     // Don't force the pane visible — the inspector owns tab visibility (setTab).
-    // Forcing hidden=false made the history show inside whatever tab was active
-    // (e.g. Capas) after open/save. Just populate; it shows on the Historial tab.
-    const panel = document.getElementById("history")!;
-    renderHistoryPanel(panel, points, {
-      onPreview: (rid) => void (async () => {
-        const xml = await api.getRevisionXml(fileId, rid);
-        await loadIntoEditor(xml);
-        editor.setReadOnly(true);
-        showToast("Previsualizando una versión anterior (solo lectura)");
-      })().catch(onError),
-      onRestore: (rid) => void (async () => {
-        if (state.kind !== "editing" || state.lock !== "mine") {
-          showToast("Hacé check-out antes de restaurar");
-          return;
-        }
-        const xml = await api.getRevisionXml(fileId, rid);
-        await loadIntoEditor(xml);
-        editor.setReadOnly(false);
-        await save(fileId);
-        showToast("Restaurado como nueva revisión");
-      })().catch(onError),
-    });
+    renderHistoryPanelNow();
   }
 
   async function showConflictBar(fileId: string) {
@@ -1178,6 +1765,7 @@ async function bootstrap() {
         const xml = await api.getXml(fileId);
         await loadIntoEditor(xml);
         editor.setReadOnly(false);
+        clearDraft(folderId, fileId); // discarding my work drops the private draft too
         const fresh = await api.getMeta(fileId);
         openHeadRevisionId = fresh.headRevisionId ?? null;
         api.lastWrites.set(fileId, fresh.version); // mark seen so the watcher doesn't reload it again
@@ -1206,16 +1794,37 @@ async function bootstrap() {
     if (reloadOpen && openId) await handleExternalChange(openId);
     if (structureChanged) await refreshFileList();
     else treeVersions = new Map(clean.filter((e) => e.kind === "file" && e.version).map((e) => [e.path, e.version as string]));
+    // Keep the reservation view current: auto-release my own expired reservation,
+    // and reflect a peer's reservation change/expiry on the open file.
+    if (openId && state.kind === "editing") {
+      const entry = clean.find((e) => e.path === openId);
+      if (entry) {
+        openLock = readLock({ id: openId, name: openId, modifiedTime: "", version: "", headRevisionId: null, appProperties: entry.appProperties });
+        const eff = effectiveLock(openLock);
+        if (state.lock === "mine" && isExpired(openLock, Date.now())) {
+          await releaseReserve(openId);
+          showToast("Tu reserva venció — el diagrama quedó libre (tu borrador sigue intacto)");
+        } else if (eff !== state.lock) {
+          dispatch({ type: "lockChanged", lock: eff });
+        }
+      }
+    }
+    await pollEditRequests();
   }
 
   async function handleExternalChange(fileId: string) {
     if (state.kind !== "editing") return;
-    if (!state.dirty) {
+    // Silent auto-reload is only safe when there is NO unpublished local work —
+    // neither pending modeler edits nor a stored draft (which the canvas may be
+    // showing). Otherwise raise the conflict bar so the user chooses.
+    if (!state.dirty && !hasDraft(folderId, fileId)) {
       const xml = await api.getXml(fileId);
       await loadIntoEditor(xml);
       const fresh = await api.getMeta(fileId);
       openHeadRevisionId = fresh.headRevisionId ?? openHeadRevisionId;
       api.lastWrites.set(fileId, fresh.version); // mark this version as seen so we don't reload it again
+      try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
+      void ideasCtl?.refresh();
       dispatch({ type: "reloaded" });
       showToast("Recargado — actualizado externamente");
     } else {
@@ -1241,7 +1850,7 @@ async function bootstrap() {
     const file = await api.createFile(id, EMPTY_BPMN);
     if (parent) expanded.add(parent);
     await refreshFileList();
-    await openFile(file.id);
+    await openFile(file.id); // opens editable immediately — no reservation needed
   }
 
   async function newFolderIn(parent: string): Promise<void> {
@@ -1356,11 +1965,7 @@ async function bootstrap() {
   // ---- entry ----
   const saved = await loadSavedDir();
   if (saved) {
-    rootHandle = saved;
-    api = createFsClient(saved);
-    layersClient = createLayersClient(api);
-    docsClient = createDocsClient(api);
-    void ensureAgentsFile(api);
+    await useFolder(saved);
     await ensureNameThenApp();
   } else {
     showFolderGate();

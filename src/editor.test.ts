@@ -1,30 +1,37 @@
 import { describe, it, expect } from "vitest";
 import { createEditor, type ModelerLike, selectedModuleKeys } from "./editor";
 
-function fakeModeler(): ModelerLike & { fire: (event: string) => void; isReadOnly: () => boolean } {
+function fakeModeler(): ModelerLike & {
+  fire: (event: string) => void;
+  fireBus: (event: string) => unknown;
+  keyboardBound: () => boolean;
+} {
   const handlers: Record<string, Array<() => void>> = {};
-  let readonly = false;
+  // A minimal eventBus that records veto handlers and returns false if any handler does.
+  const busHandlers: Record<string, Array<() => unknown>> = {};
+  const eventBus = {
+    on: (event: string, _prio: number, cb: () => unknown) => { (busHandlers[event] ??= []).push(cb); },
+    fire: (event: string): unknown => {
+      for (const h of busHandlers[event] ?? []) { const r = h(); if (r === false) return false; }
+      return undefined;
+    },
+  };
+  let bound = true; // diagram-js keyboard is bound after init
+  const keyboard = { _node: {}, bind: () => { bound = true; }, unbind: () => { bound = false; } };
   let lastXml = "";
   return {
-    async importXML(xml: string) {
-      lastXml = xml;
-    },
-    async saveXML() {
-      return { xml: lastXml };
-    },
-    async saveSVG() {
-      return { svg: "" };
-    },
-    on(event: string, cb: () => void) {
-      (handlers[event] ??= []).push(cb);
-    },
+    async importXML(xml: string) { lastXml = xml; },
+    async saveXML() { return { xml: lastXml }; },
+    async saveSVG() { return { svg: "" }; },
+    on(event: string, cb: () => void) { (handlers[event] ??= []).push(cb); },
     get(name: string) {
-      if (name === "modeling") return {};
-      if (name === "readOnly" || name === "editorActions") return { readOnly: (v: boolean) => (readonly = v) };
+      if (name === "eventBus") return eventBus;
+      if (name === "keyboard") return keyboard;
       return {};
     },
-    isReadOnly: () => readonly,
     fire: (event: string) => (handlers[event] ?? []).forEach((h) => h()),
+    fireBus: (event: string) => eventBus.fire(event),
+    keyboardBound: () => bound,
   };
 }
 
@@ -33,6 +40,24 @@ describe("editor", () => {
     const ed = createEditor(fakeModeler());
     await ed.load("<defs/>");
     expect(await ed.getXml()).toBe("<defs/>");
+  });
+
+  it("setReadOnly vetoes editing interactions and toggles the keyboard", () => {
+    const m = fakeModeler();
+    const ed = createEditor(m);
+    // Editable by default: interaction events pass through, keyboard bound.
+    expect(m.fireBus("shape.move.start")).toBeUndefined();
+    expect(m.keyboardBound()).toBe(true);
+    // Read-only: editing interactions are vetoed (false) and the keyboard is unbound.
+    ed.setReadOnly(true);
+    expect(m.fireBus("shape.move.start")).toBe(false);
+    expect(m.fireBus("directEditing.activate")).toBe(false);
+    expect(m.fireBus("create.start")).toBe(false);
+    expect(m.keyboardBound()).toBe(false);
+    // Back to editable.
+    ed.setReadOnly(false);
+    expect(m.fireBus("shape.move.start")).toBeUndefined();
+    expect(m.keyboardBound()).toBe(true);
   });
 
   it("is clean after load and dirty after a change event", async () => {

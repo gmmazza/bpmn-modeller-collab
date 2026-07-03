@@ -4,6 +4,38 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.3.0] — 2026-07-03
+
+Versión mayor de **colaboración e ideas**: captura de ideas por elemento, un modelo de
+colaboración optimista (Borrador→Publicar) y una experiencia de historial con
+previsualización y comparación de versiones.
+
+### Agregado
+- **Modo Ideas**: capturá ideas ancladas a cada elemento del diagrama en hilos con
+  descripción, comentarios y estados (5 estados, con motivo al cerrar). Badges clicables
+  sobre el canvas, filtros por estado/alcance, promoción de una idea a una nota de
+  *mejora* vinculada, y detección de ediciones externas/IA (badge 🤖) con registro de
+  cada cambio de estado (fecha + autor). Migra las ideas v1 (`_ideas.md`) a notas.
+- **Colaboración Borrador→Publicar** (modelo optimista, sin bloqueo para editar):
+  editás en un borrador local privado y **Publicás** cuando querés compartir (reusa el
+  flujo de guardado/conflicto). El `.lock` pasó a ser una **Reserva** consultiva con
+  expiración; UX de check-out más clara, liberación por inactividad y "pedir editar".
+- **Historial — previsualización y comparación de versiones**: el panel Historial usa
+  **checkboxes** como selector: marcá 1 revisión para **previsualizarla** (solo lectura,
+  banner + marco índigo) o 2 para **comparar** en un split sincronizado con diff a color
+  (🟢 nuevo / 🔴 eliminado / 🟡 cambiado / 🔵 movido). El split es **horizontal o
+  vertical** con separador arrastrable; ambos paneles son **solo lectura** (mano para
+  desplazar + zoom, sincronizados en ambos sentidos). "Restaurar esta versión" y "Volver
+  a la versión actual" viven en la barra de previsualización.
+
+### Corregido
+- **Solo lectura real** en previsualización y comparación: bpmn-js 18 no trae modo
+  read-only, así que las revisiones y los paneles de comparación quedaban editables por
+  error; ahora se impide toda edición (solo la versión "Actual" de trabajo es editable).
+- **Barra de herramientas**: al envolverse en dos filas ya no empuja la página ni genera
+  scroll con el cartel de estado fuera de pantalla; panel de historial localizado al
+  español.
+
 ## [0.2.1] — 2026-07-01
 
 ### Corregido

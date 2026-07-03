@@ -17,6 +17,7 @@ export type AppEvent =
   | { type: "signedOut" }
   | { type: "folderSelected"; folderId: string }
   | { type: "openedFile"; fileId: string; lock: LockState }
+  | { type: "lockChanged"; lock: LockState }
   | { type: "dirtyChanged"; dirty: boolean }
   | { type: "externalChange" }
   | { type: "reloaded" }
@@ -34,7 +35,8 @@ export function reduce(state: AppState, event: AppEvent): AppState {
     case "folderSelected":
       return { kind: "browsing", folderId: event.folderId };
     case "openedFile":
-      if (state.kind !== "browsing") return state;
+      // Allowed from browsing OR editing (switching files) — carry the folder over.
+      if (state.kind !== "browsing" && state.kind !== "editing") return state;
       return {
         kind: "editing",
         folderId: state.folderId,
@@ -43,6 +45,8 @@ export function reduce(state: AppState, event: AppEvent): AppState {
         dirty: false,
         conflict: false,
       };
+    case "lockChanged":
+      return state.kind === "editing" ? { ...state, lock: event.lock } : state;
     case "dirtyChanged":
       return state.kind === "editing" ? { ...state, dirty: event.dirty } : state;
     case "externalChange":

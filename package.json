@@ -1,7 +1,7 @@
 {
   "name": "bpmn-compartida",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.3.0",
   "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
@@ -16,6 +16,9 @@
     "dist:win": "npm run build && electron-builder --win portable",
     "dist:win:installer": "npm run build && electron-builder --win nsis",
     "update:bpmn": "node scripts/update-bpmn.mjs",
+    "qa:seed": "node scripts/qa-seed.mjs",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
     "lint:pack": "bpmnlint-pack-config -c .bpmnlintrc -t es -o src/linting/bpmnlintConfig.js"
   },
   "dependencies": {
@@ -44,6 +47,7 @@
   },
   "devDependencies": {
     "@electron/packager": "^20.0.1",
+    "@playwright/test": "^1.61.1",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^22.20.0",
     "@types/wicg-file-system-access": "^2023.10.7",
@@ -54,6 +58,7 @@
     "fake-indexeddb": "^6.2.5",
     "happy-dom": "^15.11.6",
     "npm-check-updates": "^17.1.18",
+    "playwright-core": "^1.61.1",
     "png-to-ico": "^3.0.1",
     "sharp": "^0.35.2",
     "typescript": "^5.6.3",

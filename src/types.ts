@@ -23,6 +23,7 @@ export interface LockInfo {
   lockedByEmail?: string;
   lockedByName?: string;
   lockedAt?: string; // RFC3339
+  lockedUntil?: string; // RFC3339 — reservation expiry; empty/absent = permanent
 }
 
 export type LockState = "free" | "mine" | "theirs";

@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { defineConfig } from "vitest/config";
+import { defineConfig, configDefaults } from "vitest/config";
 
 const bpmnJsVersion = JSON.parse(
   readFileSync("node_modules/bpmn-js/package.json", "utf8"),
@@ -17,6 +17,8 @@ export default defineConfig({
   test: {
     environment: "happy-dom",
     globals: true,
+    // e2e/*.spec.ts are Playwright specs (run via `npm run e2e`), not vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
     environmentOptions: {
       happyDOM: {
         settings: {

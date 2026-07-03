@@ -3,7 +3,7 @@ export interface InspectorTab {
   label: string;
 }
 
-export function createInspector(container: HTMLElement, tabs: InspectorTab[]) {
+export function createInspector(container: HTMLElement, tabs: InspectorTab[], onChange?: (id: string) => void) {
   container.innerHTML = "";
   container.classList.add("inspector");
   const tabbar = document.createElement("div");
@@ -17,12 +17,19 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[]) {
 
   function setTab(id: string): void {
     if (!panes[id]) return;
+    const changed = active !== id;
     active = id;
     for (const t of tabs) {
       panes[t.id].hidden = t.id !== id;
       buttons[t.id].classList.toggle("active", t.id === id);
     }
     show();
+    if (changed) onChange?.(id);
+  }
+  // Hide/show a tab BUTTON (its pane visibility is still driven by setTab). Used
+  // for tabs that only exist in a specific mode (e.g. Ideas under idea mode).
+  function setTabVisible(id: string, visible: boolean): void {
+    if (buttons[id]) buttons[id].hidden = !visible;
   }
   // Visibility is a slide (a `.collapsed` class animated via CSS margin) rather
   // than display:none, so the panel slides out/in and the canvas reclaims space.
@@ -57,6 +64,7 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[]) {
 
   return {
     setTab,
+    setTabVisible,
     activeTab: (): string | null => active,
     paneEl: (id: string): HTMLElement => panes[id],
     show,
