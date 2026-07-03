@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Type stubs for bpmn-js plugin packages that ship no TypeScript declarations.
 declare module "bpmn-js-color-picker" {
   const module: object;

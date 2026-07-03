@@ -93,11 +93,26 @@ export function showHelp(): void {
   document.addEventListener("keydown", onKey);
 }
 
+// Screenshots referenced in the manual as `screenshots/NAME.png` (relative to docs/, so
+// they resolve on GitHub) are bundled here too so they show INSIDE the app. Vite turns
+// each into a hashed asset URL; we swap the <img src> after rendering.
+const shotUrls = import.meta.glob("../docs/screenshots/*.png", { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const shotByName: Record<string, string> = {};
+for (const [path, url] of Object.entries(shotUrls)) {
+  const name = path.split("/").pop();
+  if (name) shotByName[name] = url;
+}
+
 // The full user manual (docs/MANUAL.md, bundled at build time) rendered in-app with a
 // navigable table of contents built from its "## " headings. Same source as GitHub.
 let manualHtmlCache: string | null = null;
 function manualHtml(): string {
-  if (manualHtmlCache === null) manualHtmlCache = renderMarkdown(manualMarkdown);
+  if (manualHtmlCache === null) {
+    manualHtmlCache = renderMarkdown(manualMarkdown).replace(
+      /src="(?:\.\/)?screenshots\/([^"]+)"/g,
+      (whole, name: string) => (shotByName[name] ? `src="${shotByName[name]}"` : whole),
+    );
+  }
   return manualHtmlCache;
 }
 function slugify(text: string): string {

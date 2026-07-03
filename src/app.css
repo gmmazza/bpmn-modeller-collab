@@ -398,7 +398,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .usermanual-content th, .usermanual-content td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
 .usermanual-content thead th { background: var(--hover); font-weight: 600; }
 .usermanual-content a { color: var(--accent); }
-.usermanual-content img { max-width: 100%; }
+.usermanual-content img { display: block; max-width: 100%; margin: 14px 0; border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
 @media (max-width: 760px){
   .usermanual-main { grid-template-columns: 1fr; }
   .usermanual-toc { display: none; }

@@ -4,6 +4,8 @@ Editor de diagramas **BPMN 2.0** para equipos que trabajan sobre una **carpeta s
 
 > **Cómo leer este manual.** Cada sección es autónoma. Si es tu primera vez, seguí *Primeros pasos* → *Editar diagramas* → *Guardado local vs Publicar*. Para colaborar en equipo, mirá *Reservas*, *Sincronización* e *Historial*.
 
+![Vista general: barra de herramientas, lienzo del diagrama y panel lateral (inspector)](screenshots/01-overview.png)
+
 ---
 
 ## 1. Qué es y cómo funciona
@@ -40,12 +42,16 @@ Además de las personas del equipo, **agentes de IA externos** (por ejemplo Clau
 
 Está organizada en dos grupos lógicos, para separar *lo tuyo* de *lo del equipo*:
 
+![Barra: grupo Local (Autoguardado, Guardar, estado) a la izquierda; grupo Compartido (Reservar, Publicar) a la derecha](screenshots/02-barra.png)
+
 - **Grupo "Local":** **Autoguardado** (interruptor on/off) · botón **Guardar** (guarda tu borrador ahora) · indicador de estado *✓ Guardado local / ● Sin guardar*.
 - **Grupo "Compartido":** estado de reserva del archivo · botón de reserva (**Reservar / Liberar / Solicitar turno**) · **Publicar** · **Cerrar**.
 
 A la izquierda están las herramientas de edición (Nuevo, Deshacer, Rehacer); en el centro, las pestañas del panel lateral (Capas, Propiedades, Documentación) y Ajustes; y Exportar SVG/PNG y Manual.
 
 > **Barra responsive.** Si la ventana es angosta, las etiquetas se ocultan (quedan iconos) y los grupos secundarios (Exportar, pestañas) se pliegan en un menú **"⋯ Más"**. La barra **nunca** salta a dos líneas. Al agrandar, todo vuelve a su lugar.
+
+![La barra en una ventana angosta: solo iconos y un menú "⋯" para lo que no entra](screenshots/10-responsive.png)
 
 ---
 
@@ -100,6 +106,8 @@ En esos casos, `Ctrl+Z` primero deshace tus ediciones finas y, cuando se agotan,
 
 La **Reserva** es un candado *advisory* (aviso): le dice al equipo "estoy trabajando en este diagrama hasta tal hora". No impide que otros editen o publiquen.
 
+![Selector de duración de la reserva: 10 min, 30 min, 1 h, 2 h, 4 h, 1 día, Personalizado, Permanente](screenshots/09-reserva.png)
+
 1. **Reservar.** Botón **"🔒 Reservar"** del grupo Compartido → elegís duración: *10 min · 30 min · 1 h · 2 h · 4 h · 1 día · Personalizado… · Permanente*. El equipo ve un chip con tu nombre y la hora de fin.
 2. **Liberar.** Botón **"🔓 Liberar reserva"** cuando terminaste. Tu borrador queda intacto.
 3. **Solicitar turno.** Si otra persona reservó, tu botón dice **"🔔 Solicitar turno"**: le avisás que querés editar/publicar (*"Aviso enviado — te aviso cuando libere la reserva"*). Cuando libera, te llega *"✅ … quedó libre — ya podés editar/publicar"*.
@@ -134,6 +142,8 @@ Si vas a Publicar y el diagrama compartido ya no es el que abriste, aparece la *
 
 Cada **Publicar** guarda una versión. El historial vive en `.history/<archivo>/`, un archivo por revisión, nombrado con su fecha y autor. Abrí la pestaña **Historial** del panel lateral para verlo.
 
+![Pestaña Historial: fila "Actual (editable)" arriba y una casilla por revisión](screenshots/03-historial.png)
+
 ### Las casillas SON el control
 
 Cada versión tiene una casilla. Lo que marcás decide el modo:
@@ -145,6 +155,10 @@ Cada versión tiene una casilla. Lo que marcás decide el modo:
 | 0 / solo "Actual" | Trabajo | Vuelve a tu versión editable. |
 
 **Leyenda del diff:** 🟢 nuevo · 🔴 eliminado · 🟡 cambiado · 🔵 movido. Los dos paneles (pan/zoom) están sincronizados; podés cambiar la orientación (lado a lado ↔ apilado).
+
+![Vista previa de una revisión en solo-lectura, con banner índigo y "Restaurar esta versión"](screenshots/04-preview.png)
+
+![Comparación lado a lado con el diff coloreado y el botón "Copiar al actual"](screenshots/05-comparar.png)
 
 ### Restaurar una versión vieja
 
@@ -174,6 +188,8 @@ Cada diagrama tiene una carpeta hermana `<archivo>.docs/` con su documentación 
 
 El botón **Editar** abre un editor Markdown con vista en vivo; **Leer** muestra el render. **Guardar** persiste la nota.
 
+![Editor de documentación de un paso, con Markdown, checkboxes y wikilinks](screenshots/06-documentacion.png)
+
 ### Enlaces vivos: wikilinks `[[…]]`
 
 Dentro de las notas podés enlazar escribiendo `[[` (con autocompletado):
@@ -199,6 +215,8 @@ El botón **Manual** (de la barra) arma un documento con la descripción del pro
 ## 11. Ideas y mejoras
 
 Una **idea** es una anotación con hilo, anclada a un elemento del diagrama (o general): una sugerencia, un problema, una discusión. Las ideas **siempre están compartidas** (no tienen borrador) y se editan sin reservas. Pestaña **Ideas** del panel lateral.
+
+![Panel de Ideas con dos ideas ancladas a un paso, y el badge 💡 sobre ese elemento del diagrama](screenshots/07-ideas.png)
 
 ### Ciclo de vida: cinco estados
 
@@ -246,6 +264,8 @@ Los aportes de autores IA se muestran con **🤖** en los hilos. Podés declarar
 Las **capas** son dimensiones de anotación visual sobre el diagrama: te dejan pintar los elementos según una clasificación, sin tocar el modelo BPMN. Pestaña **Capas** del panel lateral. Se guardan en `<archivo>.layers.json`.
 
 Hay dos tipos de dimensión: **Color** (categorías con color, p. ej. nivel de automatización o actor responsable) y **Anotación** (marcas sin color). La app trae ejemplos por defecto como *"Automatización (madurez)"* —manual/asistido/automatizado— y *"Actores"*.
+
+![Diagrama coloreado por la capa "Automatización (madurez)": verde = automatizado, rojo = manual, amarillo = asistido](screenshots/08-capas.png)
 
 - **Asignar:** seleccioná un elemento y elegí su categoría en el panel; se pinta al instante.
 - **Gestionar:** el modal de capas permite agregar/renombrar/borrar dimensiones y categorías, elegir colores y reordenar.
@@ -313,7 +333,75 @@ Al iniciar, la app consulta las **Releases de GitHub** del proyecto. Si hay una 
 
 ---
 
-## 17. Referencia rápida
+## 17. Casos de uso y flujos
+
+Ejemplos concretos de principio a fin. Cada uno combina varias funciones; los números remiten a las secciones anteriores.
+
+### Caso A — Editar y publicar un cambio (el día a día)
+
+El flujo más común, trabajando solo/a sobre un proceso.
+
+1. Abrí el diagrama desde el panel de archivos.
+2. Editá en el lienzo (agregar/mover tareas, conectar). El **Autoguardado** va guardando tu **borrador privado**; el indicador dice *● Sin guardar* → *✓ Guardado local*. → §4, §5
+3. Cuando esté listo, **Publicar** (`Ctrl+S`) → confirmás → *"Publicado"*. Queda una versión en el **Historial** y tu borrador se limpia. → §5, §9
+4. ¿Te equivocaste? `Ctrl+Z` deshace; y si ya publicaste, entrás al **Historial** y **Restaurás** la versión anterior. → §6, §9
+
+### Caso B — Coordinar cuando varias personas tocan el mismo proceso
+
+Nadie queda bloqueado, pero se evita pisarse.
+
+1. Antes de un cambio largo, **Reservá** el diagrama por el tiempo que estimes (*30 min*, *2 h*…). El equipo ve *"Reservado por vos"*. → §7
+2. Si otra persona ya lo reservó, tu botón dice **"🔔 Solicitar turno"**: avisás y seguís en lo tuyo. Cuando libera, te llega *"✅ … quedó libre"*. → §7
+3. Terminás → **Publicar** → **Liberar reserva**. (Si te distraés, la reserva **vence sola**; tu borrador queda intacto.) → §7
+
+### Caso C — Resolver un conflicto de publicación
+
+Dos personas editaron la misma versión y sincronizaron.
+
+1. Al **Publicar**, aparece la barra *"Este diagrama cambió por fuera"*. → §8
+2. Tocá **Ver diferencias** y usá la tecla `d` para alternar *tu versión* ↔ *la externa* y entender qué cambió. → §8
+3. Decidí: **Conservar lo mío** (publica tu versión), **Descartar lo mío y recargar** (te quedás con la del equipo), o cancelar y fusionar a mano copiando lo que falte. → §8, §9
+
+### Caso D — Rescatar algo de una versión anterior
+
+Se borró un subproceso hace tres versiones y lo querés de vuelta — sin perder lo actual.
+
+1. Pestaña **Historial** → marcá **"Actual"** + la **revisión** vieja (2 casillas) → entrás a **Comparación**. → §9
+2. En el panel histórico (derecha): **clic** en el elemento a rescatar, o **Shift+arrastrar** para varios. El arrastre normal solo **panea**. → §9
+3. **"📋 Copiar al actual"** → los elementos aparecen en tu borrador. **Salir** de la comparación → **Publicar**. `Ctrl+Z` deshace el pegado si te arrepentís. → §6, §9
+
+![Rescatar elementos de una versión histórica en modo comparación](screenshots/05-comparar.png)
+
+### Caso E — Documentar el proceso y entregar un Manual
+
+Dejar el proceso listo para que otro lo entienda.
+
+1. Escribí la visión general en la pestaña **Documentación → Proceso**. → §10
+2. Seleccioná cada paso clave y documentalo en **Documentación → Paso** (pegá capturas si ayuda; enlazá con `[[otro-proceso]]`). → §10
+3. Botón **Manual** (barra) → revisás el documento armado con el proceso y todos los pasos en orden → **Exportar HTML** o **Imprimir** para compartir con quien no usa la app. → §10
+
+### Caso F — Ciclo de mejora con ideas y un agente de IA
+
+Del feedback disperso a un cambio implementado y trazable.
+
+1. Alguien detecta algo: pestaña **Ideas**, selecciona el paso, escribe la idea → **Agregar**. Aparece el badge **💡** sobre el elemento. → §11
+2. El equipo **comenta** en el hilo. Un **agente de IA** (que corre sobre la misma carpeta) lee el archivo de la idea, analiza y **comenta firmando como `IA`** (se muestra con 🤖). → §11, §12
+3. Se decide avanzar: **cambiar estado** a *haciendo* → **Promover a mejora**. → §11
+4. Se implementa el cambio en el diagrama y se **Publica**. La idea/mejora queda enlazada y versionada en la carpeta. → §5, §11
+
+### Caso G — Clasificar el proceso con capas
+
+Ver de un vistazo qué está automatizado y quién hace qué.
+
+1. Pestaña **Capas** → activá la dimensión **"Automatización (madurez)"**. → §13
+2. Seleccioná cada elemento y asignale una categoría (*Manual*, *Asistido*, *Automatizado*) con el desplegable **Asignar al elemento**. El diagrama se pinta al instante. → §13
+3. Cambiá a la dimensión **"Actores"** para ver el mismo proceso por responsable. Guardá el conjunto como **plantilla** para reutilizarlo en otros diagramas. → §13
+
+![El proceso coloreado por madurez de automatización](screenshots/08-capas.png)
+
+---
+
+## 18. Referencia rápida
 
 ### Atajos de teclado
 
@@ -353,6 +441,12 @@ Al iniciar, la app consulta las **Releases de GitHub** del proyecto. Si hay una 
 | **Mejora** | Propuesta concreta derivada de una idea, con su propio ciclo. |
 | **Capa** | Clasificación visual (colores/anotaciones) sobre el diagrama. |
 | **Autor IA (🤖)** | Un agente externo que colabora editando los archivos de texto. |
+
+---
+
+> **Este manual también vive dentro de la app.** Botón **Ayuda** (?) del encabezado → **"Abrir manual de uso completo"**: se abre con un índice lateral navegable. Es el mismo contenido que en GitHub.
+
+![El manual dentro de la app, con índice lateral navegable](screenshots/11-manual.png)
 
 ---
 
