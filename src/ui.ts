@@ -59,20 +59,23 @@ export function renderHistoryPanel(
     // Each row is a compare checkbox (plus a fixed "Actual (editable)" row on top). The
     // checkbox IS the version picker: 1 revision checked → preview, 2 checked → compare.
     // Row-level Preview/Restore buttons are gone — those actions live in the preview bar.
-    compare?: { selected: string[]; onToggle: (id: string, checked: boolean) => void };
+    // `orientation` labels the compare sides: "h" (side-by-side) → izq/der, "v" (stacked)
+    // → arriba/abajo.
+    compare?: { selected: string[]; onToggle: (id: string, checked: boolean) => void; orientation?: "h" | "v" };
   },
 ): void {
   container.innerHTML = "<h3>Historial</h3>";
   const cmp = handlers.compare;
   const sel = cmp ? cmp.selected : [];
-  // Which side each checked id maps to: newer → left, older → right ("actual" newest).
+  const stacked = cmp?.orientation === "v";
+  // Which side each checked id maps to: newer → left/top, older → right/bottom ("actual" newest).
   const recency = (id: string): number => (id === "actual" ? Infinity : Number(id) || 0);
   const ordered = [...sel].sort((a, b) => recency(b) - recency(a));
-  // 2 checked → izq/der (compare); 1 revision checked → 👁 (preview); else no badge.
+  // 2 checked → izq/der (or arriba/abajo when stacked); 1 revision checked → 👁; else none.
   const badgeOf = (id: string): { cls: string; text: string } | null => {
     if (sel.length === 2) {
-      if (ordered[0] === id) return { cls: "izq", text: "izq" };
-      if (ordered[1] === id) return { cls: "der", text: "der" };
+      if (ordered[0] === id) return { cls: "izq", text: stacked ? "arriba" : "izq" };
+      if (ordered[1] === id) return { cls: "der", text: stacked ? "abajo" : "der" };
       return null;
     }
     if (sel.length === 1 && sel[0] === id && id !== "actual") return { cls: "preview", text: "👁" };
@@ -214,19 +217,16 @@ export function renderPreviewBar(
   container.appendChild(bar);
 }
 
-// Compare-mode bar. The version SELECTION now lives in the History panel (checkboxes),
-// so the bar only shows what's being compared, the colour legend, a split-orientation
-// toggle, "Copiar al actual", and exit.
+// Compare-mode bar. Compare is pure visualization (both panes read-only, pan + zoom,
+// no copy). The bar shows what's being compared, the colour legend, a split-orientation
+// toggle, and exit. The version SELECTION lives in the History panel (checkboxes).
 export function renderCompareBar(
   container: HTMLElement,
   opts: {
     leftLabel: string;
     rightLabel: string;
     orientation: "h" | "v";
-    copyCount?: number;
-    canCopy?: boolean;
     onOrientation: () => void;
-    onCopy?: () => void;
     onExit: () => void;
   },
 ): void {
@@ -236,7 +236,9 @@ export function renderCompareBar(
 
   const title = document.createElement("span");
   title.className = "compare-title";
-  title.textContent = `Comparando: ${opts.leftLabel} ↔ ${opts.rightLabel}`;
+  // Stacked (vertical split) reads top↕bottom; side-by-side reads left↔right.
+  const arrow = opts.orientation === "v" ? "↕" : "↔";
+  title.textContent = `Comparando: ${opts.leftLabel} ${arrow} ${opts.rightLabel}`;
   bar.appendChild(title);
 
   const legend = document.createElement("span");
@@ -256,20 +258,6 @@ export function renderCompareBar(
   orient.dataset.orient = "1";
   orient.addEventListener("click", opts.onOrientation);
   bar.appendChild(orient);
-
-  if (opts.onCopy) {
-    const count = opts.copyCount ?? 0;
-    const copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "compare-copy";
-    copy.textContent = count > 0 ? `📋 Copiar al actual (${count})` : "📋 Copiar al actual";
-    copy.disabled = !opts.canCopy || count === 0;
-    copy.title = opts.canCopy
-      ? "Copiar los elementos seleccionados de esta versión a tu diagrama actual"
-      : "Elegí «Actual» para poder copiar a tu versión editable";
-    copy.addEventListener("click", () => opts.onCopy!());
-    bar.appendChild(copy);
-  }
 
   const exit = document.createElement("button");
   exit.type = "button";

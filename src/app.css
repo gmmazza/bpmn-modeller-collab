@@ -148,16 +148,13 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 .compare-bar .compare-spacer { flex: 1; }
 .compare-bar .compare-title { font-weight: 600; }
 .compare-bar .compare-legend { color: #0f766e; font-size: 12px; }
-.compare-bar .compare-orient,
-.compare-bar .compare-copy { background: #fff; color: #115e59; border: 1px solid #0d9488; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
-.compare-bar .compare-orient:hover,
-.compare-bar .compare-copy:hover:not(:disabled) { background: #f0fdfa; }
-.compare-bar .compare-copy:disabled { opacity: .5; cursor: default; }
+.compare-bar .compare-orient { background: #fff; color: #115e59; border: 1px solid #0d9488; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
+.compare-bar .compare-orient:hover { background: #f0fdfa; }
 .compare-bar .compare-exit { background: #0d9488; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .compare-bar .compare-exit:hover { filter: brightness(1.08); }
 
 /* History panel: fixed "Actual" row on top + revision rows, each with a compare
-   checkbox. Checked rows are highlighted teal with an izq/der side badge. */
+   checkbox. Checked rows are highlighted with an izq/der (or arriba/abajo) side badge. */
 #history h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #334155; }
 .history-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; background: #fff; transition: background .12s, border-color .12s; }
 .history-row:hover { border-color: #99f6e4; }
@@ -169,11 +166,9 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 /* Single-select preview badge: indigo, matching the preview banner/frame theme. */
 .history-side.preview { background: #4f46e5; padding: 1px 4px; }
 .history-row.previewing { background: #eef2ff; border-color: #6366f1; }
-/* Historical (right) compare pane is only for select+copy — hide its editing UI.
-   (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
+/* Historical (right) compare pane is a read-only viewer; hide any editing chrome just in
+   case. (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
 #canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
-/* Self-drawn rubber-band selection box in the historical pane. */
-.compare-lasso { position: absolute; border: 1px solid #0d9488; background: rgba(13, 148, 136, .12); pointer-events: none; z-index: 5; }
 .inspector { position: relative; width: var(--inspector-width, 300px); box-sizing: border-box; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: column; transition: margin-right .2s ease; }
 .inspector.collapsed { margin-right: calc(-1 * var(--inspector-width, 300px)); }
 /* Drag handle on the inspector's left edge to resize its width. */
