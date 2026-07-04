@@ -51,13 +51,15 @@ describe("renderPreviewBar", () => {
 });
 
 describe("renderCompareBar", () => {
-  it("shows the two labels (↔ side-by-side), toggles orientation, exits — no copy button", () => {
+  it("shows the two labels (↔ side-by-side), toggles orientation, exits, and copies", () => {
     const el = document.createElement("div");
-    let oriented = false, exited = false;
+    let oriented = false, exited = false, copied = false;
     renderCompareBar(el, {
       leftLabel: "Actual (editable)", rightLabel: "2/7/2026 — Beto",
       orientation: "h",
+      copyCount: 2, canCopy: true,
       onOrientation: () => { oriented = true; },
+      onCopy: () => { copied = true; },
       onExit: () => { exited = true; },
     });
     const title = el.querySelector(".compare-title")!.textContent!;
@@ -70,11 +72,31 @@ describe("renderCompareBar", () => {
     orient.click();
     expect(oriented).toBe(true);
 
-    // Compare is read-only visualization — there is no copy button.
-    expect(el.querySelector(".compare-copy")).toBeNull();
+    // Copy button reflects the selection count, is enabled, and fires onCopy.
+    const copy = el.querySelector(".compare-copy") as HTMLButtonElement;
+    expect(copy).not.toBeNull();
+    expect(copy.textContent).toContain("(2)");
+    expect(copy.disabled).toBe(false);
+    copy.click();
+    expect(copied).toBe(true);
 
     (el.querySelector(".compare-exit") as HTMLElement).click();
     expect(exited).toBe(true);
+  });
+
+  it("disables the copy button when nothing is selected or the left pane isn't Actual", () => {
+    const el = document.createElement("div");
+    renderCompareBar(el, {
+      leftLabel: "v2", rightLabel: "v1", orientation: "h",
+      copyCount: 0, canCopy: true, onOrientation: () => {}, onCopy: () => {}, onExit: () => {},
+    });
+    expect((el.querySelector(".compare-copy") as HTMLButtonElement).disabled).toBe(true); // count 0
+    const el2 = document.createElement("div");
+    renderCompareBar(el2, {
+      leftLabel: "v2", rightLabel: "v1", orientation: "h",
+      copyCount: 3, canCopy: false, onOrientation: () => {}, onCopy: () => {}, onExit: () => {},
+    });
+    expect((el2.querySelector(".compare-copy") as HTMLButtonElement).disabled).toBe(true); // not Actual
   });
 
   it("uses the ↕ arrow and 'Lado a lado' toggle label when stacked (vertical)", () => {

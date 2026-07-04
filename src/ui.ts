@@ -217,16 +217,20 @@ export function renderPreviewBar(
   container.appendChild(bar);
 }
 
-// Compare-mode bar. Compare is pure visualization (both panes read-only, pan + zoom,
-// no copy). The bar shows what's being compared, the colour legend, a split-orientation
-// toggle, and exit. The version SELECTION lives in the History panel (checkboxes).
+// Compare-mode bar. Shows what's being compared, the colour legend, a split-orientation
+// toggle, "📋 Copiar al actual" (copies the historical pane's selection into your current
+// diagram), and exit. The version SELECTION lives in the History panel (checkboxes); the
+// element selection to copy is made in the historical pane (click / Shift+drag box).
 export function renderCompareBar(
   container: HTMLElement,
   opts: {
     leftLabel: string;
     rightLabel: string;
     orientation: "h" | "v";
+    copyCount?: number;
+    canCopy?: boolean;
     onOrientation: () => void;
+    onCopy?: () => void;
     onExit: () => void;
   },
 ): void {
@@ -258,6 +262,25 @@ export function renderCompareBar(
   orient.dataset.orient = "1";
   orient.addEventListener("click", opts.onOrientation);
   bar.appendChild(orient);
+
+  if (opts.onCopy) {
+    const count = opts.copyCount ?? 0;
+    const hint = document.createElement("span");
+    hint.className = "compare-hint";
+    hint.textContent = "Shift+arrastrar o clic para seleccionar";
+    bar.appendChild(hint);
+
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "compare-copy";
+    copy.textContent = count > 0 ? `📋 Copiar al actual (${count})` : "📋 Copiar al actual";
+    copy.disabled = !opts.canCopy || count === 0;
+    copy.title = opts.canCopy
+      ? "Copiar los elementos seleccionados de esta versión a tu diagrama actual"
+      : "Elegí «Actual» para poder copiar a tu versión editable";
+    copy.addEventListener("click", () => opts.onCopy!());
+    bar.appendChild(copy);
+  }
 
   const exit = document.createElement("button");
   exit.type = "button";

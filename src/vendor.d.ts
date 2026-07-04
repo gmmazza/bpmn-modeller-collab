@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 // Type stubs for bpmn-js plugin packages that ship no TypeScript declarations.
 declare module "bpmn-js-color-picker" {
   const module: object;
@@ -32,6 +33,12 @@ declare module "bpmn-js-bpmnlint";
 declare module "bpmnlint";
 declare module "./linting/bpmnlintConfig.js";
 declare module "*/bpmnlintConfig.js";
+
+// Vite raw imports (e.g. the user manual markdown bundled into the app).
+declare module "*.md?raw" {
+  const content: string;
+  export default content;
+}
 
 declare const __BPMN_JS_VERSION__: string;
 declare const __APP_BUILD__: string;
