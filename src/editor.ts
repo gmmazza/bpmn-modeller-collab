@@ -1,5 +1,6 @@
 import type { VizSettings } from "./vizSettings";
 import * as bpmnlintConfig from "./linting/bpmnlintConfig.js";
+import { CANON_MODDLE } from "./canonModdle";
 
 export interface ModelerLike {
   importXML(xml: string): Promise<unknown>;
@@ -141,7 +142,14 @@ export async function createBpmnModeler(
     return Array.isArray(m) ? m : [m];
   });
 
-  const config: Record<string, unknown> = { container, additionalModules };
+  // Canon descriptor registered UNCONDITIONALLY (not gated on the feature flag): it removes
+  // the copy/paste + morph strip hazard for canon:extensionElements (SPIKE F6). The flag
+  // gates canon UI only. See src/canonModdle.ts.
+  const config: Record<string, unknown> = {
+    container,
+    additionalModules,
+    moddleExtensions: { canon: CANON_MODDLE },
+  };
   if (opts.propertiesParent) config.propertiesPanel = { parent: opts.propertiesParent };
   if (settings.sketchy) config.textRenderer = COMIC_SANS_TEXT_RENDERER;
   if (keys.includes("lint")) config.linting = { bpmnlint: bpmnlintConfig };
