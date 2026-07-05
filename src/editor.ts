@@ -1,5 +1,6 @@
 import type { VizSettings } from "./vizSettings";
 import * as bpmnlintConfig from "./linting/bpmnlintConfig.js";
+import * as canonLintConfig from "./linting/canonLintConfig";
 import { CANON_MODDLE } from "./canonModdle";
 
 export interface ModelerLike {
@@ -152,7 +153,13 @@ export async function createBpmnModeler(
   };
   if (opts.propertiesParent) config.propertiesPanel = { parent: opts.propertiesParent };
   if (settings.sketchy) config.textRenderer = COMIC_SANS_TEXT_RENDERER;
-  if (keys.includes("lint")) config.linting = { bpmnlint: bpmnlintConfig };
+  // Canon lint rules are FLAG-GATED (settings.canon, default off, #REF STAGE 2 / WO):
+  // they would falsely fail every vanilla non-canon diagram, so they must load ONLY when
+  // the flag is explicitly on. The canon moddle DESCRIPTOR above is unrelated and always
+  // registered — this only swaps which bpmnlint bundle drives the linting panel.
+  if (keys.includes("lint")) {
+    config.linting = { bpmnlint: settings.canon ? canonLintConfig : bpmnlintConfig };
+  }
   // bpmn-js' keyboard binds implicitly (to the focused canvas) in current
   // diagram-js — an explicit `keyboard.bindTo` is unsupported and only logs an
   // error. The tool/editing shortcuts (H/L/S/C/E/R, undo/redo, copy/paste,

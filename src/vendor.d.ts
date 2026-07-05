@@ -34,6 +34,10 @@ declare module "bpmnlint";
 declare module "./linting/bpmnlintConfig.js";
 declare module "*/bpmnlintConfig.js";
 
+// Vendored canon-BPMN profile plugin (src/canonProfile/, ADR-NNN D5) — plain ESM JS,
+// no type declarations (same pattern as the bpmnlint packed config above).
+declare module "*/canonProfile/plugin.js";
+
 // Vite raw imports (e.g. the user manual markdown bundled into the app).
 declare module "*.md?raw" {
   const content: string;
