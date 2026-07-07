@@ -15,6 +15,10 @@ contextBridge.exposeInMainWorld("fsapi", {
   readFileBinary: (root, rel) => ipcRenderer.invoke("fsapi:readFileBinary", root, rel),
 });
 
+contextBridge.exposeInMainWorld("termapi", {
+  openExternal: (command) => ipcRenderer.invoke("terminal:openExternal", command ?? null),
+});
+
 contextBridge.exposeInMainWorld("versionApi", {
   latestBpmnJs: () => ipcRenderer.invoke("version:latestBpmnJs"),
 });

@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { spawn } = require("node:child_process");
 const { resolveWithinRoot } = require("./pathGuard.cjs");
+const { externalLaunchArgv } = require("./terminal/commandBuilder.cjs");
 
 // Portable build: keep ALL app state (userData → folder.json + Local Storage, i.e.
 // the private "Borrador" drafts) in a `data/` folder NEXT TO the executable instead
@@ -240,6 +242,29 @@ ipcMain.handle("fsapi:copyFile", async (_e, _root, from, to) => {
   const dst = await guardedPath(to);
   await fs.mkdir(path.dirname(dst), { recursive: true });
   await fs.copyFile(await guardedPath(from), dst);
+});
+
+// Abre la terminal del sistema en la carpeta autorizada, opcionalmente corriendo `command`.
+// Intenta candidatos por-OS en orden; el primero que emite "spawn" gana. ENOENT (emulador
+// ausente) llega como evento "error" → se prueba el siguiente.
+ipcMain.handle("terminal:openExternal", async (_e, command) => {
+  if (!authorizedRoot) throw new Error("No hay carpeta de trabajo autorizada");
+  const candidates = externalLaunchArgv(process.platform, authorizedRoot, command || null);
+  const trySpawn = (c) =>
+    new Promise((resolve) => {
+      let child;
+      try {
+        child = spawn(c.file, c.args, { cwd: authorizedRoot, detached: true, stdio: "ignore" });
+      } catch {
+        return resolve(false);
+      }
+      child.once("spawn", () => { child.unref(); resolve(true); });
+      child.once("error", () => resolve(false));
+    });
+  for (const c of candidates) {
+    if (await trySpawn(c)) return { ok: true, launched: c.file };
+  }
+  throw new Error("No se encontró una terminal para abrir");
 });
 
 // Phase B (dormant): silent auto-update. Off unless ENABLE_AUTOUPDATE=1 AND a
