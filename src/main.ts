@@ -431,6 +431,11 @@ async function bootstrap() {
         <button id="check-bpmnjs" type="button">Buscar actualización</button>
         <span id="bpmnjs-status"></span>
       </div>
+      ${window.appUpdate ? `<hr/>
+      <div class="viz-update">
+        <div>App <b id="app-version">…</b> <button id="check-app" type="button">Buscar actualización</button></div>
+        <div id="app-upd" class="app-upd"></div>
+      </div>` : ""}
       <p class="hint">Build: ${__APP_BUILD__}</p>`;
     panel.hidden = false;
     const onToggle = () => {
@@ -454,6 +459,77 @@ async function bootstrap() {
         .catch(() => {
           status.textContent = "No se pudo verificar (offline o sin acceso)";
         });
+    });
+    wireAppUpdateSection();
+  }
+
+  // App self-update UI (Electron only): shows the current version and, when a newer
+  // release exists, a button that downloads the portable .zip and swaps it in place.
+  function wireAppUpdateSection(): void {
+    if (!window.appUpdate) return;
+    const verEl = document.getElementById("app-version");
+    void window.appUpdate.currentVersion().then((v) => { if (verEl) verEl.textContent = "v" + v; }).catch(() => {});
+
+    const box = document.getElementById("app-upd");
+    document.getElementById("check-app")?.addEventListener("click", () => {
+      if (!box) return;
+      box.textContent = "Buscando…";
+      void (async () => {
+        try {
+          const [current, feed] = await Promise.all([window.appUpdate!.currentVersion(), window.appUpdate!.checkFeed()]);
+          const r = evaluateUpdate(current, feed);
+          if (!r.updateAvailable) { box.textContent = `Estás en la última versión (v${current}) ✓`; return; }
+          renderUpdateAvailable(box, r.latest, r.asset, r.url);
+        } catch {
+          box.textContent = "No se pudo verificar (offline o sin acceso)";
+        }
+      })();
+    });
+  }
+
+  // Render the "vX available" state: an install button (in-place self-update) when a .zip
+  // asset exists, otherwise a fallback that opens the release page.
+  function renderUpdateAvailable(box: HTMLElement, latest: string, asset: string, releaseUrl: string): void {
+    box.textContent = "";
+    const line = document.createElement("div");
+    line.textContent = `Versión ${latest} disponible. `;
+    box.appendChild(line);
+
+    if (!asset) {
+      const open = document.createElement("button");
+      open.type = "button";
+      open.textContent = "Ver release";
+      open.addEventListener("click", () => window.appUpdate!.openDownload(releaseUrl));
+      line.appendChild(open);
+      return;
+    }
+
+    const install = document.createElement("button");
+    install.type = "button";
+    install.textContent = "Descargar e instalar";
+    const status = document.createElement("span");
+    status.className = "app-upd-status";
+    line.appendChild(install);
+    line.appendChild(status);
+
+    install.addEventListener("click", () => {
+      install.disabled = true;
+      status.textContent = " Preparando…";
+      const off = window.appUpdate!.onProgress((p) => {
+        if (p.phase === "download") {
+          const pct = p.total ? Math.round(((p.received ?? 0) / p.total) * 100) : 0;
+          status.textContent = ` Descargando… ${pct}%`;
+        } else if (p.phase === "extract") {
+          status.textContent = " Descomprimiendo…";
+        } else if (p.phase === "swap") {
+          status.textContent = " Instalando y reiniciando…";
+        }
+      });
+      void window.appUpdate!.downloadAndInstall(asset).catch((err: unknown) => {
+        off();
+        install.disabled = false;
+        status.textContent = " Error: " + (err instanceof Error ? err.message : String(err));
+      });
     });
   }
 

@@ -3,8 +3,10 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { spawn } = require("node:child_process");
+const os = require("node:os");
 const { resolveWithinRoot } = require("./pathGuard.cjs");
 const { externalLaunchArgv } = require("./terminal/commandBuilder.cjs");
+const { runSelfUpdate } = require("./update/selfUpdate.cjs");
 
 // Portable build: keep ALL app state (userData → folder.json + Local Storage, i.e.
 // the private "Borrador" drafts) in a `data/` folder NEXT TO the executable instead
@@ -134,10 +136,17 @@ ipcMain.handle("app:checkUpdate", async () => {
     const res = await fetch(APP_UPDATE_FEED_URL, { headers: { Accept: "application/vnd.github+json" } });
     if (!res.ok) return null; // 404 while the repo is private, or rate-limited
     const j = await res.json();
-    // Map the GitHub release shape to the renderer's { version, url } contract.
+    // Map the GitHub release shape to the renderer's { version, url, asset } contract.
     const version = typeof j.tag_name === "string" ? j.tag_name.replace(/^v/, "") : null;
     if (!version) return null;
-    return { version, url: typeof j.html_url === "string" ? j.html_url : "" };
+    // The downloadable portable build: first .zip asset (in-place self-update uses this).
+    const assets = Array.isArray(j.assets) ? j.assets : [];
+    const zip = assets.find((a) => typeof a?.browser_download_url === "string" && /\.zip$/i.test(a.name || ""));
+    return {
+      version,
+      url: typeof j.html_url === "string" ? j.html_url : "",
+      asset: zip ? zip.browser_download_url : "",
+    };
   } catch {
     return null;
   }
@@ -145,6 +154,32 @@ ipcMain.handle("app:checkUpdate", async () => {
 
 ipcMain.handle("app:openDownload", (_e, url) => {
   if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url);
+});
+
+// Portable in-place self-update: download the release .zip, swap the files in the current
+// install folder (preserving the sibling data/ drafts) and relaunch. Only meaningful for a
+// packaged build; refuses in dev (no real install dir / locked exe to replace).
+ipcMain.handle("app:downloadAndInstall", async (e, assetUrl) => {
+  if (!app.isPackaged) throw new Error("La auto-actualización solo está disponible en la app instalada (no en desarrollo)");
+  if (typeof assetUrl !== "string" || !/^https:\/\/[^\s]+\.zip$/i.test(assetUrl)) {
+    throw new Error("URL de descarga inválida");
+  }
+  const exePath = app.getPath("exe");
+  const installRoot = path.dirname(exePath);
+  const win = BrowserWindow.fromWebContents(e.sender);
+  await runSelfUpdate({
+    assetUrl,
+    installRoot,
+    exeName: path.basename(exePath),
+    pid: process.pid,
+    tmpDir: path.join(os.tmpdir(), "bpmn-compartida-update"),
+    platform: process.platform,
+    onProgress: (p) => { if (win && !win.isDestroyed()) win.webContents.send("app:updateProgress", p); },
+  });
+  // Files downloaded + verified + detached swap script launched: quit so it can replace
+  // the (now-unlocked) files and relaunch us.
+  setTimeout(() => app.quit(), 200);
+  return { ok: true };
 });
 
 ipcMain.handle("fsapi:chooseFolder", async (e) => {

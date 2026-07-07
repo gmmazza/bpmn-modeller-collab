@@ -26,4 +26,10 @@ contextBridge.exposeInMainWorld("appUpdate", {
   currentVersion: () => ipcRenderer.invoke("app:version"),
   checkFeed: () => ipcRenderer.invoke("app:checkUpdate"),
   openDownload: (url) => ipcRenderer.invoke("app:openDownload", url),
+  downloadAndInstall: (assetUrl) => ipcRenderer.invoke("app:downloadAndInstall", assetUrl),
+  onProgress: (cb) => {
+    const listener = (_e, data) => cb(data);
+    ipcRenderer.on("app:updateProgress", listener);
+    return () => ipcRenderer.removeListener("app:updateProgress", listener);
+  },
 });
