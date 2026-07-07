@@ -58,6 +58,9 @@ import { diffTree } from "./watcher";
 import { computeDiff } from "./bpmnDiff";
 import { createDiffView, type DiffView } from "./diffView";
 import { isSyncConflict } from "./syncConflict";
+import { getPresets, getLastPresetId, setLastPresetId } from "./terminalPresets";
+import { showPresetsModal } from "./terminalPresetsModal";
+import { openExternalTerminal, hasTermApi } from "./termApi";
 import type { User, TreeEntry, LockInfo, LockState, RestorePoint } from "./types";
 import { renderFileTree } from "./fileTree";
 import { openContextMenu } from "./contextMenu";
@@ -765,6 +768,12 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
           <button class="btn icon-only" id="ai-instructions" type="button" title="Instrucciones personales para la IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
+          <span class="tgroup terminal-group" id="terminal-group" hidden>
+            <select id="llm-preset" class="btn" title="Preset de comando LLM"></select>
+            <button class="btn icon-only" id="llm-run" type="button" title="Lanzar en terminal">▶</button>
+            <button class="btn icon-only" id="llm-term" type="button" title="Abrir terminal en la carpeta">⌨</button>
+            <button class="btn icon-only" id="llm-presets" type="button" title="Gestionar presets">${icon("settings")}</button>
+          </span>
         </div>
         <span class="spacer"></span>
         <div class="tgroup" id="sharedgroup">
@@ -986,6 +995,41 @@ async function bootstrap() {
     document.getElementById("ai-instructions")?.addEventListener("click", () => {
       if (api) showPersonalInstructionsModal(api, getName());
     });
+
+    function refreshLlmPresets(): void {
+      const sel = document.getElementById("llm-preset") as HTMLSelectElement | null;
+      if (!sel) return;
+      const presets = getPresets();
+      sel.innerHTML = "";
+      for (const p of presets) {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.label;
+        sel.appendChild(opt);
+      }
+      const last = getLastPresetId();
+      if (last && presets.some((p) => p.id === last)) sel.value = last;
+      sel.disabled = presets.length === 0;
+      (document.getElementById("llm-run") as HTMLButtonElement).disabled = presets.length === 0;
+    }
+    if (hasTermApi()) {
+      (document.getElementById("terminal-group") as HTMLElement).hidden = false;
+      refreshLlmPresets();
+      document.getElementById("llm-preset")?.addEventListener("change", (e) => {
+        setLastPresetId((e.target as HTMLSelectElement).value || null);
+      });
+      document.getElementById("llm-run")?.addEventListener("click", () => {
+        const id = (document.getElementById("llm-preset") as HTMLSelectElement).value;
+        const p = getPresets().find((x) => x.id === id);
+        if (p) void openExternalTerminal(p.command).catch(onError);
+      });
+      document.getElementById("llm-term")?.addEventListener("click", () => {
+        void openExternalTerminal(null).catch(onError);
+      });
+      document.getElementById("llm-presets")?.addEventListener("click", () => {
+        showPresetsModal(refreshLlmPresets);
+      });
+    }
 
     // No file open: intercept the first interaction with the canvas and explain
     // that a diagram must be selected/created before editing.

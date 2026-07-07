@@ -478,4 +478,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .idea-pop-row { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
 .idea-pop-row:hover { background: var(--hover); }
 .idea-pop-add { display: flex; gap: 6px; margin-top: 6px; }
+
+/* Terminal LLM launcher — Electron-only toolbar group (Task 5) */
+.terminal-group { display: inline-flex; align-items: center; gap: 4px; }
+#llm-preset { max-width: 160px; }
+.preset-row { display: flex; gap: 6px; margin: 4px 0; }
+.preset-row input { flex: 1; min-width: 0; }
 .idea-pop-add input { flex: 1; }
