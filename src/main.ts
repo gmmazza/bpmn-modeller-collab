@@ -27,7 +27,9 @@ import { createIdeaMode } from "./processDocs/ideaMode";
 import { createIdeasControllerV2 } from "./processDocs/ideasControllerV2";
 import { aiAuthorName } from "./processDocs/aiIdentity";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
-import { ensureAgentsFile } from "./processDocs/agentsFile";
+import { ensureAgentsFile, ensureLocalOverlay } from "./processDocs/agentsFile";
+import { showPersonalInstructionsModal } from "./processDocs/personalInstructions";
+import { ensureBpmnDesignSkill } from "./processDocs/bpmnDesignSkill";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
 import { resolveCalledProcess, findEventCounterpart, type DiagramInfo } from "./processDocs/resolveTargets";
 import { extractInterProcessRefs, type RawEl } from "./processDocs/interProcessRefs";
@@ -252,6 +254,8 @@ async function bootstrap() {
     ideasClientV2 = createIdeasClient(api);
     folderId = await computeFolderId();
     void ensureAgentsFile(api);
+    void ensureBpmnDesignSkill(api);
+    void ensureLocalOverlay(api);
   }
 
   // Floating modal to change the working folder WITHOUT tearing down the app, so
@@ -760,6 +764,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
+          <button class="btn icon-only" id="ai-instructions" type="button" title="Instrucciones personales para la IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
         </div>
         <span class="spacer"></span>
         <div class="tgroup" id="sharedgroup">
@@ -978,6 +983,9 @@ async function bootstrap() {
     renderThemeBtn();
     $("themebtn").addEventListener("click", () => { toggleTheme(); renderThemeBtn(); });
     $("helpbtn").addEventListener("click", () => showHelp());
+    document.getElementById("ai-instructions")?.addEventListener("click", () => {
+      if (api) showPersonalInstructionsModal(api, getName());
+    });
 
     // No file open: intercept the first interaction with the canvas and explain
     // that a diagram must be selected/created before editing.

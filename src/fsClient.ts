@@ -369,7 +369,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       const out: TreeEntry[] = [];
       async function walk(d: FileSystemDirectoryHandle, prefix: string): Promise<void> {
         for await (const [name, handle] of (d as any).entries()) {
-          if (name === HISTORY_DIR || name === ".layer-templates") continue;
+          if (name === HISTORY_DIR || name === ".layer-templates" || name === "_bpmn-design") continue;
           const rel = prefix ? `${prefix}/${name}` : name;
           if ((handle as any).kind === "directory") {
             out.push({ path: rel, kind: "dir" });

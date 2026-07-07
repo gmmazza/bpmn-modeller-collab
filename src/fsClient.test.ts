@@ -149,6 +149,15 @@ describe("fsClient listTree", () => {
     const b2b = tree.find((e) => e.path === "Ventas/B2B.bpmn");
     expect(b2b?.appProperties?.lockedByName).toBe("Ana");
   });
+
+  it("hides the _bpmn-design meta folder from the tree", async () => {
+    const fs2 = createFsClient(createFakeDir());
+    await fs2.writePath("_bpmn-design/SKILL.md", "x");
+    await fs2.createFile("proceso", "<x/>");
+    const tree = await fs2.listTree();
+    expect(tree.some((e) => e.path === "_bpmn-design")).toBe(false);
+    expect(tree.some((e) => e.path === "proceso.bpmn")).toBe(true);
+  });
 });
 
 describe("fsClient delete + createFolder", () => {
