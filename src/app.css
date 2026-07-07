@@ -89,7 +89,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 #toolbar {
   display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;
   padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border);
-  overflow: hidden; /* the reflow (reflowToolbar) moves overflowing groups into the "⋯" menu */
+  /* overflow-x safety net for un-reflowed spill is provided by reflowToolbar() itself
+     (it moves overflowing groups into the "⋯" menu). We must NOT use `overflow: hidden`
+     here: it clips the toolbar dropdowns (.popover/.menu-pop are position:absolute; top:100%,
+     dropping below the ~44px bar), which silently broke the Ajustes (⚙) and Más (⋯) menus.
+     `visible` lets those escape while keeping scrollWidth accurate so reflow still detects
+     overflow. (overflow-x:hidden+overflow-y:visible coerces to auto → still clips;
+     overflow-x:clip breaks scrollWidth-based reflow detection.) */
+  overflow: visible;
 }
 #toolbar .tgroup { display: inline-flex; align-items: center; gap: 2px; }
 #toolbar .divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 6px; }

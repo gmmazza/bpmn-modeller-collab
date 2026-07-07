@@ -291,6 +291,52 @@ test("a wrapping toolbar (long reserved + draft chip) does not overflow the page
   expect(overflow, "page must not scroll vertically").toBeLessThanOrEqual(0);
 });
 
+test("toolbar dropdowns (Ajustes ⚙, Más ⋯) open UNCLIPPED below the bar", async ({ page }) => {
+  // Regression: #toolbar had `overflow: hidden` (for reflowToolbar), which clipped the
+  // .popover/.menu-pop dropdowns (position:absolute; top:100%, dropping below the ~44px bar).
+  // The Ajustes and Más menus opened (hidden=false) but were invisible. Guard against the
+  // clip returning: elementFromPoint returns the element the USER would actually hit, so a
+  // clipped popover fails even though Playwright's toBeVisible (layout-only) would pass.
+  await page.setViewportSize({ width: 900, height: 700 });
+  await openApp(page);
+  // The toolbar handlers (incl. #settings/#more) are wired AFTER `await mountModeler()` in
+  // startApp, so wait for the modeler before clicking — else the handler isn't attached yet.
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  // The toolbar must not use a clipping overflow (that would cut off its dropdowns).
+  const overflowY = await page.locator("#toolbar").evaluate((el) => getComputedStyle(el).overflowY);
+  expect(overflowY, "toolbar overflow-y must not clip its dropdowns").toBe("visible");
+
+  // Ajustes (⚙) → the settings popover content is actually painted, not clipped.
+  await page.locator("#settings").click();
+  const settings = await page.evaluate(() => {
+    const cb = document.getElementById("set-sketchy");
+    const viz = document.getElementById("vizsettings");
+    if (!cb || !viz) return { painted: false, belowBar: false };
+    const r = cb.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    const tb = document.getElementById("toolbar")!.getBoundingClientRect();
+    return { painted: !!(hit && viz.contains(hit)), belowBar: r.top >= tb.bottom };
+  });
+  expect(settings.painted, "settings popover content must be painted (not clipped)").toBe(true);
+  expect(settings.belowBar, "popover drops below the toolbar").toBe(true);
+
+  // Más (⋯) → when reflow has moved groups into it, its content is painted too.
+  if (await page.locator("#more").isVisible()) {
+    await page.locator("#more").click();
+    const morePainted = await page.evaluate(() => {
+      const pop = document.getElementById("morepop");
+      if (!pop || pop.hidden) return false;
+      const first = pop.querySelector("button, .tgroup") as HTMLElement | null;
+      if (!first) return false;
+      const r = first.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !!(hit && pop.contains(hit));
+    });
+    expect(morePainted, "more-menu content must be painted (not clipped)").toBe(true);
+  }
+});
+
 test("editing enables Publicar and autosaves a namespaced draft", async ({ page }) => {
   await openApp(page);
   await page.getByText("📄 test.bpmn").click();
