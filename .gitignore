@@ -40,3 +40,11 @@ qa-workspace/
 # ensureAgentsFile); not a repo artifact — appears here only if the repo root is
 # opened as a working folder.
 AGENTS.md
+
+# AI-agent overlays generated into working folders — may hold private/team/personal
+# notes. `*.local` above does NOT catch these (they end in .md). Covers the team
+# overlay (AGENTS.local.md), the pre-v2 backup, and personal overlays (AGENTS.<name>.md).
+AGENTS.local.md
+AGENTS.*.md
+# Personal, machine-local overrides (never shared).
+CLAUDE.local.md
