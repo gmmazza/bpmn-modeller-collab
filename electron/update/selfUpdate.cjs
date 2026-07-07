@@ -31,18 +31,31 @@ function buildSwapPlan(platform, opts) {
     const scriptBody = [
       "$ErrorActionPreference = 'SilentlyContinue'",
       `Start-Transcript -Path ${psQuote(logFile)} -Force | Out-Null`,
-      // 1. wait (up to ~30s) for the app process to exit so its files unlock.
+      `$exe = ${psQuote(exePath)}`,
+      // 1. wait (up to ~10s) for the launching (main) process to exit.
       `$target = ${Number(pid)}`,
-      "for ($i = 0; $i -lt 300; $i++) {",
+      "for ($i = 0; $i -lt 100; $i++) {",
       "  if (-not (Get-Process -Id $target -ErrorAction SilentlyContinue)) { break }",
       "  Start-Sleep -Milliseconds 100",
       "}",
-      // 2. copy the new build over the install dir. /E = all subdirs incl. empty; NO /MIR
-      //    so nothing is deleted — the runtime-created data/ folder (drafts) is preserved.
-      `robocopy ${psQuote(sourceDir)} ${psQuote(installRoot)} /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
-      // 3. relaunch the (now-updated) app.
+      // 2. wait (up to ~20s) for EVERY process running the app exe to release the file lock —
+      //    Electron spawns helper processes (GPU/renderer/utility) from the same exe and they
+      //    lock it too, so waiting for the main PID alone isn't enough.
+      "for ($i = 0; $i -lt 200; $i++) {",
+      "  if (-not (Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe })) { break }",
+      "  Start-Sleep -Milliseconds 100",
+      "}",
+      // 2b. still holding the exe? force-kill the leftovers (they are our own old processes) so
+      //     the swap can never be blocked by a lingering lock.
+      "Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force -ErrorAction SilentlyContinue",
+      "Start-Sleep -Milliseconds 400",
+      // 3. copy the new build over the install dir. /E = all subdirs incl. empty; NO /MIR so
+      //    nothing is deleted — the runtime-created data/ folder (drafts) is preserved. Generous
+      //    retries (/R:8) absorb any last transient lock.
+      `robocopy ${psQuote(sourceDir)} ${psQuote(installRoot)} /E /R:8 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
+      // 4. relaunch the (now-updated) app.
       `Start-Process -FilePath ${psQuote(exePath)}`,
-      // 4. best-effort cleanup of the temp download/extract dir.
+      // 5. best-effort cleanup of the temp download/extract dir (the log lives OUTSIDE it).
       "Start-Sleep -Milliseconds 800",
       `Remove-Item -LiteralPath ${psQuote(tmpDir)} -Recurse -Force`,
       "Stop-Transcript | Out-Null",
@@ -50,9 +63,12 @@ function buildSwapPlan(platform, opts) {
     return {
       scriptName: "bpmn-selfupdate.ps1",
       scriptBody,
+      // Launch through `cmd /c start` — a bare spawn("powershell.exe", ["-File", …]) does NOT
+      // reliably execute nor survive the app exiting (verified: it silently never ran). `start`
+      // detaches the helper so it runs independently after the app quits.
       argv: (scriptPath) => ({
-        file: "powershell.exe",
-        args: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", scriptPath],
+        file: "cmd.exe",
+        args: ["/c", "start", "", "/min", "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", scriptPath],
       }),
     };
   }
@@ -125,16 +141,36 @@ function extractZip(zipFile, destDir) {
   });
 }
 
+// Best-effort removal of leftover work dirs from prior attempts (a locked file just gets
+// skipped). Also tries the legacy fixed dir name. Never throws.
+async function sweepOldWorkDirs(tmpBase) {
+  const dir = path.dirname(tmpBase);
+  const prefix = path.basename(tmpBase) + "-";
+  await fsp.rm(tmpBase, { recursive: true, force: true }).catch(() => {}); // legacy fixed dir
+  const entries = await fsp.readdir(dir, { withFileTypes: true }).catch(() => []);
+  for (const e of entries) {
+    if (e.isDirectory() && e.name.startsWith(prefix)) {
+      await fsp.rm(path.join(dir, e.name), { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
 // Orchestrate a full self-update. Downloads the asset, extracts it, verifies the new
 // build contains the exe, writes + launches the detached swap script, and returns so the
 // caller can app.quit(). Throws (without quitting) on any failure before the hand-off.
 async function runSelfUpdate(ctx) {
-  const { assetUrl, installRoot, exeName, pid, tmpDir, platform, onProgress } = ctx;
-  const plan0 = buildSwapPlan(platform, { installRoot, sourceDir: "?", exeName, pid, tmpDir, logFile: "?" });
+  const { assetUrl, installRoot, exeName, pid, tmpDir: tmpBase, platform, onProgress } = ctx;
+  const plan0 = buildSwapPlan(platform, { installRoot, sourceDir: "?", exeName, pid, tmpDir: "?", logFile: "?" });
   if (!plan0) throw new Error(`auto-actualización no soportada en ${platform} todavía`);
 
-  await fsp.rm(tmpDir, { recursive: true, force: true });
-  await fsp.mkdir(tmpDir, { recursive: true });
+  // Use a FRESH, UNIQUE work dir per attempt. Reusing/deleting a fixed dir crashes with
+  // ENOTEMPTY when a previous attempt's extracted files are still locked (e.g. antivirus
+  // scanning the freshly written .exe/.dll). Old leftovers are swept best-effort — locked
+  // ones are skipped and simply orphaned, never blocking a new update.
+  const baseParent = path.dirname(tmpBase);
+  await fsp.mkdir(baseParent, { recursive: true }).catch(() => {});
+  await sweepOldWorkDirs(tmpBase);
+  const tmpDir = await fsp.mkdtemp(tmpBase + "-");
   const zipFile = path.join(tmpDir, "update.zip");
   const extractDir = path.join(tmpDir, "extracted");
 
@@ -151,7 +187,9 @@ async function runSelfUpdate(ctx) {
   if (!sourceDir) throw new Error("el paquete descargado no contiene la app (zip inválido) — no se modificó nada");
 
   if (onProgress) onProgress({ phase: "swap" });
-  const logFile = path.join(tmpDir, "selfupdate.log");
+  // Log OUTSIDE the work dir so the swap script's own cleanup (rm tmpDir) doesn't delete it —
+  // it stays available for diagnosing a failed update.
+  const logFile = path.join(baseParent, "bpmn-selfupdate.log");
   const plan = buildSwapPlan(platform, { installRoot, sourceDir, exeName, pid, tmpDir, logFile });
   const scriptPath = path.join(tmpDir, plan.scriptName);
   await fsp.writeFile(scriptPath, plan.scriptBody, "utf8");

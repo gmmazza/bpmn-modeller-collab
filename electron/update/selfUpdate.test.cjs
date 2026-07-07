@@ -17,22 +17,26 @@ const WIN_OPTS = {
 describe("buildSwapPlan (win32)", () => {
   const plan = buildSwapPlan("win32", WIN_OPTS);
 
-  test("returns a powershell -File invocation", () => {
+  test("launches via `cmd /c start` so the detached helper actually runs + survives app exit", () => {
     expect(plan).toBeTruthy();
     const { file, args } = plan.argv("C:\\Temp\\bpmn-up\\bpmn-selfupdate.ps1");
-    expect(file).toBe("powershell.exe");
+    expect(file).toBe("cmd.exe");
+    expect(args.slice(0, 3)).toEqual(["/c", "start", ""]); // start with empty title
+    expect(args).toContain("powershell");
     expect(args).toContain("-File");
     expect(args[args.length - 1]).toBe("C:\\Temp\\bpmn-up\\bpmn-selfupdate.ps1");
-    expect(args).toContain("-ExecutionPolicy");
   });
 
-  test("waits for the app PID before touching files", () => {
+  test("waits for the main PID, then for ALL exe processes, then force-kills — before copying", () => {
     expect(plan.scriptBody).toContain("$target = 4242");
-    // the wait loop must come BEFORE the robocopy (files are locked until the app exits)
-    const waitIdx = plan.scriptBody.indexOf("Get-Process -Id $target");
+    const pidWait = plan.scriptBody.indexOf("Get-Process -Id $target");
+    const exeWait = plan.scriptBody.indexOf("$_.Path -eq $exe");
+    const forceKill = plan.scriptBody.indexOf("Stop-Process -Force");
     const copyIdx = plan.scriptBody.indexOf("robocopy");
-    expect(waitIdx).toBeGreaterThanOrEqual(0);
-    expect(copyIdx).toBeGreaterThan(waitIdx);
+    expect(pidWait).toBeGreaterThanOrEqual(0);
+    expect(exeWait).toBeGreaterThan(pidWait);       // wait for helper processes too
+    expect(forceKill).toBeGreaterThan(exeWait);     // then force-kill any lingering lock
+    expect(copyIdx).toBeGreaterThan(forceKill);     // only then swap
   });
 
   test("MERGES, never mirrors — /E present, /MIR absent (preserves data/ drafts)", () => {

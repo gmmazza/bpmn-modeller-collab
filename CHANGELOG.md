@@ -6,7 +6,21 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 
 ## [0.5.1] — 2026-07-07
 
-Endurecimiento de seguridad de la **auto-actualización** (introducida en 0.5.0).
+Endurecimiento y **puesta a punto de la auto-actualización** introducida en 0.5.0: quedó
+funcionando de punta a punta (descarga → reemplazo en la carpeta → reinicio) y más segura.
+
+### Corregido (auto-actualización en el lugar)
+- **El helper de reemplazo ahora se ejecuta de verdad.** Se lanzaba con
+  `spawn("powershell", ["-File", …])`, que en la práctica no corría ni sobrevivía al cierre
+  de la app, así que los archivos nunca se reemplazaban. Se lanza vía `cmd /c start`, que
+  desprende el proceso para que corra después de que la app cierra.
+- **Reemplazo robusto frente al bloqueo del `.exe`.** El helper espera a que salga el proceso
+  principal **y** todos los procesos auxiliares de Electron que corren el mismo `.exe`,
+  fuerza el cierre de rezagados y reintenta la copia — así el ejecutable en uso ya no bloquea
+  la actualización.
+- **Carpeta temporal única por intento.** Antes reutilizaba una carpeta fija y fallaba con
+  `ENOTEMPTY` cuando archivos extraídos de un intento previo quedaban bloqueados (p. ej. por
+  el antivirus). Ahora cada intento usa una carpeta nueva y limpia las viejas sin bloquearse.
 
 ### Seguridad
 - **La URL de descarga ya no se acepta desde el renderer.** El proceso principal vuelve a
