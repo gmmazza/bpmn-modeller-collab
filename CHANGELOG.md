@@ -4,6 +4,20 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.5.1] — 2026-07-07
+
+Endurecimiento de seguridad de la **auto-actualización** (introducida en 0.5.0).
+
+### Seguridad
+- **La URL de descarga ya no se acepta desde el renderer.** El proceso principal vuelve a
+  consultar el feed de releases y toma la URL del `.zip` de GitHub por sí mismo, exigiendo
+  que provenga del host de descargas de releases de este repo. Cierra una vía de ejecución
+  de código si el renderer estuviera comprometido (p. ej. por un `.bpmn` malicioso).
+- **Rutas al script de PowerShell como literales entre comillas simples** (sin expansión de
+  `$`/backtick), evitando inyección por nombres de carpeta anómalos en el swap del update.
+- Verificación de integridad por checksum firmado del `.zip` queda como mejora pendiente
+  (requiere un ancla de firma).
+
 ## [0.5.0] — 2026-07-07
 
 Versión de **automatización e integración con IA**: una terminal para correr el CLI de
