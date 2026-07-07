@@ -48,3 +48,8 @@ AGENTS.local.md
 AGENTS.*.md
 # Personal, machine-local overrides (never shared).
 CLAUDE.local.md
+
+# Internal dev artifacts — kept locally, never published
+CLAUDE.md
+docs/superpowers/
+docs/QA-colaboracion.md

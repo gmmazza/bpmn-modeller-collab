@@ -59,10 +59,6 @@ de diseño BPMN listo para que un LLM trabaje dentro de la carpeta.
   (`position: absolute; top: 100%`). Se cambió a `overflow: visible` — el reflow ya evita
   el desborde horizontal moviendo grupos al menú "⋯".
 
-### Interno
-- **Perfil canon (INTERNAL v0):** descriptor moddle + lint del canon **detrás de un flag**
-  (dormido por defecto), como base para validación de procesos canónicos.
-
 ## [0.4.0] — 2026-07-03
 
 Versión de **experiencia de uso y documentación**: hace visible el guardado local,

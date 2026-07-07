@@ -1,7 +1,5 @@
 import type { VizSettings } from "./vizSettings";
 import * as bpmnlintConfig from "./linting/bpmnlintConfig.js";
-import * as canonLintConfig from "./linting/canonLintConfig";
-import { CANON_MODDLE } from "./canonModdle";
 
 export interface ModelerLike {
   importXML(xml: string): Promise<unknown>;
@@ -143,22 +141,14 @@ export async function createBpmnModeler(
     return Array.isArray(m) ? m : [m];
   });
 
-  // Canon descriptor registered UNCONDITIONALLY (not gated on the feature flag): it removes
-  // the copy/paste + morph strip hazard for canon:extensionElements (SPIKE F6). The flag
-  // gates canon UI only. See src/canonModdle.ts.
   const config: Record<string, unknown> = {
     container,
     additionalModules,
-    moddleExtensions: { canon: CANON_MODDLE },
   };
   if (opts.propertiesParent) config.propertiesPanel = { parent: opts.propertiesParent };
   if (settings.sketchy) config.textRenderer = COMIC_SANS_TEXT_RENDERER;
-  // Canon lint rules are FLAG-GATED (settings.canon, default off, #REF STAGE 2 / WO):
-  // they would falsely fail every vanilla non-canon diagram, so they must load ONLY when
-  // the flag is explicitly on. The canon moddle DESCRIPTOR above is unrelated and always
-  // registered — this only swaps which bpmnlint bundle drives the linting panel.
   if (keys.includes("lint")) {
-    config.linting = { bpmnlint: settings.canon ? canonLintConfig : bpmnlintConfig };
+    config.linting = { bpmnlint: bpmnlintConfig };
   }
   // bpmn-js' keyboard binds implicitly (to the focused canvas) in current
   // diagram-js — an explicit `keyboard.bindTo` is unsupported and only logs an

@@ -15,12 +15,7 @@ export interface ViewerLike {
 // never editing. Loaded dynamically; diagram-js CSS is already imported by main.ts.
 export async function createCompareModeler(container: HTMLElement): Promise<ViewerLike> {
   const { default: BpmnModeler } = await import("bpmn-js/lib/Modeler");
-  const { CANON_MODDLE } = await import("./canonModdle");
-  // Register the canon descriptor here too: the cross-modeler copy (src/main.ts:1889-1893)
-  // runs its COPY half in THIS pane, so without it, elements copied from a historical
-  // revision arrive stripped of canon content even when the main editor is registered
-  // (SPIKE F3 / spike case 9). Required, not optional.
-  return new BpmnModeler({ container, moddleExtensions: { canon: CANON_MODDLE } }) as unknown as ViewerLike;
+  return new BpmnModeler({ container }) as unknown as ViewerLike;
 }
 
 interface Syncable {
