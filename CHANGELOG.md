@@ -4,6 +4,37 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.5.0] — 2026-07-07
+
+Versión de **automatización e integración con IA**: una terminal para correr el CLI de
+un LLM en la carpeta de trabajo, auto-actualización de la app en el lugar, y el contexto
+de diseño BPMN listo para que un LLM trabaje dentro de la carpeta.
+
+### Agregado
+- **Terminal de LLM (Electron).** Un grupo en la barra abre la **terminal del sistema con
+  la carpeta de trabajo como `cwd`** (⌨) o **lanza un preset** de comando (▶). Los presets
+  (etiqueta + comando, p. ej. `claude`, `claude --review`, `gemini`) se definen y eligen
+  desde un editor simple. Cierra el loop con el watcher: el CLI edita el `.bpmn` y la app
+  recarga en vivo. Estructurado cross-platform (Windows implementado; macOS/Linux al portar).
+- **Auto-actualización en el lugar (portable).** Desde **Ajustes → App → Buscar
+  actualización**, cuando hay una versión nueva un botón **Descargar e instalar** baja el
+  `.zip` del release, **reemplaza los archivos en la carpeta actual** (preservando `data/`
+  con tus borradores) y **reinicia** — sin dejar de ser portable, sin instalador.
+- **Integración del skill `bpmn-design` para IA.** Al abrir una carpeta, la app materializa
+  `AGENTS.md` + `_bpmn-design/` (skill completo + resumen) para que un LLM que corra dentro
+  de la carpeta diseñe/revise diagramas con contexto; con capas de equipo (`AGENTS.local.md`)
+  e instrucciones personales por usuario (Ajustes → "Instrucciones personales para la IA").
+
+### Corregido
+- **Los menús Ajustes (⚙) y Más (⋯) no abrían** en la barra: `#toolbar` usaba
+  `overflow: hidden` (para el reflow responsive), que recortaba los desplegables
+  (`position: absolute; top: 100%`). Se cambió a `overflow: visible` — el reflow ya evita
+  el desborde horizontal moviendo grupos al menú "⋯".
+
+### Interno
+- **Perfil canon (INTERNAL v0):** descriptor moddle + lint del canon **detrás de un flag**
+  (dormido por defecto), como base para validación de procesos canónicos.
+
 ## [0.4.0] — 2026-07-03
 
 Versión de **experiencia de uso y documentación**: hace visible el guardado local,
