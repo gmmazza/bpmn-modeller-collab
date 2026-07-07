@@ -8,25 +8,33 @@ function externalLaunchArgv(platform, cwd, command) {
   return linux(cwd, cmd);
 }
 
+// wt/pwsh/gnome-terminal reciben cwd como elemento argv discreto (spawn sin shell) → no
+// inyectables; cwd es ruta absoluta (no empieza con "-"). Solo cmd.exe/osascript construían
+// strings de shell → cwd ya NO se interpola ahí (cmd.exe usa el cwd que setea el spawn del
+// IPC handler; osascript escapa cwd y cmd antes de insertarlos en el string de AppleScript).
 function win(cwd, cmd) {
   if (!cmd) {
     return [
       { file: "wt", args: ["-d", cwd] },
       { file: "pwsh", args: ["-NoExit", "-WorkingDirectory", cwd] },
-      { file: "cmd.exe", args: ["/K", `cd /d "${cwd}"`] },
+      { file: "cmd.exe", args: ["/K"] },
     ];
   }
   return [
     { file: "wt", args: ["-d", cwd, "pwsh", "-NoExit", "-Command", cmd] },
     { file: "pwsh", args: ["-NoExit", "-WorkingDirectory", cwd, "-Command", cmd] },
-    { file: "cmd.exe", args: ["/K", `cd /d "${cwd}" & ${cmd}`] },
+    { file: "cmd.exe", args: ["/K", cmd] },
   ];
+}
+
+function escapeAppleScript(s) {
+  return String(s).replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }
 
 // TODO verificar/ajustar en el build macOS real (escaping de comillas en osascript).
 function darwin(cwd, cmd) {
   if (!cmd) return [{ file: "open", args: ["-a", "Terminal", cwd] }];
-  const script = `tell application "Terminal" to do script "cd \\"${cwd}\\"; ${cmd}"`;
+  const script = `tell application "Terminal" to do script "cd \\"${escapeAppleScript(cwd)}\\"; ${escapeAppleScript(cmd)}"`;
   return [{ file: "osascript", args: ["-e", script] }];
 }
 
