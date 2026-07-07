@@ -27,7 +27,11 @@ const files = {};
 for (const [srcDir, prefix] of SOURCES) {
   for (const abs of walk(join(ROOT, srcDir))) {
     const rel = relative(join(ROOT, srcDir), abs).split("\\").join("/");
-    files[prefix + rel] = readFileSync(abs, "utf8");
+    // Normalizamos a LF: el bundle embebido y su hash de contenido (BPMN_DESIGN_VERSION)
+    // no deben depender del fin de línea con que git haya hecho checkout — core.autocrlf
+    // en Windows los reescribe a CRLF. .gitattributes ya fuerza LF en disco; esto es
+    // defensa en profundidad para que un re-pack nunca cambie el hash por EOL.
+    files[prefix + rel] = readFileSync(abs, "utf8").replace(/\r\n/g, "\n");
   }
 }
 

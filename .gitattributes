@@ -1,0 +1,10 @@
+# The bpmn-design skill sources are vendored into
+# src/processDocs/bpmnDesignSkill.generated.ts with LF line endings and a content
+# hash (BPMN_DESIGN_VERSION). The byte-for-byte pack test compares the on-disk
+# bytes against that embedded copy, and the hash is shipped into user folders for
+# staleness detection — so the sources must stay LF on every checkout. Without
+# this, core.autocrlf=true (Windows) rewrites them to CRLF: the pack test fails and
+# a re-pack would flip the hash. eol=lf overrides autocrlf for these paths.
+bpmn-design/** text eol=lf
+bpmn-design-app/** text eol=lf
+src/processDocs/bpmnDesignSkill.generated.ts text eol=lf
