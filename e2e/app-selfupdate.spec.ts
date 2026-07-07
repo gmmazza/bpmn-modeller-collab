@@ -15,8 +15,9 @@ async function boot(page: Page, feed: unknown): Promise<void> {
       currentVersion: () => Promise.resolve("0.4.0"),
       checkFeed: () => Promise.resolve(feedData),
       openDownload: (u: string) => (window as any).__install.push({ open: u }),
-      downloadAndInstall: (asset: string) => {
-        (window as any).__install.push({ install: asset });
+      // No URL arg: main re-derives the asset itself (security). Just record the call.
+      downloadAndInstall: () => {
+        (window as any).__install.push({ install: true });
         // simulate progress
         const cb = (window as any).__progressCb;
         if (cb) { cb({ phase: "download", received: 50, total: 100 }); cb({ phase: "extract" }); cb({ phase: "swap" }); }
@@ -44,9 +45,9 @@ test("update available: shows version + install button, calls downloadAndInstall
   await expect(installBtn).toBeVisible();
 
   await installBtn.click();
-  // downloadAndInstall called with the asset URL; progress reflected in the status.
+  // downloadAndInstall invoked (no URL arg — main re-derives it); progress reflected.
   const calls = await page.evaluate(() => (window as any).__install);
-  expect(calls).toEqual([{ install: "https://github.com/x/app.zip" }]);
+  expect(calls).toEqual([{ install: true }]);
   await expect(page.locator("#app-upd")).toContainText("Instalando y reiniciando");
 });
 

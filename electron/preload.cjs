@@ -26,7 +26,9 @@ contextBridge.exposeInMainWorld("appUpdate", {
   currentVersion: () => ipcRenderer.invoke("app:version"),
   checkFeed: () => ipcRenderer.invoke("app:checkUpdate"),
   openDownload: (url) => ipcRenderer.invoke("app:openDownload", url),
-  downloadAndInstall: (assetUrl) => ipcRenderer.invoke("app:downloadAndInstall", assetUrl),
+  // No URL argument by design: main re-derives the asset from GitHub itself (a renderer
+  // must not be able to choose what gets downloaded + executed).
+  downloadAndInstall: () => ipcRenderer.invoke("app:downloadAndInstall"),
   onProgress: (cb) => {
     const listener = (_e, data) => cb(data);
     ipcRenderer.on("app:updateProgress", listener);

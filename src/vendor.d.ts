@@ -53,7 +53,7 @@ interface Window {
     currentVersion(): Promise<string>;
     checkFeed(): Promise<unknown | null>;
     openDownload(url: string): void;
-    downloadAndInstall(assetUrl: string): Promise<{ ok: boolean }>;
+    downloadAndInstall(): Promise<{ ok: boolean }>;
     onProgress(cb: (p: { phase: string; received?: number; total?: number }) => void): () => void;
   };
 }

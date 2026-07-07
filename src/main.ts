@@ -487,8 +487,10 @@ async function bootstrap() {
     });
   }
 
-  // Render the "vX available" state: an install button (in-place self-update) when a .zip
-  // asset exists, otherwise a fallback that opens the release page.
+  // Render the "vX available" state: an install button (in-place self-update) when the
+  // release has a .zip asset, otherwise a fallback that opens the release page. `asset` is
+  // only used to DECIDE which button to show — the actual download URL is re-derived in the
+  // main process (the renderer must not choose what gets downloaded + run).
   function renderUpdateAvailable(box: HTMLElement, latest: string, asset: string, releaseUrl: string): void {
     box.textContent = "";
     const line = document.createElement("div");
@@ -525,7 +527,7 @@ async function bootstrap() {
           status.textContent = " Instalando y reiniciando…";
         }
       });
-      void window.appUpdate!.downloadAndInstall(asset).catch((err: unknown) => {
+      void window.appUpdate!.downloadAndInstall().catch((err: unknown) => {
         off();
         install.disabled = false;
         status.textContent = " Error: " + (err instanceof Error ? err.message : String(err));

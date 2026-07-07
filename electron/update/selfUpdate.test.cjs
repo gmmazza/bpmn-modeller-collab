@@ -41,15 +41,17 @@ describe("buildSwapPlan (win32)", () => {
     expect(plan.scriptBody).not.toContain("/PURGE");
   });
 
-  test("quotes paths with spaces and relaunches the exe from the install root", () => {
-    expect(plan.scriptBody).toContain('"C:\\Users\\me\\BPMN compartida-win32-x64"');
+  test("single-quotes paths with spaces (no $/backtick expansion) and relaunches from install root", () => {
+    expect(plan.scriptBody).toContain("'C:\\Users\\me\\BPMN compartida-win32-x64'");
     expect(plan.scriptBody).toContain(
-      'Start-Process -FilePath "C:\\Users\\me\\BPMN compartida-win32-x64\\BPMN compartida.exe"',
+      "Start-Process -FilePath 'C:\\Users\\me\\BPMN compartida-win32-x64\\BPMN compartida.exe'",
     );
+    // must NOT use double quotes (where PowerShell would expand $(…) / backticks)
+    expect(plan.scriptBody).not.toContain('"C:\\Users');
   });
 
   test("cleans up the temp dir at the end", () => {
-    expect(plan.scriptBody).toContain('Remove-Item -LiteralPath "C:\\Temp\\bpmn-up" -Recurse -Force');
+    expect(plan.scriptBody).toContain("Remove-Item -LiteralPath 'C:\\Temp\\bpmn-up' -Recurse -Force");
   });
 });
 

@@ -15,10 +15,11 @@ const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const { spawn } = require("node:child_process");
 
-// PowerShell double-quoted-string escaping: a literal " is doubled ("") inside "...".
-// Filesystem paths realistically never contain quotes, but escape defensively anyway.
+// PowerShell SINGLE-quoted literal: inside '...' PowerShell does NOT expand $ or backticks
+// (so a path containing $(…) or `… can't inject), and the only escape needed is doubling a
+// literal '. Used for -Path/-LiteralPath/-FilePath and robocopy operands (all accept it).
 function psQuote(s) {
-  return '"' + String(s).replace(/"/g, '""') + '"';
+  return "'" + String(s).replace(/'/g, "''") + "'";
 }
 
 // PURE: the swap plan for a platform. Returns { scriptName, scriptBody, argv(scriptPath) }

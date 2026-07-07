@@ -130,27 +130,27 @@ ipcMain.handle("version:latestBpmnJs", async () => {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
-ipcMain.handle("app:checkUpdate", async () => {
+// Fetch the latest GitHub release → { version, url, asset }. `asset` is the first .zip's
+// download URL, taken straight from GitHub's API — the ONLY trusted source for what the
+// self-updater is allowed to download (see app:downloadAndInstall). Returns null on any
+// failure (404 while private, offline, rate-limited).
+async function fetchLatestRelease() {
   if (!APP_UPDATE_FEED_URL) return null;
   try {
     const res = await fetch(APP_UPDATE_FEED_URL, { headers: { Accept: "application/vnd.github+json" } });
-    if (!res.ok) return null; // 404 while the repo is private, or rate-limited
+    if (!res.ok) return null;
     const j = await res.json();
-    // Map the GitHub release shape to the renderer's { version, url, asset } contract.
     const version = typeof j.tag_name === "string" ? j.tag_name.replace(/^v/, "") : null;
     if (!version) return null;
-    // The downloadable portable build: first .zip asset (in-place self-update uses this).
     const assets = Array.isArray(j.assets) ? j.assets : [];
     const zip = assets.find((a) => typeof a?.browser_download_url === "string" && /\.zip$/i.test(a.name || ""));
-    return {
-      version,
-      url: typeof j.html_url === "string" ? j.html_url : "",
-      asset: zip ? zip.browser_download_url : "",
-    };
+    return { version, url: typeof j.html_url === "string" ? j.html_url : "", asset: zip ? zip.browser_download_url : "" };
   } catch {
     return null;
   }
-});
+}
+
+ipcMain.handle("app:checkUpdate", async () => fetchLatestRelease());
 
 ipcMain.handle("app:openDownload", (_e, url) => {
   if (typeof url === "string" && /^https?:\/\//.test(url)) shell.openExternal(url);
@@ -159,10 +159,21 @@ ipcMain.handle("app:openDownload", (_e, url) => {
 // Portable in-place self-update: download the release .zip, swap the files in the current
 // install folder (preserving the sibling data/ drafts) and relaunch. Only meaningful for a
 // packaged build; refuses in dev (no real install dir / locked exe to replace).
-ipcMain.handle("app:downloadAndInstall", async (e, assetUrl) => {
+//
+// SECURITY: the renderer does NOT choose what we download+run. We re-fetch the release feed
+// HERE and take GitHub's own asset URL, then require it to be under this repo's GitHub
+// Releases download host. So a compromised renderer (e.g. via a malicious .bpmn achieving
+// script execution) cannot point the updater at an attacker-controlled zip → no RCE via the
+// update path. (Integrity beyond TLS-to-github is a documented follow-up: publish + verify a
+// signed SHA-256, once the app has a signing anchor.)
+const RELEASE_ASSET_PREFIX = "https://github.com/gmmazza/bpmn-modeller-collab/releases/download/";
+ipcMain.handle("app:downloadAndInstall", async (e) => {
   if (!app.isPackaged) throw new Error("La auto-actualización solo está disponible en la app instalada (no en desarrollo)");
-  if (typeof assetUrl !== "string" || !/^https:\/\/[^\s]+\.zip$/i.test(assetUrl)) {
-    throw new Error("URL de descarga inválida");
+  const rel = await fetchLatestRelease();
+  if (!rel || !rel.asset) throw new Error("No hay un paquete de actualización disponible");
+  const assetUrl = rel.asset;
+  if (!assetUrl.startsWith(RELEASE_ASSET_PREFIX)) {
+    throw new Error("URL de descarga no confiable (no proviene de un release oficial)");
   }
   const exePath = app.getPath("exe");
   const installRoot = path.dirname(exePath);
