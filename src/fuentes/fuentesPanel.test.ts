@@ -118,6 +118,21 @@ describe("renderFuentesPanel", () => {
     expect(iframe.getAttribute("sandbox")).toBe("");
   });
 
+  it("Ver ideas calls onVerIdeas with the row's filename", async () => {
+    const host = document.createElement("div");
+    const onVerIdeas = vi.fn();
+    const d = deps({ onVerIdeas });
+    await renderFuentesPanel(host, d);
+    (host.querySelector('[data-name="a.docx"] [data-act="ver-ideas"]') as HTMLButtonElement).click();
+    expect(onVerIdeas).toHaveBeenCalledWith("a.docx");
+  });
+
+  it("Ver ideas button is absent when onVerIdeas is not provided", async () => {
+    const host = document.createElement("div");
+    await renderFuentesPanel(host, deps());
+    expect(host.querySelector('[data-name="a.docx"] [data-act="ver-ideas"]')).toBeNull();
+  });
+
   it("a second click while the preview read is still in flight does not leak a duplicate preview", async () => {
     const host = document.createElement("div");
     let resolveRead!: (bytes: Uint8Array | null) => void;

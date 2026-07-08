@@ -737,6 +737,10 @@ async function bootstrap() {
       download: (name, bytes) => downloadBytes(name, bytes),
       confirmOpen: confirmOpenOnce,
       onError,
+      onVerIdeas: (fuente) => {
+        inspector.setTab("ideas");
+        ideasCtl?.setFuenteFilter(fuente);
+      },
     });
   }
 

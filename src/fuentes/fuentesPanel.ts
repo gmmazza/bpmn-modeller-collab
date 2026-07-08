@@ -8,6 +8,7 @@ export interface FuentesPanelDeps {
   download(name: string, bytes: Uint8Array): void;
   confirmOpen(): Promise<boolean>;
   onError(e: unknown): void;
+  onVerIdeas?(fuente: string): void;
 }
 
 function row(entry: FuenteEntry, deps: FuentesPanelDeps, refresh: () => void): HTMLElement {
@@ -105,6 +106,10 @@ function row(entry: FuenteEntry, deps: FuentesPanelDeps, refresh: () => void): H
       if (bytes) deps.download(entry.name, bytes);
     }
   });
+
+  if (deps.onVerIdeas) {
+    act("Ver ideas", "ver-ideas", () => { deps.onVerIdeas!(entry.name); });
+  }
 
   if (entry.estado === "pendiente") {
     act("Procesar", "procesar", async () => { await client.procesar(entry.name); refresh(); });
