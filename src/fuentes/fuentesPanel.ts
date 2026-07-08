@@ -133,6 +133,15 @@ function section(estado: FuenteEstado, title: string, entries: FuenteEntry[], de
 
 export async function renderFuentesPanel(host: HTMLElement, deps: FuentesPanelDeps): Promise<void> {
   const refresh = () => { void renderFuentesPanel(host, deps); };
+
+  // Belt-and-suspenders: a full re-render discards the row closures that own
+  // closePreview(), so any open preview's blob object URL would otherwise
+  // leak. Revoke directly from the DOM before wiping it.
+  for (const media of host.querySelectorAll<HTMLImageElement | HTMLIFrameElement>('[data-role="preview"] img, [data-role="preview"] iframe')) {
+    const src = media.src;
+    if (src && src.startsWith("blob:")) URL.revokeObjectURL(src);
+  }
+
   host.innerHTML = "";
 
   const drop = document.createElement("div");

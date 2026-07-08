@@ -157,4 +157,29 @@ describe("renderFuentesPanel", () => {
     const previews = host.querySelectorAll('[data-name="img.png"] [data-role="preview"]');
     expect(previews.length).toBeLessThanOrEqual(1);
   });
+
+  it("revokes an open preview's blob URL on the next full re-render", async () => {
+    const host = document.createElement("div");
+    const d = deps({
+      client: createFuentesClient(stubFs({ "d.fuentes/img.png": [1, 2, 3] }), "d.bpmn"),
+    });
+    const revokeSpy = vi.spyOn(URL, "revokeObjectURL");
+    await renderFuentesPanel(host, d);
+    const btn = host.querySelector('[data-name="img.png"] [data-act="previsualizar"]') as HTMLButtonElement;
+    btn.click();
+    await flush();
+
+    const img = host.querySelector('[data-name="img.png"] [data-role="preview"] img') as HTMLImageElement;
+    expect(img).toBeTruthy();
+    const previewSrc = img.src;
+    expect(previewSrc).toBeTruthy();
+    expect(revokeSpy).not.toHaveBeenCalledWith(previewSrc);
+
+    // A full re-render (e.g. triggered by add/procesar/restaurar/quitar, or a
+    // tab/diagram switch) discards the row closure that owns closePreview()
+    // for this open preview — its object URL must still be revoked.
+    await renderFuentesPanel(host, d);
+
+    expect(revokeSpy).toHaveBeenCalledWith(previewSrc);
+  });
 });
