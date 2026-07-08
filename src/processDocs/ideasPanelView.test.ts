@@ -8,7 +8,7 @@ function handlers(): IdeasPanelHandlers {
 function n(p: Partial<IdeaNote>): IdeaNote {
   return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [], ...p };
 }
-const base = { fuente: "todas" as const, objectOptions: [] as { id: string; label: string }[], objectFilter: null as string | null };
+const base = { fuente: "todas" as const, fuenteOptions: [] as string[], objectOptions: [] as { id: string; label: string }[], objectFilter: null as string | null };
 afterEach(() => { document.body.innerHTML = ""; });
 
 describe("renderIdeasPanelV2", () => {
@@ -75,18 +75,31 @@ describe("renderIdeasPanelV2", () => {
     expect(h.onSetState).toHaveBeenCalledWith("idea-1", "hecho");
   });
 
-  it("the fuente filter select renders one option per distinct fuente plus 'todas'", () => {
+  it("the fuente filter select renders one option per entry in fuenteOptions plus 'todas'", () => {
     const c = document.createElement("div");
     const h = handlers();
     renderIdeasPanelV2(c, {
       ideas: [n({ id: "idea-1", fuente: "x.docx" }), n({ id: "idea-2", fuente: "y.pdf" }), n({ id: "idea-3", fuente: "x.docx" })],
-      estado: "todas", scope: "todas", focus: null, ...base,
+      estado: "todas", scope: "todas", focus: null, ...base, fuenteOptions: ["x.docx", "y.pdf"],
     }, h);
     const sel = c.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
     expect([...sel.options].map((o) => o.value)).toEqual(["todas", "x.docx", "y.pdf"]);
     sel.value = "x.docx";
     sel.dispatchEvent(new Event("change"));
     expect(h.onFuente).toHaveBeenCalledWith("x.docx");
+  });
+
+  it("keeps fuenteOptions unchanged even when the (already-filtered) ideas list only contains one fuente", () => {
+    const c = document.createElement("div");
+    const h = handlers();
+    renderIdeasPanelV2(c, {
+      // Simulates the controller passing an already-narrowed row list (fuente="a.docx")
+      // alongside the full set of fuenteOptions computed from the unfiltered ideas.
+      ideas: [n({ id: "idea-1", fuente: "a.docx" })],
+      estado: "todas", scope: "todas", focus: null, ...base, fuente: "a.docx", fuenteOptions: ["a.docx", "b.pdf"],
+    }, h);
+    const sel = c.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
+    expect([...sel.options].map((o) => o.value)).toEqual(["todas", "a.docx", "b.pdf"]);
   });
 
   it("a row with a fuente shows a 📎 badge that fires onFuente on click", () => {

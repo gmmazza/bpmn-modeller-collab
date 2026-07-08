@@ -1,7 +1,7 @@
 // src/processDocs/ideasControllerV2.ts
 import type { IdeasClient } from "./ideasClient";
 import type { IdeaNote } from "./ideaNote";
-import { filterIdeas, activeAnchoredCounts, type EstadoFilter, type ScopeFilter, type FuenteFilter } from "./ideaFilters";
+import { filterIdeas, distinctFuentes, activeAnchoredCounts, type EstadoFilter, type ScopeFilter, type FuenteFilter } from "./ideaFilters";
 import { buildMejora } from "./promoteToMejora";
 import { renderIdeasPanelV2 } from "./ideasPanelView";
 import { renderIdeaThread } from "./ideaThreadView";
@@ -89,10 +89,13 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
     // to its ideas and the quick-add anchors new ideas to it.
     const sel = deps.getSelected();
     const focus = sel ? { id: sel.id, label: sel.name } : null;
+    // Fuente dropdown options come from the FULL unfiltered idea list, so picking a
+    // fuente doesn't hide the other fuentes from the <select> (row list still narrows).
+    const fuenteOptions = distinctFuentes(ideas);
     let shown = filterIdeas(ideas, { estado, scope, fuente });
     if (focus) shown = shown.filter((i) => i.anchor === focus.id);
     else if (scope === "ancladas" && objectFilter) shown = shown.filter((i) => i.anchor === objectFilter);
-    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, fuente, focus, objectOptions: anchoredObjects(), objectFilter }, {
+    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, fuente, fuenteOptions, focus, objectOptions: anchoredObjects(), objectFilter }, {
       onAdd: (text) => void add(text),
       onEstado: (e) => { estado = e; render(); },
       onScope: (s) => { scope = s; if (s !== "ancladas") objectFilter = null; render(); },

@@ -1,6 +1,6 @@
 import type { IdeaNote } from "./ideaNote";
 import { IDEA_STATES, STATE_GLYPH, type IdeaState } from "./ideaState";
-import { distinctFuentes, type EstadoFilter, type ScopeFilter, type FuenteFilter } from "./ideaFilters";
+import type { EstadoFilter, ScopeFilter, FuenteFilter } from "./ideaFilters";
 import { createStateChip } from "./stateChip";
 
 // Re-exported for consumers that import it from here historically.
@@ -11,6 +11,9 @@ export interface IdeasPanelState {
   estado: EstadoFilter;
   scope: ScopeFilter;
   fuente: FuenteFilter;
+  // Distinct fuentes across the FULL (unfiltered) idea list — used to populate the
+  // Fuente <select> so it doesn't shrink to just the currently-selected fuente.
+  fuenteOptions: string[];
   // When an element is selected on the canvas the panel focuses on it: the list
   // is filtered to its ideas and the quick-add anchors new ideas to it.
   focus: { id: string; label: string } | null;
@@ -81,7 +84,7 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
   // filters
   const filters = document.createElement("div");
   filters.className = "ideas-filters";
-  const fuenteOpts: FuenteFilter[] = ["todas", ...distinctFuentes(state.ideas)];
+  const fuenteOpts: FuenteFilter[] = ["todas", ...state.fuenteOptions];
   filters.append(
     select(state.estado, ESTADO_OPTS as string[], "filterEstado", (v) => h.onEstado(v as EstadoFilter)),
     select(state.scope, SCOPE_OPTS as string[], "filterScope", (v) => h.onScope(v as ScopeFilter)),

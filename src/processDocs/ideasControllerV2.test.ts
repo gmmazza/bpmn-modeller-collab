@@ -86,6 +86,26 @@ describe("ideasControllerV2", () => {
     expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(2);
   });
 
+  it("keeps every fuente in the Fuente <select> even after selecting one (dropdown options are not filtered)", async () => {
+    const { ideasClient, mount, ctrl } = setup();
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "a.docx", description: "de a", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-2", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "b.pdf", description: "de b", comments: [] });
+    await ctrl.refresh();
+
+    const sel = mount.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
+    sel.value = "a.docx";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+
+    // Row list narrows to the selected fuente...
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(1);
+    expect(mount.textContent).toContain("de a");
+    // ...but the dropdown itself must still offer every fuente, including the one
+    // not currently selected — otherwise the user can't switch directly to it.
+    const optionValues = [...mount.querySelectorAll<HTMLSelectElement>("[data-filter-fuente] option")].map((o) => o.value);
+    expect(optionValues).toEqual(["todas", "a.docx", "b.pdf"]);
+  });
+
   it("promotes an idea to a mejora and links it", async () => {
     const { ideasClient, mount, ctrl } = setup();
     await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "la idea", comments: [] });
