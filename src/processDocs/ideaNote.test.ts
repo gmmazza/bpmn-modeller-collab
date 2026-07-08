@@ -46,9 +46,24 @@ describe("ideaNote", () => {
   });
 
   it("writes ancla 'general' and omits empty motivo/mejora values as blank", () => {
-    const n: IdeaNote = { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [] };
+    const n: IdeaNote = { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [], fuente: null };
     const md = serializeIdeaNote(n);
     expect(md).toContain("ancla: general");
     expect(md).toContain("estado: pendiente");
+  });
+
+  describe("IdeaNote.fuente", () => {
+    it("parses fuente when present, null when absent", () => {
+      const withF = parseIdeaNote(`---\nid: i1\nestado: pendiente\nfuente: proceso.docx\n---\nhola`);
+      expect(withF.fuente).toBe("proceso.docx");
+      const without = parseIdeaNote(`---\nid: i2\nestado: pendiente\n---\nhola`);
+      expect(without.fuente).toBeNull();
+    });
+    it("round-trips fuente and omits it when null", () => {
+      const n = parseIdeaNote(`---\nid: i1\nestado: pendiente\nfuente: proceso.docx\n---\ncuerpo`);
+      expect(serializeIdeaNote(n)).toContain("fuente: proceso.docx");
+      const noF = parseIdeaNote(`---\nid: i2\nestado: pendiente\n---\ncuerpo`);
+      expect(serializeIdeaNote(noF)).not.toContain("fuente:");
+    });
   });
 });

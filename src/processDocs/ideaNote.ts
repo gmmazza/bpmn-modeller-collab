@@ -11,6 +11,7 @@ export interface IdeaNote {
   fecha: string;
   motivo: string;
   mejora: string;
+  fuente: string | null;
   description: string;
   comments: Comment[];
 }
@@ -21,6 +22,7 @@ export function parseIdeaNote(md: string): IdeaNote {
   const anclaRaw = (meta["ancla"] ?? "general").trim();
   const anchor = anclaRaw === "general" || anclaRaw === "" ? null : anclaRaw;
   const estadoRaw = (meta["estado"] ?? "pendiente").trim();
+  const fuenteRaw = (meta["fuente"] ?? "").trim();
   return {
     id: meta["id"] ?? "",
     estado: isIdeaState(estadoRaw) ? estadoRaw : "pendiente",
@@ -30,6 +32,7 @@ export function parseIdeaNote(md: string): IdeaNote {
     fecha: (meta["fecha"] ?? "").trim(),
     motivo: (meta["motivo"] ?? "").trim(),
     mejora: (meta["mejora"] ?? "").trim(),
+    fuente: fuenteRaw === "" ? null : fuenteRaw,
     description,
     comments,
   };
@@ -46,5 +49,6 @@ export function serializeIdeaNote(n: IdeaNote): string {
     motivo: n.motivo,
     mejora: n.mejora,
   };
+  if (n.fuente) meta.fuente = n.fuente;
   return serializeFrontmatter(meta, joinBody(n.description, n.comments));
 }

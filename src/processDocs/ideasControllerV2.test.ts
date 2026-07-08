@@ -45,7 +45,7 @@ describe("ideasControllerV2", () => {
   it("changing to rechazado captures a motivo and adds a system comment", async () => {
     const { ideasClient, ctrl } = setup(null, () => "duplicada");
     await ctrl.refresh();
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [] });
     await ctrl.refresh();
     await ctrl.openThread("idea-1");
     // Directly assert via client after invoking through DOM below is covered in Task 6 manual; here assert promptMotivo wired:
@@ -58,7 +58,7 @@ describe("ideasControllerV2", () => {
     // the last state-log says pendiente (i.e. no matching log line for the change).
     await ideasClient.writeIdea("x.bpmn", {
       id: "idea-1", estado: "hecho", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01",
-      motivo: "", mejora: "", description: "x",
+      motivo: "", mejora: "", fuente: null, description: "x",
       comments: [{ author: "Ana", date: "2026-07-01", text: "[pendiente]" }],
     });
     await ctrl.refresh(); // reload → reconciliation appends an IA log for the external change
@@ -69,9 +69,46 @@ describe("ideasControllerV2", () => {
     expect(last.text).toBe("[hecho]");
   });
 
+  it("filters rows by fuente via onFuente (select) and setFuenteFilter (public API)", async () => {
+    const { ideasClient, mount, ctrl } = setup();
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "acta.docx", description: "de un docx", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-2", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "manual", comments: [] });
+    await ctrl.refresh();
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(2);
+
+    const sel = mount.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
+    sel.value = "acta.docx";
+    sel.dispatchEvent(new Event("change"));
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(1);
+    expect(mount.textContent).toContain("de un docx");
+
+    ctrl.setFuenteFilter("todas");
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(2);
+  });
+
+  it("keeps every fuente in the Fuente <select> even after selecting one (dropdown options are not filtered)", async () => {
+    const { ideasClient, mount, ctrl } = setup();
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "a.docx", description: "de a", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-2", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "b.pdf", description: "de b", comments: [] });
+    await ctrl.refresh();
+
+    const sel = mount.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
+    sel.value = "a.docx";
+    sel.dispatchEvent(new Event("change"));
+    await flush();
+
+    // Row list narrows to the selected fuente...
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(1);
+    expect(mount.textContent).toContain("de a");
+    // ...but the dropdown itself must still offer every fuente, including the one
+    // not currently selected — otherwise the user can't switch directly to it.
+    const optionValues = [...mount.querySelectorAll<HTMLSelectElement>("[data-filter-fuente] option")].map((o) => o.value);
+    expect(optionValues).toEqual(["todas", "a.docx", "b.pdf"]);
+  });
+
   it("promotes an idea to a mejora and links it", async () => {
     const { ideasClient, mount, ctrl } = setup();
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "la idea", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "la idea", comments: [] });
     await ctrl.refresh();
     await ctrl.openThread("idea-1");
     (mount.querySelector("[data-thread-promote]") as HTMLButtonElement).click();

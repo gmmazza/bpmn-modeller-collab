@@ -8,7 +8,7 @@ function client() {
   return createIdeasClient(createFsClient(createFakeDir()));
 }
 function idea(p: Partial<IdeaNote>): IdeaNote {
-  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [], ...p };
+  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [], ...p };
 }
 
 describe("ideasClient", () => {

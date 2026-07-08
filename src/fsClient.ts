@@ -499,6 +499,22 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
         return null;
       }
     },
+    // Move/rename an arbitrary file. Ensures the destination parent exists (native
+    // rename won't create it). Prefers the native atomic rename; otherwise copies
+    // bytes then deletes the source, so it is safe for binary source material.
+    async movePath(fromRel: string, toRel: string): Promise<void> {
+      const { parent, name } = await resolveParent(toRel, true); // creates dest dirs on both backends
+      if (native) {
+        await native.rename(fromRel, toRel);
+        return;
+      }
+      const bytes = new Uint8Array(await (await statAt(fromRel)).arrayBuffer());
+      const fh = await parent.getFileHandle(name, { create: true });
+      const w = await fh.createWritable();
+      await w.write(bytes as any);
+      await w.close();
+      await removeFileAt(fromRel);
+    },
     lastWrites,
     lastWriteVersion: (id: string) => lastWrites.get(id),
   };

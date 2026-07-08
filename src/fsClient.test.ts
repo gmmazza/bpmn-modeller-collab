@@ -309,3 +309,16 @@ describe("fsClient data-safety fixes", () => {
     expect(await fs.getXml("B.bpmn")).toBe("<keep/>");
   });
 });
+
+describe("movePath", () => {
+  it("moves a file to a new (auto-created) subfolder, preserving bytes", async () => {
+    const fs_test = fs; // existing test helper in this file
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    await fs_test.writeBinary("d.fuentes/a.bin", bytes);
+
+    await fs_test.movePath("d.fuentes/a.bin", "d.fuentes/procesado/a.bin");
+
+    expect(await fs_test.readBinary("d.fuentes/a.bin")).toBeNull();
+    expect(Array.from((await fs_test.readBinary("d.fuentes/procesado/a.bin"))!)).toEqual([1, 2, 3, 4]);
+  });
+});

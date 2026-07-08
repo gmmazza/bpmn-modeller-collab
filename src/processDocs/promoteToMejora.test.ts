@@ -4,7 +4,7 @@ import type { IdeaNote } from "./ideaNote";
 
 const idea: IdeaNote = {
   id: "idea-3", estado: "haciendo", anchor: "Activity_1", anchorLabel: "Validar", autor: "Ana",
-  fecha: "2026-07-01", motivo: "", mejora: "", description: "avisar por mail", comments: [{ author: "Beto", date: "2026-07-02", text: "sí" }],
+  fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "avisar por mail", comments: [{ author: "Beto", date: "2026-07-02", text: "sí" }],
 };
 
 describe("buildMejora", () => {

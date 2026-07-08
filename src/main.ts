@@ -38,6 +38,9 @@ import { createLayerView, type LayerView } from "./layers/layerView";
 import { renderLayersPanel } from "./layers/layersPanel";
 import { renderLayersModal, type LayersModalHandlers } from "./layers/layersModal";
 import { createTemplatesClient, type TemplatesClient } from "./layers/layerTemplates";
+import { createFuentesClient } from "./fuentes/fuentesClient";
+import { renderFuentesPanel } from "./fuentes/fuentesPanel";
+import { hasOpenPath, openSourceExternal } from "./fuentesApi";
 import {
   addColorDimension, addAnnotationDimension, renameDimension, deleteDimension,
   addCategory, updateCategory, deleteCategory, mergeTemplate, reorderCategory, type LayerFile,
@@ -147,6 +150,7 @@ async function bootstrap() {
   let selectedId: string | null = null;
   let templatesClient: TemplatesClient | null = null;
   let layersModalEl: HTMLElement | null = null;
+  let fuentesOpenConfirmed = false; // "Abrir" confirm shown once per session, not per file
   let inspector: Inspector;
   let expanded = new Set<string>();
   let treeVersions = new Map<string, string>();
@@ -274,6 +278,29 @@ async function bootstrap() {
       return;
     }
     showToast(String((e as any)?.message ?? e));
+  }
+
+  // Web fallback for "Abrir" on a fuente when the Electron shell:openPath IPC
+  // isn't available — downloads the bytes instead of opening them externally.
+  function downloadBytes(name: string, bytes: Uint8Array): void {
+    const blob = new Blob([bytes.slice()]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  // Opening a source with the OS's default app is a one-time-per-session heads-up
+  // (not per file) — once the user accepts it, stop asking for the rest of the session.
+  async function confirmOpenOnce(): Promise<boolean> {
+    if (fuentesOpenConfirmed) return true;
+    const ok = await confirmModal(
+      "Vas a abrir este archivo con la aplicación externa asociada de tu sistema. ¿Continuar?",
+      "Abrir",
+    );
+    if (ok) fuentesOpenConfirmed = true;
+    return ok;
   }
 
   // npm registry has no CORS → use Electron main when available; web may be blocked.
@@ -819,6 +846,24 @@ async function bootstrap() {
     );
   }
 
+  async function renderFuentes(): Promise<void> {
+    const panel = inspector.paneEl("fuentes");
+    if (!panel || panel.hidden || !docsFileId) return;
+    const client = createFuentesClient(api, docsFileId);
+    await renderFuentesPanel(panel, {
+      client,
+      canOpenExternal: hasOpenPath(),
+      openExternal: (rel) => openSourceExternal(rel),
+      download: (name, bytes) => downloadBytes(name, bytes),
+      confirmOpen: confirmOpenOnce,
+      onError,
+      onVerIdeas: (fuente) => {
+        inspector.setTab("ideas");
+        ideasCtl?.setFuenteFilter(fuente);
+      },
+    });
+  }
+
   async function assignLayer(dimId: string, elementId: string, value: string | null): Promise<void> {
     if (!layerFile || state.kind !== "editing") return;
     const dim = layerFile.dimensions.find((d) => d.id === dimId);
@@ -955,6 +1000,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
           <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
           <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
+          <button class="btn icon-only" id="tab-fuentes" type="button" title="Fuentes">${icon("paperclip")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Ajustes">${icon("settings")}</button>
             <div id="vizsettings" class="popover" hidden></div>
@@ -1012,6 +1058,7 @@ async function bootstrap() {
       { id: "propiedades", label: "Propiedades" },
       { id: "historial", label: "Historial" },
       { id: "documentacion", label: "Documentación" },
+      { id: "fuentes", label: "Fuentes" },
       { id: "ideas", label: "Ideas" },
     ], (tabId) => {
       // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
@@ -1302,9 +1349,10 @@ async function bootstrap() {
     $("tab-capas").addEventListener("click", () => openInspector("capas"));
     $("tab-props").addEventListener("click", () => openInspector("propiedades"));
     $("tab-docs").addEventListener("click", () => { inspector.setTab("documentacion"); void docsController?.refresh(); reflectInspectorToggle(); });
+    $("tab-fuentes").addEventListener("click", () => { inspector.setTab("fuentes"); void renderFuentes(); reflectInspectorToggle(); });
     $("toggle-inspector").addEventListener("click", () => {
       if (inspector.isVisible()) inspector.hide();
-      else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); }
+      else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); }
       reflectInspectorToggle();
     });
     const setFilesCollapsed = (on: boolean): void => {
@@ -1318,7 +1366,7 @@ async function bootstrap() {
     );
     // Apply persisted state: files default expanded, inspector default collapsed.
     setFilesCollapsed(getColl("files", false));
-    if (!getColl("inspector", true)) { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); }
+    if (!getColl("inspector", true)) { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); }
     else inspector.hide();
     reflectInspectorToggle();
     $("settings").addEventListener("click", () => renderVizSettings());
@@ -1939,6 +1987,7 @@ async function bootstrap() {
     await loadHistory(fileId);
     await loadLayers(fileId);
     await loadDocs(fileId);
+    void renderFuentes();
     await ideasClientV2.migrateIfNeeded(fileId);
     await ideasClientV2.writeIndex(fileId, fileId.replace(/\.bpmn$/i, "").split("/").pop() ?? fileId);
     // keep the element index (_index.md) fresh even after external structural edits

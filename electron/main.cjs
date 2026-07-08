@@ -7,6 +7,7 @@ const os = require("node:os");
 const { resolveWithinRoot } = require("./pathGuard.cjs");
 const { externalLaunchArgv } = require("./terminal/commandBuilder.cjs");
 const { runSelfUpdate } = require("./update/selfUpdate.cjs");
+const { isOpenableExt } = require("./openPathGuard.cjs");
 
 // Portable build: keep ALL app state (userData → folder.json + Local Storage, i.e.
 // the private "Borrador" drafts) in a `data/` folder NEXT TO the executable instead
@@ -276,6 +277,17 @@ ipcMain.handle("fsapi:stat", async (_e, _root, rel) => {
 
 ipcMain.handle("fsapi:mkdir", async (_e, _root, rel) => {
   await fs.mkdir(await guardedPath(rel), { recursive: true });
+});
+
+// Open a source file with the OS default app. Layered defense: (1) guardedPath keeps it
+// inside the authorized root (lexical + realpath); (2) extension allowlist refuses
+// executables/scripts. Never spawns/execs — delegates to the OS handler only.
+ipcMain.handle("shell:openPath", async (_e, _root, rel) => {
+  if (!isOpenableExt(rel)) throw new Error(`extensión no permitida: ${rel}`);
+  const abs = await guardedPath(rel); // throws on escape
+  const err = await shell.openPath(abs); // returns "" on success, message on failure
+  if (err) throw new Error(err);
+  return { ok: true };
 });
 
 ipcMain.handle("fsapi:rename", async (_e, _root, from, to) => {

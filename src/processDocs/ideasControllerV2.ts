@@ -1,7 +1,7 @@
 // src/processDocs/ideasControllerV2.ts
 import type { IdeasClient } from "./ideasClient";
 import type { IdeaNote } from "./ideaNote";
-import { filterIdeas, activeAnchoredCounts, type EstadoFilter, type ScopeFilter } from "./ideaFilters";
+import { filterIdeas, distinctFuentes, activeAnchoredCounts, type EstadoFilter, type ScopeFilter, type FuenteFilter } from "./ideaFilters";
 import { buildMejora } from "./promoteToMejora";
 import { renderIdeasPanelV2 } from "./ideasPanelView";
 import { renderIdeaThread } from "./ideaThreadView";
@@ -27,6 +27,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   let ideas: IdeaNote[] = [];
   let estado: EstadoFilter = "todas";
   let scope: ScopeFilter = "todas";
+  let fuente: FuenteFilter = "todas";
   let objectFilter: string | null = null;
   let openId: string | null = null;
   let showLog = true; // show the state-change history interleaved in the thread
@@ -88,13 +89,17 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
     // to its ideas and the quick-add anchors new ideas to it.
     const sel = deps.getSelected();
     const focus = sel ? { id: sel.id, label: sel.name } : null;
-    let shown = filterIdeas(ideas, { estado, scope });
+    // Fuente dropdown options come from the FULL unfiltered idea list, so picking a
+    // fuente doesn't hide the other fuentes from the <select> (row list still narrows).
+    const fuenteOptions = distinctFuentes(ideas);
+    let shown = filterIdeas(ideas, { estado, scope, fuente });
     if (focus) shown = shown.filter((i) => i.anchor === focus.id);
     else if (scope === "ancladas" && objectFilter) shown = shown.filter((i) => i.anchor === objectFilter);
-    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, focus, objectOptions: anchoredObjects(), objectFilter }, {
+    renderIdeasPanelV2(deps.mount, { ideas: shown, estado, scope, fuente, fuenteOptions, focus, objectOptions: anchoredObjects(), objectFilter }, {
       onAdd: (text) => void add(text),
       onEstado: (e) => { estado = e; render(); },
       onScope: (s) => { scope = s; if (s !== "ancladas") objectFilter = null; render(); },
+      onFuente: (f) => { fuente = f; render(); },
       onOpen: (id) => { openId = id; render(); },
       onSetState: (id, e) => { const idea = ideas.find((i) => i.id === id); if (idea) void setState(idea, e); },
       onClearFocus: () => { deps.clearSelection?.(); render(); },
@@ -105,7 +110,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   async function add(text: string): Promise<void> {
     const sel = deps.getSelected(); // anchor to the focused element, if any
     const id = await deps.ideasClient.nextIdeaId(deps.diagramId());
-    const note: IdeaNote = { id, estado: "pendiente", anchor: sel ? sel.id : null, anchorLabel: sel ? sel.name : "", autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", description: text, comments: [] };
+    const note: IdeaNote = { id, estado: "pendiente", anchor: sel ? sel.id : null, anchorLabel: sel ? sel.name : "", autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", fuente: null, description: text, comments: [] };
     await persist(note);
     render();
   }
@@ -140,5 +145,8 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
     // Re-render for a canvas selection change (no reload); skipped while a thread
     // is open so it doesn't disrupt the thread view.
     syncSelection(): void { if (!openId) render(); },
+    // Public so the Fuentes panel's "Ver ideas de esta fuente" action (a later
+    // task) can drive the ideas panel's fuente filter directly.
+    setFuenteFilter(f: FuenteFilter): void { fuente = f; render(); },
   };
 }

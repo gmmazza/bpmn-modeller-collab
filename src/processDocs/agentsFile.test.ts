@@ -92,6 +92,12 @@ describe("AGENTS_MD orquestador (anti-duplicación)", () => {
     expect(AGENTS_MD).toContain("borrador");
     expect(AGENTS_MD).toContain(".req");
   });
+
+  it("documents the fuentes protocol and the fuente idea field", () => {
+    expect(AGENTS_MD).toContain("## Fuentes (material de origen)");
+    expect(AGENTS_MD).toContain("procesado/");
+    expect(AGENTS_MD).toContain("fuente:");
+  });
 });
 
 describe("ensureLocalOverlay (team, ensure-once)", () => {

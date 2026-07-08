@@ -20,6 +20,7 @@ Este es un workspace de procesos BPMN colaborativo. Trabajás sobre **tres capas
 - **Ideas y mejoras**: leé \`_bpmn-design/app/ideas.md\`.
 - **Trabajar entre capas** (agregar elemento → nota; hallazgo → idea; idea → mejora): leé
   \`_bpmn-design/app/cross-layer-workflows.md\`.
+- **Fuentes** (material de origen, \`.fuentes/\`): protocolo abajo.
 
 ## Protocolo de colaboración (.bpmn): borrador/publicar y reservas
 
@@ -42,6 +43,25 @@ Respetá las reservas de humanos:
   que publique). Cuando el \`.lock\` desaparezca o venza, editá y borrá tu \`.req\`.
 
 Firmá tus entradas de markdown como autor \`IA\` (ver \`_bpmn-design/app/ideas.md\`).
+
+## Fuentes (material de origen)
+
+\`<diagrama>.fuentes/\` guarda el material crudo desde el que se modela el diagrama
+(imágenes, \`.docx\`, \`.pptx\`, \`.pdf\`, \`.md\`, \`.html\`). Es **entrada**, no documentación
+curada; no se edita como una nota.
+
+Ciclo de vida por ubicación:
+- En la raíz de \`.fuentes/\` → **pendiente** (aún no reflejada en el diagrama).
+- En \`.fuentes/procesado/\` → **procesada** (su contenido ya está volcado).
+
+Protocolo del agente:
+1. Leé las fuentes **pendientes**.
+2. Volcá su contenido al \`.bpmn\`, a \`.docs/\`, o al sistema de **ideas** (una fuente suele
+   producir hallazgos → ideas ancladas). En una idea generada desde una fuente, registrá
+   su origen con el campo \`fuente:\` en el frontmatter (ej. \`fuente: proceso.docx\`).
+3. Cuando el conocimiento de la fuente ya está reflejado, **movéla a \`procesado/\`**.
+4. Respetá borrador/publicar: si hay trabajo humano sin publicar o una reserva \`.lock\`,
+   **proponé** (idea/comentario o \`.req\`) en vez de pisar.
 
 ## Precedencia de instrucciones (mayor autoridad primero)
 

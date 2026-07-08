@@ -1,6 +1,6 @@
 import type { IdeaNote } from "./ideaNote";
 import { IDEA_STATES, STATE_GLYPH, type IdeaState } from "./ideaState";
-import type { EstadoFilter, ScopeFilter } from "./ideaFilters";
+import type { EstadoFilter, ScopeFilter, FuenteFilter } from "./ideaFilters";
 import { createStateChip } from "./stateChip";
 
 // Re-exported for consumers that import it from here historically.
@@ -10,6 +10,10 @@ export interface IdeasPanelState {
   ideas: IdeaNote[];
   estado: EstadoFilter;
   scope: ScopeFilter;
+  fuente: FuenteFilter;
+  // Distinct fuentes across the FULL (unfiltered) idea list — used to populate the
+  // Fuente <select> so it doesn't shrink to just the currently-selected fuente.
+  fuenteOptions: string[];
   // When an element is selected on the canvas the panel focuses on it: the list
   // is filtered to its ideas and the quick-add anchors new ideas to it.
   focus: { id: string; label: string } | null;
@@ -21,6 +25,7 @@ export interface IdeasPanelHandlers {
   onAdd(text: string): void;
   onEstado(e: EstadoFilter): void;
   onScope(s: ScopeFilter): void;
+  onFuente(f: FuenteFilter): void;
   onOpen(id: string): void;
   onSetState(id: string, estado: IdeaState): void;
   onClearFocus(): void;
@@ -79,9 +84,11 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
   // filters
   const filters = document.createElement("div");
   filters.className = "ideas-filters";
+  const fuenteOpts: FuenteFilter[] = ["todas", ...state.fuenteOptions];
   filters.append(
     select(state.estado, ESTADO_OPTS as string[], "filterEstado", (v) => h.onEstado(v as EstadoFilter)),
     select(state.scope, SCOPE_OPTS as string[], "filterScope", (v) => h.onScope(v as ScopeFilter)),
+    select(state.fuente, fuenteOpts as string[], "filterFuente", (v) => h.onFuente(v as FuenteFilter)),
   );
   // object filter — only when scoping to anchored ideas
   if (state.scope === "ancladas" && !state.focus) {
@@ -131,6 +138,16 @@ export function renderIdeasPanelV2(container: HTMLElement, state: IdeasPanelStat
     body.append(tag, desc, meta);
     body.addEventListener("click", () => h.onOpen(idea.id));
     li.append(chip, body);
+    if (idea.fuente) {
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "idea-fuente-badge";
+      badge.dataset.fuente = idea.fuente;
+      badge.title = `Fuente: ${idea.fuente}`;
+      badge.textContent = `📎 ${idea.fuente}`;
+      badge.addEventListener("click", () => h.onFuente(idea.fuente!));
+      li.append(badge);
+    }
     list.append(li);
   }
   if (state.ideas.length === 0) {
