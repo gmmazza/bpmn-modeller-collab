@@ -161,49 +161,31 @@ async function bootstrap() {
   });
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
-  let currentMasterXml: string | null = null; // last-loaded master XML — used to look up a clicked box's info
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
   function closeLinkPopover(): void {
     if (linkPopoverEl) { linkPopoverEl.remove(); linkPopoverEl = null; }
   }
 
-  // The master pane (subprocesos/masterPane.ts) is a read-only viewer that doesn't
-  // expose its own selection/eventBus — so instead of listening to "selection.changed"
-  // we delegate raw DOM clicks on its container: bpmn-js tags every shape's <g> with
-  // data-element-id (diagram-js ElementRegistry), which is enough to look the element
-  // up in the last-loaded master XML. Attached once on the stable #app root (survives
-  // startApp() re-rendering root.innerHTML on folder/gate transitions).
-  root.addEventListener("click", (e) => {
-    const target = (e.target as Element | null)?.closest("#master-canvas [data-element-id]");
-    if (!target) return;
-    void openLinkPopoverFor(target.getAttribute("data-element-id")!, target as Element).catch(onError);
-  });
-
-  // Only these box-ish flow-element types make sense as a "link this to a subprocess"
-  // target — gateways/events/pools clicked on the master pane are ignored.
-  function isLinkableBoxType(type: string): boolean {
-    return type.includes("Task") || type.endsWith("CallActivity") || type.endsWith("SubProcess");
-  }
-
-  async function openLinkPopoverFor(elementId: string, gfx: Element): Promise<void> {
-    if (!currentMasterFile || !currentMasterXml) return;
+  // The master pane (subprocesos/masterPane.ts) owns the click-to-popover wiring via
+  // its onElementClick hook (backed by the underlying viewer's real eventBus) — it
+  // already filters to linkable box types and hands us the live element's data, so we
+  // never touch its DOM structure or re-parse the master XML per click.
+  function onMasterElementClick(info: { elementId: string; name: string; calledElement?: string; anchor: DOMRect }): void {
+    if (!currentMasterFile) return;
     const masterFile = currentMasterFile;
-    const els = await parseCallLinks(currentMasterXml);
-    const found = els.find((e) => e.id === elementId);
-    if (!found || !isLinkableBoxType(found.type)) return;
     closeLinkPopover();
-    linkPopoverEl = renderLinkPopover(gfx.getBoundingClientRect(), {
-      element: { id: found.id, name: found.name || found.id, calledElement: found.calledElement },
+    linkPopoverEl = renderLinkPopover(info.anchor, {
+      element: { id: info.elementId, name: info.name || info.elementId, calledElement: info.calledElement },
       processes: registry.all(),
-      onLinkExisting: (processId) => linkMasterBox(masterFile, found.id, processId),
-      onCreateNew: () => createAndLinkSubprocess(masterFile, found),
+      onLinkExisting: (processId) => linkMasterBox(masterFile, info.elementId, processId),
+      onCreateNew: () => createAndLinkSubprocess(masterFile, { id: info.elementId, name: info.name, type: "" }),
       onGoToSubprocess: async () => {
-        const entry = found.calledElement ? registry.resolve(found.calledElement) : null;
+        const entry = info.calledElement ? registry.resolve(info.calledElement) : null;
         if (entry) await openStage(entry.file);
         else showToast("No se pudo resolver el subproceso vinculado");
       },
-      onUnlink: () => unlinkMasterBox(masterFile, found.id),
+      onUnlink: () => unlinkMasterBox(masterFile, info.elementId),
     });
   }
 
@@ -1792,7 +1774,6 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
-    currentMasterXml = masterXml;
     closeLinkPopover();
     document.body.classList.add("master-mode");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
@@ -1803,7 +1784,7 @@ async function bootstrap() {
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     if (mc) {
       mc.innerHTML = "";
-      masterHandle = await mountMasterPane(mc, { registry, openStage, onError });
+      masterHandle = await mountMasterPane(mc, { registry, openStage, onError, onElementClick: onMasterElementClick });
       await masterHandle.load(masterXml);
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.
@@ -1815,7 +1796,6 @@ async function bootstrap() {
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     currentMasterFile = null;
-    currentMasterXml = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
     const mc = document.getElementById("master-canvas") as HTMLElement | null;

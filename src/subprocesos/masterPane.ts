@@ -17,6 +17,17 @@ export interface MasterPaneDeps {
   registry: ProcessRegistry;
   openStage(file: string): Promise<void>; // called on drill-down click
   onError(e: unknown): void;
+  // Fired when a linkable box (Task/CallActivity/SubProcess — not gateways, events,
+  // pools, the root or a label) is clicked in the master pane. Lets main.ts open the
+  // link popover off the LIVE clicked element's businessObject, without reaching into
+  // this module's DOM (data-element-id) or re-parsing the master XML per click.
+  onElementClick?(info: { elementId: string; name: string; calledElement?: string; anchor: DOMRect }): void;
+}
+
+// Only these box-ish flow-element types make sense as a "link this to a subprocess"
+// target — gateways/events/pools clicked on the master pane are ignored.
+function isLinkableBoxType(type: string): boolean {
+  return type.includes("Task") || type.endsWith("CallActivity") || type.endsWith("SubProcess");
 }
 
 export interface MasterPaneHandle {
@@ -31,6 +42,21 @@ const CURRENT_MARKER = "subproc-current";
 export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDeps): Promise<MasterPaneHandle> {
   const viewer: ViewerLike = await createCompareModeler(container);
   installViewSelectGuard(viewer as unknown as { get(name: string): any });
+
+  // Selection hook for the link popover: the badge overlays (added below) already
+  // stopPropagation() on click, and overlays live outside the SVG canvas diagram-js
+  // listens on for hit-testing anyway — so they never reach "element.click".
+  (viewer as any).get("eventBus").on("element.click", (e: any) => {
+    const el = e?.element;
+    if (!el || el.type === "bpmn:Process" || el.type === "label" || el === canvas().getRootElement()) return;
+    if (!isLinkableBoxType(el.type ?? "")) return;
+    deps.onElementClick?.({
+      elementId: el.id,
+      name: el.businessObject?.name ?? "",
+      calledElement: el.businessObject?.calledElement,
+      anchor: e.gfx?.getBoundingClientRect?.() ?? new DOMRect(),
+    });
+  });
 
   let links: CallLink[] = [];
   let overlayIds: string[] = [];
