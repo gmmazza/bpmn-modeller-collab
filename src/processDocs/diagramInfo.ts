@@ -57,3 +57,12 @@ export async function parseDiagramInfo(
   const { processId, els } = normalizeModdleElements(rootElement);
   return { processId, refs: extractInterProcessRefs(els) };
 }
+
+// Single-parse helper for consumers that only need the raw elements (e.g. to pull
+// call-activity `calledElement` links) — avoids re-parsing the same XML that
+// parseDiagramInfo already parsed internally.
+export async function parseCallLinks(xml: string): Promise<RawEl[]> {
+  const moddle = new BpmnModdle();
+  const { rootElement } = await (moddle as any).fromXML(xml);
+  return normalizeModdleElements(rootElement).els;
+}

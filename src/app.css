@@ -459,6 +459,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
 
+/* Master pane (A.2) — drill-down badges + current-stage highlight */
+.subproc-badge { font-size: 12px; line-height: 1; padding: 1px 3px; border-radius: 4px; background: var(--surface, #fff); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.subproc-badge-clickable { cursor: pointer; }
+.djs-element.subproc-current .djs-visual > :first-child { stroke: #2471A3 !important; stroke-width: 3px !important; }
+
 /* Ideas panel — focus header (shown when an element is selected) */
 .ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

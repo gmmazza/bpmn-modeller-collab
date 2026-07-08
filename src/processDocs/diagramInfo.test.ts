@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDiagramInfo } from "./diagramInfo";
+import { parseDiagramInfo, parseCallLinks } from "./diagramInfo";
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn">
@@ -20,5 +20,13 @@ describe("parseDiagramInfo", () => {
     expect(info.refs.events).toEqual([
       { elementId: "Start_1", elementName: "pedido recibido", kind: "message", direction: "catch", refName: "Pedido" },
     ]);
+  });
+});
+
+describe("parseCallLinks", () => {
+  it("returns the raw elements, including the call activity's calledElement", async () => {
+    const els = await parseCallLinks(XML);
+    const callActivity = els.find((e) => e.id === "CA_1");
+    expect(callActivity).toEqual({ id: "CA_1", name: "Facturar", type: "bpmn:CallActivity", calledElement: "Process_Factura" });
   });
 });
