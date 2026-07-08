@@ -166,22 +166,31 @@ async function bootstrap() {
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
   // registry's re-parse-only-what-changed pattern so a large folder doesn't re-read every
   // file's XML on each refresh. Best-effort — never blocks rendering the tree.
-  let mastersCache = new Set<string>();
+  const mastersCache = new Set<string>();
   const masterFileVersions = new Map<string, string>(); // path -> version already checked
   async function refreshMastersCache(files: TreeEntry[]): Promise<void> {
+    // Mutates the shared `mastersCache` Set per-key (mirrors processRegistry.ts's
+    // `sync`) instead of snapshot-then-swap: refreshFileList() has many call sites
+    // (watcher, folder-toggle, etc.), so two refreshes can overlap. A copy-swap would
+    // let whichever run finishes last clobber the other's addition/removal — and since
+    // masterFileVersions is updated per file as "checked", the clobbered entry would
+    // stay wrong until that file's version changes again.
     const bpmn = files.filter((f) => f.kind === "file" && f.path.toLowerCase().endsWith(".bpmn"));
     const seen = new Set(bpmn.map((f) => f.path));
-    for (const path of [...masterFileVersions.keys()]) if (!seen.has(path)) masterFileVersions.delete(path);
-    const next = new Set([...mastersCache].filter((path) => seen.has(path)));
+    for (const path of [...masterFileVersions.keys()]) {
+      if (!seen.has(path)) {
+        masterFileVersions.delete(path);
+        mastersCache.delete(path);
+      }
+    }
     for (const f of bpmn) {
       const version = f.version ?? "";
       if (masterFileVersions.get(f.path) === version) continue; // unchanged, keep cached verdict
       masterFileVersions.set(f.path, version);
       const xml = await api.readPath(f.path).catch(() => null);
-      if (xml && (await xmlIsMaster(xml))) next.add(f.path);
-      else next.delete(f.path);
+      if (xml && (await xmlIsMaster(xml))) mastersCache.add(f.path);
+      else mastersCache.delete(f.path);
     }
-    mastersCache = next;
   }
 
   function closeLinkPopover(): void {
