@@ -14,6 +14,10 @@ function slug(name: string): string {
     .replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
+function escXml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
 export function freshProcessId(baseName: string, taken: Set<string>): string {
   const base = `Process_${slug(baseName) || "sub"}`;
   if (!taken.has(base)) return base;
@@ -24,7 +28,7 @@ export function newSubprocessSkeleton(name: string, taken: Set<string>): { xml: 
   const processId = freshProcessId(name, taken);
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" id="Definitions_${processId}" targetNamespace="http://bpmn.io/schema/bpmn">
-  <bpmn:process id="${processId}" name="${name.replace(/"/g, "&quot;")}" isExecutable="false">
+  <bpmn:process id="${processId}" name="${escXml(name)}" isExecutable="false">
     <bpmn:startEvent id="StartEvent_1" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">

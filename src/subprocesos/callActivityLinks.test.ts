@@ -28,4 +28,11 @@ describe("newSubprocessSkeleton", () => {
     expect(xml).toContain("bpmn:startEvent");
     expect(xml).toContain("bpmndi:BPMNDiagram"); // has DI so it renders
   });
+
+  it("escapes &, <, > in the process name attribute", () => {
+    const { xml } = newSubprocessSkeleton("Altas & Bajas <x>", new Set());
+    expect(xml).toContain(`name="Altas &amp; Bajas &lt;x&gt;"`);
+    // Verify the XML is well-formed by checking the closing bpmn:process tag is present
+    expect(xml).toContain("</bpmn:process>");
+  });
 });
