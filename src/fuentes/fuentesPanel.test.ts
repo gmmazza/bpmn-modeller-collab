@@ -1,0 +1,75 @@
+import { describe, it, expect, vi } from "vitest";
+import { renderFuentesPanel, type FuentesPanelDeps } from "./fuentesPanel";
+import { createFuentesClient, type FuentesFs } from "./fuentesClient";
+
+// The click handler kicks off a promise chain several awaits deep (client call
+// -> internal fs calls -> refresh -> re-list). A couple of `await Promise.resolve()`
+// ticks aren't enough to drain it; a macrotask tick flushes the whole microtask
+// queue regardless of depth.
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function stubFs(seed: Record<string, number[]> = {}): FuentesFs {
+  const files = new Map<string, Uint8Array>(Object.entries(seed).map(([k, v]) => [k, new Uint8Array(v)]));
+  const children = (rel: string) => {
+    const prefix = rel === "" ? "" : rel + "/";
+    const out: { name: string; kind: "file" | "directory" }[] = [];
+    const dirs = new Set<string>();
+    for (const key of files.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      const rest = key.slice(prefix.length); const s = rest.indexOf("/");
+      if (s < 0) out.push({ name: rest, kind: "file" }); else dirs.add(rest.slice(0, s));
+    }
+    for (const d of dirs) out.push({ name: d, kind: "directory" });
+    return out;
+  };
+  return {
+    async listDir(rel) { return children(rel); },
+    async writeBinary(rel, d) { files.set(rel, d); },
+    async readBinary(rel) { return files.get(rel) ?? null; },
+    async deletePath(rel) { files.delete(rel); },
+    async movePath(from, to) { const b = files.get(from)!; files.set(to, b); files.delete(from); },
+  };
+}
+
+function deps(over: Partial<FuentesPanelDeps> = {}): FuentesPanelDeps {
+  return {
+    client: createFuentesClient(stubFs({ "d.fuentes/a.docx": [1], "d.fuentes/procesado/old.pdf": [2] }), "d.bpmn"),
+    canOpenExternal: true,
+    openExternal: vi.fn(async () => {}),
+    download: vi.fn(),
+    confirmOpen: vi.fn(async () => true),
+    onError: vi.fn(),
+    ...over,
+  };
+}
+
+describe("renderFuentesPanel", () => {
+  it("lists pendientes and procesadas in their sections", async () => {
+    const host = document.createElement("div");
+    await renderFuentesPanel(host, deps());
+    expect(host.querySelector('[data-estado="pendiente"] [data-name="a.docx"]')).toBeTruthy();
+    expect(host.querySelector('[data-estado="procesada"] [data-name="old.pdf"]')).toBeTruthy();
+  });
+
+  it("Procesar moves a pendiente into procesadas and re-renders", async () => {
+    const host = document.createElement("div");
+    const d = deps();
+    await renderFuentesPanel(host, d);
+    (host.querySelector('[data-name="a.docx"] [data-act="procesar"]') as HTMLButtonElement).click();
+    await flush();
+    expect(host.querySelector('[data-estado="procesada"] [data-name="a.docx"]')).toBeTruthy();
+    expect(host.querySelector('[data-estado="pendiente"] [data-name="a.docx"]')).toBeNull();
+  });
+
+  it("Abrir on an office file confirms then calls openExternal with the rel path", async () => {
+    const host = document.createElement("div");
+    const d = deps();
+    await renderFuentesPanel(host, d);
+    (host.querySelector('[data-name="a.docx"] [data-act="abrir"]') as HTMLButtonElement).click();
+    await flush();
+    expect(d.confirmOpen).toHaveBeenCalledOnce();
+    expect(d.openExternal).toHaveBeenCalledWith("d.fuentes/a.docx");
+  });
+});
