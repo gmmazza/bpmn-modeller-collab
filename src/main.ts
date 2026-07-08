@@ -79,6 +79,11 @@ import {
 } from "./ui";
 import { createCompareModeler, syncViewport, installViewSelectGuard, enableRubberBandSelect, type ViewerLike } from "./compareView";
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
+// A.2 master mode (subprocesos): process registry + read-only master map pane.
+import { parseDiagramInfo, parseCallLinks } from "./processDocs/diagramInfo";
+import { callLinksFromEls } from "./subprocesos/callActivityLinks";
+import { createProcessRegistry } from "./subprocesos/processRegistry";
+import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -145,6 +150,16 @@ async function bootstrap() {
   let expanded = new Set<string>();
   let treeVersions = new Map<string, string>();
   let folderIndex: DiagramInfo[] | null = null;
+
+  // ---- A.2 master mode (subprocesos) ----
+  // Registry of processId → file, kept in sync with the shared file tree. `api` is
+  // reassigned per-folder in useFolder(); the closures below read it lazily.
+  const registry = createProcessRegistry({
+    readXml: (f) => api.readPath(f),
+    parseProcessId: async (xml) => (await parseDiagramInfo(xml)).processId,
+  });
+  let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
+  let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
 
   function guard(fn: () => Promise<void>) {
     return () => fn().catch(onError);
@@ -252,6 +267,8 @@ async function bootstrap() {
   async function useFolder(dir: FileSystemDirectoryHandle): Promise<void> {
     rootHandle = dir;
     api = createFsClient(dir);
+    registry.clear(); // fresh folder → drop the previous folder's process index
+    exitMasterMode(); // tear down any master pane left over from the previous folder
     layersClient = createLayersClient(api);
     docsClient = createDocsClient(api);
     ideasClientV2 = createIdeasClient(api);
@@ -872,11 +889,15 @@ async function bootstrap() {
       <div id="conflict"></div>
       <div id="preview"></div>
       <div id="compare"></div>
+      <div id="master-bar" hidden></div>
+      <div id="map-offer" hidden></div>
       <div id="appupdate"></div>
       <main class="app">
         <aside id="files"></aside>
         <section id="canvasarea">
+          <section id="master-canvas" hidden></section>
           <section id="canvas"></section>
+          <div id="stage-hint" hidden>Elegí una etapa en el mapa</div>
           <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
           <section id="canvas2" hidden></section>
         </section>
@@ -1533,6 +1554,12 @@ async function bootstrap() {
     renderSyncWarning(document.getElementById("sync")!, conflicts.map((f) => f.path));
     lastTree = clean;
     folderIndex = null;
+    // A.2: keep the process registry in step with the file tree (re-parses only
+    // new/changed .bpmn; drops removed). Fire-and-forget — never blocks the UI.
+    void registry.sync(
+      clean.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn"))
+        .map((e) => ({ path: e.path, version: e.version ?? "" })),
+    ).then(() => masterHandle?.refreshBadges()).catch(() => { /* registry is best-effort */ });
     const selectedId = state.kind === "editing" ? state.fileId : null;
     renderFileTree(
       document.getElementById("files")!,
@@ -1628,7 +1655,132 @@ async function bootstrap() {
     }
   }
 
-  async function openFile(fileId: string) {
+  // ---- A.2 master mode helpers ----
+  // A diagram is a "master" iff it has at least one call activity WITH a calledElement
+  // (i.e. it links out to a subprocess). Plain diagrams have none → never enter master
+  // mode → behave exactly as before.
+  async function xmlIsMaster(xml: string): Promise<boolean> {
+    try {
+      const els = await parseCallLinks(xml);
+      return callLinksFromEls(els).length >= 1;
+    } catch {
+      return false; // unparsable → treat as a normal file, don't regress
+    }
+  }
+
+  const shortName = (id: string) => baseName(id).split("/").pop() ?? id;
+
+  function renderBreadcrumb(stageName: string | null): void {
+    const bar = document.getElementById("master-bar");
+    if (!bar) return;
+    const master = currentMasterFile ? shortName(currentMasterFile) : "";
+    bar.innerHTML = "";
+    const crumb = document.createElement("span");
+    crumb.className = "master-crumb";
+    crumb.textContent = stageName ? `Mapa: ${master} ▸ ${stageName}` : `Mapa: ${master}`;
+    const edit = document.createElement("button");
+    edit.className = "btn";
+    edit.type = "button";
+    edit.textContent = "Editar el mapa";
+    edit.title = "Abrir el mapa en el editor normal";
+    edit.addEventListener("click", () => {
+      const f = currentMasterFile;
+      if (f) void openFile(f, { asPlainEditor: true }).catch(onError);
+    });
+    bar.append(crumb, edit);
+    (bar as HTMLElement).hidden = false;
+  }
+
+  // Toggle the "Elegí una etapa en el mapa" placeholder that stands in for the bottom
+  // editor while a master is open but no stage has been picked yet.
+  function showStageHint(show: boolean): void {
+    const hint = document.getElementById("stage-hint");
+    if (hint) (hint as HTMLElement).hidden = !show;
+    document.body.classList.toggle("master-no-stage", show);
+  }
+
+  async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
+    currentMasterFile = fileId;
+    document.body.classList.add("master-mode");
+    const mc = document.getElementById("master-canvas") as HTMLElement | null;
+    if (mc) mc.hidden = false;
+    (document.getElementById("map-offer") as HTMLElement | null)?.setAttribute("hidden", "");
+    renderBreadcrumb(null);
+    showStageHint(true);
+    if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    if (mc) {
+      mc.innerHTML = "";
+      masterHandle = await mountMasterPane(mc, { registry, openStage, onError });
+      await masterHandle.load(masterXml);
+    }
+    // The map itself is not edited — leave "editing" until a stage is chosen below.
+    dispatch({ type: "closedFile" });
+  }
+
+  function exitMasterMode(): void {
+    if (!document.body.classList.contains("master-mode") && !masterHandle) return;
+    if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    currentMasterFile = null;
+    document.body.classList.remove("master-mode");
+    showStageHint(false);
+    const mc = document.getElementById("master-canvas") as HTMLElement | null;
+    if (mc) { mc.hidden = true; mc.innerHTML = ""; }
+    const bar = document.getElementById("master-bar") as HTMLElement | null;
+    if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+  }
+
+  // Drill-down: load a stage (subprocess) into the bottom editor via the normal path
+  // (asPlainEditor bypasses master detection; keepMaster keeps the map pane mounted).
+  async function openStage(file: string): Promise<void> {
+    await openFile(file, { asPlainEditor: true, keepMaster: true });
+    renderBreadcrumb(shortName(file));
+    try {
+      const xml = await api.getXml(file);
+      masterHandle?.setCurrentStage((await parseDiagramInfo(xml)).processId);
+    } catch { /* highlight is best-effort */ }
+  }
+
+  // Best-effort: if a directly-opened stage is referenced by some master in the folder,
+  // offer to view it inside that master's map. Scans registry.all() (cheap for a folder).
+  async function maybeOfferOpenInMap(fileId: string, xml: string): Promise<void> {
+    const bar = document.getElementById("map-offer") as HTMLElement | null;
+    if (!bar) return;
+    bar.hidden = true;
+    bar.innerHTML = "";
+    if (document.body.classList.contains("master-mode")) return; // already in a map
+    let masterFile: string | null = null;
+    try {
+      const pid = (await parseDiagramInfo(xml)).processId;
+      if (pid) {
+        for (const entry of registry.all()) {
+          if (entry.file === fileId) continue;
+          const mxml = await api.readPath(entry.file);
+          if (!mxml) continue;
+          const links = callLinksFromEls(await parseCallLinks(mxml));
+          if (links.some((l) => l.calledElement === pid)) { masterFile = entry.file; break; }
+        }
+      }
+    } catch { /* best-effort */ }
+    if (!masterFile) return;
+    const found = masterFile;
+    const label = document.createElement("span");
+    label.textContent = "Esta etapa forma parte de un mapa.";
+    const btn = document.createElement("button");
+    btn.className = "btn";
+    btn.type = "button";
+    btn.textContent = "Ver en el mapa";
+    btn.addEventListener("click", () => {
+      void (async () => {
+        const mxml = await api.getXml(found);
+        await enterMasterMode(found, mxml);
+        await openStage(fileId);
+      })().catch(onError);
+    });
+    bar.append(label, btn);
+    bar.hidden = false;
+  }
+
+  async function openFile(fileId: string, opts?: { asPlainEditor?: boolean; keepMaster?: boolean }) {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
     clearPreviewUI(); // leaving any active revision preview
@@ -1647,6 +1799,13 @@ async function bootstrap() {
     openLock = readLock(meta);
     const lockKind = effectiveLock(openLock); // "mine" only if we hold a live reservation
     const shared = await api.getXml(fileId);
+    // A.2: a master diagram opens as the read-only top map (not the bottom editor).
+    if (!opts?.asPlainEditor && (await xmlIsMaster(shared))) {
+      await enterMasterMode(fileId, shared);
+      return;
+    }
+    if (!opts?.keepMaster) exitMasterMode(); // opening a normal file / editing the map leaves master mode
+    showStageHint(false); // a real stage/diagram now occupies the editor
     await editor.load(shared);
     editor.setReadOnly(false); // canvas is always editable in the draft model
     openHeadRevisionId = meta.headRevisionId ?? null;
@@ -1671,6 +1830,8 @@ async function bootstrap() {
     try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
     void ideasCtl?.refresh();
     if (ideaMode?.isOn()) void ideaMode.refresh();
+    // A.2: a plain-opened stage may belong to a master's map — offer to view it there.
+    if (!opts) void maybeOfferOpenInMap(fileId, shared).catch(onError);
   }
 
   // Reserve the open file (optional advisory lock with a duration). Editing never
@@ -2136,6 +2297,12 @@ async function bootstrap() {
     const all = await api.listTree();
     const clean = all.filter((e) => !(e.kind === "file" && isSyncConflict(e.path)));
     const openId = state.kind === "editing" ? state.fileId : null;
+    // A.2: refresh the process registry on content changes too (cheap when unchanged —
+    // sync skips files whose version matches), then re-badge the master map if open.
+    void registry.sync(
+      clean.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn"))
+        .map((e) => ({ path: e.path, version: e.version ?? "" })),
+    ).then(() => masterHandle?.refreshBadges()).catch(() => { /* best-effort */ });
     const { reloadOpen, structureChanged } = diffTree(treeVersions, clean, openId, api.lastWrites);
     if (reloadOpen && openId) await handleExternalChange(openId);
     if (structureChanged) await refreshFileList();
