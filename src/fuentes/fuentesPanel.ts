@@ -46,11 +46,22 @@ function row(entry: FuenteEntry, deps: FuentesPanelDeps, refresh: () => void): H
   if (PREVIEWABLE.has(mode.kind)) {
     act("Previsualizar", "previsualizar", async () => {
       if (previewEl) { closePreview(); return; }
-      const bytes = await client.readBytes(entry.name, entry.estado);
-      if (!bytes) { deps.onError(new Error(`Could not read source: ${entry.name}`)); return; }
 
+      // Claim the toggle slot synchronously, before the await below. Source
+      // reads can be slow (cloud-synced folder), and a second click landing
+      // in that gap must be treated as "already open" (close it) instead of
+      // racing a duplicate container + object URL past the guard above.
       const container = document.createElement("div");
       container.dataset.role = "preview";
+      previewEl = container;
+      el.appendChild(container);
+
+      const bytes = await client.readBytes(entry.name, entry.estado);
+      // The slot was closed (or reopened) by another click while this read
+      // was in flight — abandon this load, nothing left to append/track.
+      if (previewEl !== container) return;
+
+      if (!bytes) { closePreview(); deps.onError(new Error(`Could not read source: ${entry.name}`)); return; }
 
       if (mode.kind === "image") {
         const url = URL.createObjectURL(new Blob([bytes.slice()], { type: mode.mime }));
@@ -82,9 +93,6 @@ function row(entry: FuenteEntry, deps: FuentesPanelDeps, refresh: () => void): H
         pre.textContent = text;
         container.appendChild(pre);
       }
-
-      previewEl = container;
-      el.appendChild(container);
     });
   }
 

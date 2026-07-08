@@ -113,6 +113,33 @@ describe("renderFuentesPanel", () => {
     const iframe = host.querySelector('[data-name="page.html"] [data-role="preview"] iframe') as HTMLIFrameElement;
     expect(iframe).toBeTruthy();
     expect(iframe.hasAttribute("sandbox")).toBe(true);
-    expect(iframe.getAttribute("sandbox") ?? "").not.toContain("allow-scripts");
+    // Exact match, not just "doesn't mention allow-scripts" — catches any
+    // future widening (e.g. accidentally adding allow-same-origin) too.
+    expect(iframe.getAttribute("sandbox")).toBe("");
+  });
+
+  it("a second click while the preview read is still in flight does not leak a duplicate preview", async () => {
+    const host = document.createElement("div");
+    let resolveRead!: (bytes: Uint8Array | null) => void;
+    const pendingRead = new Promise<Uint8Array | null>((resolve) => { resolveRead = resolve; });
+    const baseClient = createFuentesClient(stubFs({ "d.fuentes/img.png": [1, 2, 3] }), "d.bpmn");
+    const d = deps({
+      client: {
+        ...baseClient,
+        readBytes: vi.fn(() => pendingRead),
+      },
+    });
+    await renderFuentesPanel(host, d);
+    const btn = host.querySelector('[data-name="img.png"] [data-act="previsualizar"]') as HTMLButtonElement;
+
+    // Two clicks land while the read is still pending (readBytes hasn't
+    // resolved yet) — this is the race from the double-click bug.
+    btn.click();
+    btn.click();
+    resolveRead(new Uint8Array([1, 2, 3]));
+    await flush();
+
+    const previews = host.querySelectorAll('[data-name="img.png"] [data-role="preview"]');
+    expect(previews.length).toBeLessThanOrEqual(1);
   });
 });
