@@ -190,6 +190,22 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 .compare-bar .compare-orient:hover,
 .compare-bar .compare-copy:hover:not(:disabled) { background: #f0fdfa; }
 .compare-bar .compare-copy:disabled { opacity: .5; cursor: default; }
+
+/* A.2 master mode: read-only master map on top, editable stage below. Only the
+   `body.master-mode` selectors change layout; without the class everything renders
+   exactly as before (the master pane / hint / bars stay display:none via [hidden]). */
+#master-bar { display: flex; align-items: center; gap: 12px; background: var(--surface); color: var(--text); padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--border); }
+#master-bar[hidden] { display: none; }
+#master-bar .master-crumb { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#map-offer { display: flex; align-items: center; gap: 12px; background: #eef2ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
+#map-offer[hidden] { display: none; }
+body.master-mode #canvasarea { flex-direction: column; }
+#master-canvas { flex: 0 0 40%; min-height: 0; min-width: 0; position: relative; border-bottom: 1px solid var(--border); }
+#master-canvas[hidden] { display: none; }
+#stage-hint { flex: 1; min-height: 0; align-items: center; justify-content: center; color: var(--text); opacity: .6; font-size: 15px; display: none; }
+#stage-hint[hidden] { display: none; }
+body.master-mode.master-no-stage #stage-hint { display: flex; }
+body.master-mode.master-no-stage #canvas { display: none; }
 .compare-bar .compare-hint { color: #0f766e; font-size: 12px; opacity: .8; }
 .compare-bar .compare-exit { background: #0d9488; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .compare-bar .compare-exit:hover { filter: brightness(1.08); }
@@ -252,6 +268,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ft-row:hover .ft-menu { opacity: 1; }
 .ft-chip { font-size: 11px; }
 .ft-chip.theirs { color: #C0392B; }
+.file-master-chip { font-size: 11px; margin-left: 4px; }
 .ft-addbar { display: flex; gap: 6px; padding: 4px 6px; }
 .ft-add { border: 1px dashed var(--border); background: transparent; color: var(--muted, #888); border-radius: 5px; cursor: pointer; font-size: 12px; padding: 2px 6px; }
 .ft-add:hover { color: var(--text); }
@@ -459,6 +476,11 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
 
+/* Master pane (A.2) — drill-down badges + current-stage highlight */
+.subproc-badge { font-size: 12px; line-height: 1; padding: 1px 3px; border-radius: 4px; background: var(--surface, #fff); box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.subproc-badge-clickable { cursor: pointer; }
+.djs-element.subproc-current .djs-visual > :first-child { stroke: #2471A3 !important; stroke-width: 3px !important; }
+
 /* Ideas panel — focus header (shown when an element is selected) */
 .ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -485,6 +507,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .idea-pop-row { display: block; width: 100%; text-align: left; background: transparent; border: none; color: var(--text); cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: var(--radius); }
 .idea-pop-row:hover { background: var(--hover); }
 .idea-pop-add { display: flex; gap: 6px; margin-top: 6px; }
+
+/* Link popover (subprocesos: Vincular/Crear/Ir/Desvincular) — reuses .idea-pop-* */
+.link-pop-vincular { display: flex; gap: 6px; align-items: center; padding: 4px 6px; }
+.link-pop-vincular select { flex: 1; min-width: 0; }
 
 /* App self-update section in Ajustes (Electron only) */
 .viz-update { font-size: 12.5px; }
