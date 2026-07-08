@@ -48,7 +48,15 @@ export async function installFsMock(
           async getFile() {
             const d = data;
             const m = mtime;
-            return { async text() { return d; }, lastModified: m, size: d.length };
+            return {
+              async text() { return d; },
+              // fsClient's binary path (movePath/readBinary) calls File.arrayBuffer(),
+              // which the earlier text-only mock didn't implement — needed once a spec
+              // exercises Fuentes (source files moved/read as bytes, not just .bpmn text).
+              async arrayBuffer() { return new TextEncoder().encode(d).buffer; },
+              lastModified: m,
+              size: d.length,
+            };
           },
           async createWritable() {
             return {
