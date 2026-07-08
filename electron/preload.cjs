@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld("fsapi", {
   copyFile: (root, from, to) => ipcRenderer.invoke("fsapi:copyFile", root, from, to),
   writeFileBinary: (root, rel, base64) => ipcRenderer.invoke("fsapi:writeFileBinary", root, rel, base64),
   readFileBinary: (root, rel) => ipcRenderer.invoke("fsapi:readFileBinary", root, rel),
+  openPath: (root, rel) => ipcRenderer.invoke("shell:openPath", root, rel),
 });
 
 contextBridge.exposeInMainWorld("termapi", {
