@@ -34,6 +34,60 @@ function row(entry: FuenteEntry, deps: FuentesPanelDeps, refresh: () => void): H
 
   const mode = previewModeFor(entry.ext);
 
+  // Inline preview toggle state, scoped to this row's closure.
+  let previewEl: HTMLElement | null = null;
+  let previewUrl: string | null = null;
+  const closePreview = () => {
+    if (previewEl) { el.removeChild(previewEl); previewEl = null; }
+    if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+  };
+
+  const PREVIEWABLE: ReadonlySet<string> = new Set(["image", "pdf", "html", "markdown", "text"]);
+  if (PREVIEWABLE.has(mode.kind)) {
+    act("Previsualizar", "previsualizar", async () => {
+      if (previewEl) { closePreview(); return; }
+      const bytes = await client.readBytes(entry.name, entry.estado);
+      if (!bytes) { deps.onError(new Error(`Could not read source: ${entry.name}`)); return; }
+
+      const container = document.createElement("div");
+      container.dataset.role = "preview";
+
+      if (mode.kind === "image") {
+        const url = URL.createObjectURL(new Blob([bytes.slice()], { type: mode.mime }));
+        previewUrl = url;
+        const img = document.createElement("img");
+        img.src = url;
+        container.appendChild(img);
+      } else if (mode.kind === "pdf") {
+        const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "application/pdf" }));
+        previewUrl = url;
+        const iframe = document.createElement("iframe");
+        iframe.src = url;
+        iframe.style.height = "60vh";
+        iframe.style.width = "100%";
+        container.appendChild(iframe);
+      } else if (mode.kind === "html") {
+        const url = URL.createObjectURL(new Blob([bytes.slice()], { type: "text/html" }));
+        previewUrl = url;
+        const iframe = document.createElement("iframe");
+        // Empty sandbox = no allow-scripts. These files come from a cloud-synced
+        // folder and may contain hostile JS; never widen this.
+        iframe.setAttribute("sandbox", "");
+        iframe.src = url;
+        container.appendChild(iframe);
+      } else {
+        // text | markdown: raw text, never injected as HTML.
+        const text = new TextDecoder().decode(bytes);
+        const pre = document.createElement("pre");
+        pre.textContent = text;
+        container.appendChild(pre);
+      }
+
+      previewEl = container;
+      el.appendChild(container);
+    });
+  }
+
   act("Abrir", "abrir", async () => {
     if (deps.canOpenExternal && mode.kind !== "download") {
       if (!(await deps.confirmOpen())) return;

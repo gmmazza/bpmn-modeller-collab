@@ -72,4 +72,47 @@ describe("renderFuentesPanel", () => {
     expect(d.confirmOpen).toHaveBeenCalledOnce();
     expect(d.openExternal).toHaveBeenCalledWith("d.fuentes/a.docx");
   });
+
+  it("Previsualizar appears only for previewable types, not for office files", async () => {
+    const host = document.createElement("div");
+    const d = deps({
+      client: createFuentesClient(
+        stubFs({ "d.fuentes/img.png": [1, 2, 3], "d.fuentes/a.docx": [1] }),
+        "d.bpmn",
+      ),
+    });
+    await renderFuentesPanel(host, d);
+    expect(host.querySelector('[data-name="img.png"] [data-act="previsualizar"]')).toBeTruthy();
+    expect(host.querySelector('[data-name="a.docx"] [data-act="previsualizar"]')).toBeNull();
+  });
+
+  it("toggles an inline image preview open and closed", async () => {
+    const host = document.createElement("div");
+    const d = deps({
+      client: createFuentesClient(stubFs({ "d.fuentes/img.png": [1, 2, 3] }), "d.bpmn"),
+    });
+    await renderFuentesPanel(host, d);
+    const btn = host.querySelector('[data-name="img.png"] [data-act="previsualizar"]') as HTMLButtonElement;
+    btn.click();
+    await flush();
+    expect(host.querySelector('[data-name="img.png"] [data-role="preview"] img')).toBeTruthy();
+    btn.click();
+    await flush();
+    expect(host.querySelector('[data-name="img.png"] [data-role="preview"]')).toBeNull();
+  });
+
+  it("renders an html preview inside a script-sandboxed iframe", async () => {
+    const host = document.createElement("div");
+    const d = deps({
+      client: createFuentesClient(stubFs({ "d.fuentes/page.html": [1, 2, 3] }), "d.bpmn"),
+    });
+    await renderFuentesPanel(host, d);
+    const btn = host.querySelector('[data-name="page.html"] [data-act="previsualizar"]') as HTMLButtonElement;
+    btn.click();
+    await flush();
+    const iframe = host.querySelector('[data-name="page.html"] [data-role="preview"] iframe') as HTMLIFrameElement;
+    expect(iframe).toBeTruthy();
+    expect(iframe.hasAttribute("sandbox")).toBe(true);
+    expect(iframe.getAttribute("sandbox") ?? "").not.toContain("allow-scripts");
+  });
 });
