@@ -81,9 +81,10 @@ import { createCompareModeler, syncViewport, installViewSelectGuard, enableRubbe
 import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
 // A.2 master mode (subprocesos): process registry + read-only master map pane.
 import { parseDiagramInfo, parseCallLinks } from "./processDocs/diagramInfo";
-import { callLinksFromEls } from "./subprocesos/callActivityLinks";
+import { callLinksFromEls, linkBox, unlinkBox, newSubprocessSkeleton } from "./subprocesos/callActivityLinks";
 import { createProcessRegistry } from "./subprocesos/processRegistry";
 import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
+import { renderLinkPopover } from "./subprocesos/linkPopover";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -160,6 +161,96 @@ async function bootstrap() {
   });
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
+  let currentMasterXml: string | null = null; // last-loaded master XML — used to look up a clicked box's info
+  let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
+
+  function closeLinkPopover(): void {
+    if (linkPopoverEl) { linkPopoverEl.remove(); linkPopoverEl = null; }
+  }
+
+  // The master pane (subprocesos/masterPane.ts) is a read-only viewer that doesn't
+  // expose its own selection/eventBus — so instead of listening to "selection.changed"
+  // we delegate raw DOM clicks on its container: bpmn-js tags every shape's <g> with
+  // data-element-id (diagram-js ElementRegistry), which is enough to look the element
+  // up in the last-loaded master XML. Attached once on the stable #app root (survives
+  // startApp() re-rendering root.innerHTML on folder/gate transitions).
+  root.addEventListener("click", (e) => {
+    const target = (e.target as Element | null)?.closest("#master-canvas [data-element-id]");
+    if (!target) return;
+    void openLinkPopoverFor(target.getAttribute("data-element-id")!, target as Element).catch(onError);
+  });
+
+  // Only these box-ish flow-element types make sense as a "link this to a subprocess"
+  // target — gateways/events/pools clicked on the master pane are ignored.
+  function isLinkableBoxType(type: string): boolean {
+    return type.includes("Task") || type.endsWith("CallActivity") || type.endsWith("SubProcess");
+  }
+
+  async function openLinkPopoverFor(elementId: string, gfx: Element): Promise<void> {
+    if (!currentMasterFile || !currentMasterXml) return;
+    const masterFile = currentMasterFile;
+    const els = await parseCallLinks(currentMasterXml);
+    const found = els.find((e) => e.id === elementId);
+    if (!found || !isLinkableBoxType(found.type)) return;
+    closeLinkPopover();
+    linkPopoverEl = renderLinkPopover(gfx.getBoundingClientRect(), {
+      element: { id: found.id, name: found.name || found.id, calledElement: found.calledElement },
+      processes: registry.all(),
+      onLinkExisting: (processId) => linkMasterBox(masterFile, found.id, processId),
+      onCreateNew: () => createAndLinkSubprocess(masterFile, found),
+      onGoToSubprocess: async () => {
+        const entry = found.calledElement ? registry.resolve(found.calledElement) : null;
+        if (entry) await openStage(entry.file);
+        else showToast("No se pudo resolver el subproceso vinculado");
+      },
+      onUnlink: () => unlinkMasterBox(masterFile, found.id),
+    });
+  }
+
+  // Apply a calledElement change to a box on the master via a transient "Editar el
+  // mapa" round-trip: open the master in the normal editor (same path as the
+  // breadcrumb's "Editar el mapa" button — this exits master mode), mutate with the
+  // modeler-touching helper, publish directly (this is a programmatic action from the
+  // popover, not the toolbar Publicar button, so it skips the confirm dialog), then
+  // re-enter master mode so the badges/registry reflect the new link.
+  async function linkMasterBox(masterFile: string, elementId: string, processId: string): Promise<void> {
+    await openFile(masterFile, { asPlainEditor: true });
+    const el = (modeler.get("elementRegistry") as any).get(elementId);
+    if (!el) { showToast("No se encontró el elemento en el mapa"); return; }
+    linkBox(modeler, el, processId);
+    await save(masterFile);
+    if (state.kind === "editing" && state.conflict) return; // conflict bar showing — let the user resolve it normally
+    const newMasterXml = await api.getXml(masterFile);
+    await enterMasterMode(masterFile, newMasterXml);
+  }
+
+  async function unlinkMasterBox(masterFile: string, elementId: string): Promise<void> {
+    await openFile(masterFile, { asPlainEditor: true });
+    const el = (modeler.get("elementRegistry") as any).get(elementId);
+    if (!el) { showToast("No se encontró el elemento en el mapa"); return; }
+    unlinkBox(modeler, el);
+    await save(masterFile);
+    if (state.kind === "editing" && state.conflict) return;
+    const newMasterXml = await api.getXml(masterFile);
+    await enterMasterMode(masterFile, newMasterXml);
+  }
+
+  // "Crear subproceso nuevo": generate a fresh skeleton .bpmn, write it to the shared
+  // folder, make sure the registry knows about it (needed so the master's badge shows
+  // "resolved" right away), link the clicked box to it, then drill down into the stage.
+  async function createAndLinkSubprocess(masterFile: string, el: RawEl): Promise<void> {
+    const taken = new Set(registry.all().map((p) => p.processId));
+    const { xml, processId } = newSubprocessSkeleton(el.name || el.id, taken);
+    const file = `${processId}.bpmn`;
+    await api.createFile(file, xml);
+    await refreshFileList();
+    await registry.sync(
+      lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn"))
+        .map((e) => ({ path: e.path, version: e.version ?? "" })),
+    );
+    await linkMasterBox(masterFile, el.id, processId);
+    await openStage(file);
+  }
 
   function guard(fn: () => Promise<void>) {
     return () => fn().catch(onError);
@@ -1701,6 +1792,8 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
+    currentMasterXml = masterXml;
+    closeLinkPopover();
     document.body.classList.add("master-mode");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
     if (mc) mc.hidden = false;
@@ -1719,8 +1812,10 @@ async function bootstrap() {
 
   function exitMasterMode(): void {
     if (!document.body.classList.contains("master-mode") && !masterHandle) return;
+    closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     currentMasterFile = null;
+    currentMasterXml = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
     const mc = document.getElementById("master-canvas") as HTMLElement | null;

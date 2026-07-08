@@ -507,6 +507,10 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .idea-pop-row:hover { background: var(--hover); }
 .idea-pop-add { display: flex; gap: 6px; margin-top: 6px; }
 
+/* Link popover (subprocesos: Vincular/Crear/Ir/Desvincular) — reuses .idea-pop-* */
+.link-pop-vincular { display: flex; gap: 6px; align-items: center; padding: 4px 6px; }
+.link-pop-vincular select { flex: 1; min-width: 0; }
+
 /* App self-update section in Ajustes (Electron only) */
 .viz-update { font-size: 12.5px; }
 .viz-update button { margin-left: 6px; font-size: 12px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); color: var(--text); cursor: pointer; }
