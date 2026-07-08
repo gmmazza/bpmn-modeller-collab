@@ -69,6 +69,23 @@ describe("ideasControllerV2", () => {
     expect(last.text).toBe("[hecho]");
   });
 
+  it("filters rows by fuente via onFuente (select) and setFuenteFilter (public API)", async () => {
+    const { ideasClient, mount, ctrl } = setup();
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: "acta.docx", description: "de un docx", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-2", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "manual", comments: [] });
+    await ctrl.refresh();
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(2);
+
+    const sel = mount.querySelector<HTMLSelectElement>("[data-filter-fuente]")!;
+    sel.value = "acta.docx";
+    sel.dispatchEvent(new Event("change"));
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(1);
+    expect(mount.textContent).toContain("de un docx");
+
+    ctrl.setFuenteFilter("todas");
+    expect(mount.querySelectorAll("[data-idea-row]")).toHaveLength(2);
+  });
+
   it("promotes an idea to a mejora and links it", async () => {
     const { ideasClient, mount, ctrl } = setup();
     await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "la idea", comments: [] });
