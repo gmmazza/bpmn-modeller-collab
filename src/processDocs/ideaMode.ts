@@ -87,7 +87,7 @@ export function createIdeaMode(deps: IdeaModeDeps) {
     const id = await deps.ideasClient.nextIdeaId(deps.diagramId());
     const note: IdeaNote = {
       id, estado: "pendiente", anchor: elementId, anchorLabel: deps.elementLabel(elementId),
-      autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", description: text, comments: [],
+      autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", fuente: null, description: text, comments: [],
     };
     await deps.ideasClient.writeIdea(deps.diagramId(), note);
     await deps.ideasClient.writeIndex(deps.diagramId(), deps.processName());

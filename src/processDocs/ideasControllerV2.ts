@@ -105,7 +105,7 @@ export function createIdeasControllerV2(deps: IdeasV2Deps) {
   async function add(text: string): Promise<void> {
     const sel = deps.getSelected(); // anchor to the focused element, if any
     const id = await deps.ideasClient.nextIdeaId(deps.diagramId());
-    const note: IdeaNote = { id, estado: "pendiente", anchor: sel ? sel.id : null, anchorLabel: sel ? sel.name : "", autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", description: text, comments: [] };
+    const note: IdeaNote = { id, estado: "pendiente", anchor: sel ? sel.id : null, anchorLabel: sel ? sel.name : "", autor: deps.identity(), fecha: deps.today(), motivo: "", mejora: "", fuente: null, description: text, comments: [] };
     await persist(note);
     render();
   }

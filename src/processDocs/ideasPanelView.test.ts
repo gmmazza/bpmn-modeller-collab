@@ -6,7 +6,7 @@ function handlers(): IdeasPanelHandlers {
   return { onAdd: vi.fn(), onEstado: vi.fn(), onScope: vi.fn(), onOpen: vi.fn(), onSetState: vi.fn(), onClearFocus: vi.fn(), onObjectFilter: vi.fn() };
 }
 function n(p: Partial<IdeaNote>): IdeaNote {
-  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [], ...p };
+  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [], ...p };
 }
 const base = { objectOptions: [] as { id: string; label: string }[], objectFilter: null as string | null };
 afterEach(() => { document.body.innerHTML = ""; });

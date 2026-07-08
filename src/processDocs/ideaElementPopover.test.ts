@@ -6,7 +6,7 @@ function handlers(): ElementPopoverHandlers {
   return { onOpenThread: vi.fn(), onAddIdea: vi.fn(), onClose: vi.fn() };
 }
 function idea(id: string, description: string): IdeaNote {
-  return { id, estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description, comments: [] };
+  return { id, estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description, comments: [] };
 }
 afterEach(() => { document.body.innerHTML = ""; });
 

@@ -11,6 +11,7 @@ export function migrateV1ToNotes(v1md: string): IdeaNote[] {
     fecha: idea.date,
     motivo: "",
     mejora: "",
+    fuente: null,
     description: idea.text,
     comments: [],
   }));

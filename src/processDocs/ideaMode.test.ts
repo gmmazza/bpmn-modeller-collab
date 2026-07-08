@@ -40,7 +40,7 @@ describe("ideaMode", () => {
 
   it("toggling on persists, notifies, and draws badges for active anchored ideas", async () => {
     const { mode, ideasClient, live, deps } = setup(false);
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "d", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "d", comments: [] });
     await mode.toggle();
     await flush();
     expect(mode.isOn()).toBe(true);
@@ -50,7 +50,7 @@ describe("ideaMode", () => {
 
   it("toggling off clears badges", async () => {
     const { mode, ideasClient, live } = setup(false);
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "d", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "d", comments: [] });
     await mode.toggle(); await flush();
     await mode.toggle(); await flush();
     expect(live.size).toBe(0);
@@ -58,7 +58,7 @@ describe("ideaMode", () => {
 
   it("clicking an element opens a popover listing its ideas", async () => {
     const { mode, ideasClient } = setup(true);
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "idea de A", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "idea de A", comments: [] });
     await mode.onElementClick("A");
     await flush();
     expect(document.querySelector(".idea-element-pop")).not.toBeNull();

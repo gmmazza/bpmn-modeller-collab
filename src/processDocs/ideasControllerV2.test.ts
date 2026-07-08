@@ -45,7 +45,7 @@ describe("ideasControllerV2", () => {
   it("changing to rechazado captures a motivo and adds a system comment", async () => {
     const { ideasClient, ctrl } = setup(null, () => "duplicada");
     await ctrl.refresh();
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [] });
     await ctrl.refresh();
     await ctrl.openThread("idea-1");
     // Directly assert via client after invoking through DOM below is covered in Task 6 manual; here assert promptMotivo wired:
@@ -58,7 +58,7 @@ describe("ideasControllerV2", () => {
     // the last state-log says pendiente (i.e. no matching log line for the change).
     await ideasClient.writeIdea("x.bpmn", {
       id: "idea-1", estado: "hecho", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01",
-      motivo: "", mejora: "", description: "x",
+      motivo: "", mejora: "", fuente: null, description: "x",
       comments: [{ author: "Ana", date: "2026-07-01", text: "[pendiente]" }],
     });
     await ctrl.refresh(); // reload → reconciliation appends an IA log for the external change
@@ -71,7 +71,7 @@ describe("ideasControllerV2", () => {
 
   it("promotes an idea to a mejora and links it", async () => {
     const { ideasClient, mount, ctrl } = setup();
-    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", description: "la idea", comments: [] });
+    await ideasClient.writeIdea("x.bpmn", { id: "idea-1", estado: "haciendo", anchor: null, anchorLabel: "", autor: "Ana", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "la idea", comments: [] });
     await ctrl.refresh();
     await ctrl.openThread("idea-1");
     (mount.querySelector("[data-thread-promote]") as HTMLButtonElement).click();

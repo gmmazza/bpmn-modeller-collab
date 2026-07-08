@@ -9,7 +9,7 @@ function handlers(): ThreadHandlers {
 }
 const idea: IdeaNote = {
   id: "idea-3", estado: "haciendo", anchor: "A", anchorLabel: "Val", autor: "Ana", fecha: "2026-07-01",
-  motivo: "", mejora: "", description: "avisar por mail",
+  motivo: "", mejora: "", fuente: null, description: "avisar por mail",
   comments: [{ author: "Beto", date: "2026-07-02", text: "y en el dashboard" }],
 };
 
@@ -44,7 +44,7 @@ describe("renderIdeaThread", () => {
   });
 
   it("renders state-change log entries interleaved, and the toggle hides them", () => {
-    const withLog: IdeaNote = { ...idea, comments: [
+    const withLog: IdeaNote = { ...idea, fuente: null, comments: [
       { author: "Ana", date: "2026-07-02", text: "[haciendo]" },
       { author: "Beto", date: "2026-07-03", text: "un comentario normal" },
     ] };
@@ -64,7 +64,7 @@ describe("renderIdeaThread", () => {
 
   it("shows the mejora link when the idea was promoted", () => {
     const c = document.createElement("div");
-    renderIdeaThread(c, { ...idea, mejora: "mejora-2" }, handlers());
+    renderIdeaThread(c, { ...idea, fuente: null, mejora: "mejora-2" }, handlers());
     expect(c.textContent).toContain("mejora-2");
   });
 });

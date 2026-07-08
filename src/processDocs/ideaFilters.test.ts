@@ -3,7 +3,7 @@ import { filterIdeas, activeAnchoredCounts, type EstadoFilter, type ScopeFilter 
 import type { IdeaNote } from "./ideaNote";
 
 function n(p: Partial<IdeaNote>): IdeaNote {
-  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", description: "x", comments: [], ...p };
+  return { id: "idea-1", estado: "pendiente", anchor: null, anchorLabel: "", autor: "A", fecha: "2026-07-01", motivo: "", mejora: "", fuente: null, description: "x", comments: [], ...p };
 }
 const ideas = [
   n({ id: "idea-1", estado: "pendiente", anchor: "A" }),
