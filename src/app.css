@@ -268,6 +268,7 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ft-row:hover .ft-menu { opacity: 1; }
 .ft-chip { font-size: 11px; }
 .ft-chip.theirs { color: #C0392B; }
+.file-master-chip { font-size: 11px; margin-left: 4px; }
 .ft-addbar { display: flex; gap: 6px; padding: 4px 6px; }
 .ft-add { border: 1px dashed var(--border); background: transparent; color: var(--muted, #888); border-radius: 5px; cursor: pointer; font-size: 12px; padding: 2px 6px; }
 .ft-add:hover { color: var(--text); }

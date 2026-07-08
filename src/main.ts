@@ -163,6 +163,27 @@ async function bootstrap() {
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
+  // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
+  // registry's re-parse-only-what-changed pattern so a large folder doesn't re-read every
+  // file's XML on each refresh. Best-effort — never blocks rendering the tree.
+  let mastersCache = new Set<string>();
+  const masterFileVersions = new Map<string, string>(); // path -> version already checked
+  async function refreshMastersCache(files: TreeEntry[]): Promise<void> {
+    const bpmn = files.filter((f) => f.kind === "file" && f.path.toLowerCase().endsWith(".bpmn"));
+    const seen = new Set(bpmn.map((f) => f.path));
+    for (const path of [...masterFileVersions.keys()]) if (!seen.has(path)) masterFileVersions.delete(path);
+    const next = new Set([...mastersCache].filter((path) => seen.has(path)));
+    for (const f of bpmn) {
+      const version = f.version ?? "";
+      if (masterFileVersions.get(f.path) === version) continue; // unchanged, keep cached verdict
+      masterFileVersions.set(f.path, version);
+      const xml = await api.readPath(f.path).catch(() => null);
+      if (xml && (await xmlIsMaster(xml))) next.add(f.path);
+      else next.delete(f.path);
+    }
+    mastersCache = next;
+  }
+
   function closeLinkPopover(): void {
     if (linkPopoverEl) { linkPopoverEl.remove(); linkPopoverEl = null; }
   }
@@ -1620,6 +1641,25 @@ async function bootstrap() {
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
+  // Renders the file browser for the given tree using whatever `mastersCache` currently
+  // holds (may lag one refresh cycle behind while refreshMastersCache is still running —
+  // see refreshFileList).
+  function renderTree(clean: TreeEntry[]): void {
+    const selectedId = state.kind === "editing" ? state.fileId : null;
+    renderFileTree(
+      document.getElementById("files")!,
+      clean,
+      { expanded, selectedId, me, masters: mastersCache },
+      {
+        onOpen: (id) => void openFile(id).catch(onError),
+        onToggle: (path) => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); void refreshFileList().catch(onError); },
+        onNewFile: (parent) => void newDiagramIn(parent).catch(onError),
+        onNewFolder: (parent) => void newFolderIn(parent).catch(onError),
+        onMenu: (target, anchor) => openItemMenu(target, anchor),
+      },
+    );
+  }
+
   async function refreshFileList() {
     const all = await api.listTree();
     const conflicts = all.filter((e) => e.kind === "file" && isSyncConflict(e.path));
@@ -1633,20 +1673,11 @@ async function bootstrap() {
       clean.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn"))
         .map((e) => ({ path: e.path, version: e.version ?? "" })),
     ).then(() => masterHandle?.refreshBadges()).catch(() => { /* registry is best-effort */ });
-    const selectedId = state.kind === "editing" ? state.fileId : null;
-    renderFileTree(
-      document.getElementById("files")!,
-      clean,
-      { expanded, selectedId, me },
-      {
-        onOpen: (id) => void openFile(id).catch(onError),
-        onToggle: (path) => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); void refreshFileList().catch(onError); },
-        onNewFile: (parent) => void newDiagramIn(parent).catch(onError),
-        onNewFolder: (parent) => void newFolderIn(parent).catch(onError),
-        onMenu: (target, anchor) => openItemMenu(target, anchor),
-      },
-    );
+    renderTree(clean);
     treeVersions = new Map(clean.filter((e) => e.kind === "file" && e.version).map((e) => [e.path, e.version as string]));
+    // File-tree 🗺 badges: best-effort, non-blocking — re-render once the (possibly
+    // stale) masters cache has been refreshed with any new/changed files.
+    void refreshMastersCache(clean).then(() => renderTree(clean)).catch(() => { /* best-effort */ });
   }
 
   // ---- Local draft autosave (private, per-machine — see draftStore.ts) ----

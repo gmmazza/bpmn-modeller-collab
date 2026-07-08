@@ -37,6 +37,16 @@ describe("renderFileTree", () => {
     (el.querySelector('[data-path="RRHH.bpmn"] .ft-menu') as HTMLElement).click();
     expect(menued).toBe("RRHH.bpmn");
   });
+  it("shows a .file-master-chip on rows whose path is in the masters set, none otherwise", () => {
+    const handlers = { onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {} };
+    const el = document.createElement("div");
+    renderFileTree(el, entries, { expanded: new Set(), selectedId: null, me, masters: new Set(["RRHH.bpmn"]) }, handlers);
+    expect(el.querySelector('[data-path="RRHH.bpmn"] .file-master-chip')).not.toBeNull();
+
+    const el2 = document.createElement("div");
+    renderFileTree(el2, entries, { expanded: new Set(), selectedId: null, me }, handlers);
+    expect(el2.querySelector('[data-path="RRHH.bpmn"] .file-master-chip')).toBeNull();
+  });
 });
 
 describe("visibleEntries", () => {

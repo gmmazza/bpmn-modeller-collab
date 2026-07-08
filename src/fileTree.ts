@@ -87,6 +87,18 @@ function lockChip(entry: TreeEntry | undefined, me: { email: string }): HTMLElem
   return null;
 }
 
+// A.2 master mode (subprocesos): master files (diagrams with ≥1 linked call activity)
+// get a 🗺 badge in the browser. `masters` is computed by the caller (main.ts, from the
+// process registry) so this module stays a pure renderer — it never inspects XML itself.
+function masterChip(entry: TreeEntry | undefined, masters: Set<string>): HTMLElement | null {
+  if (!entry || !masters.has(entry.path)) return null;
+  const chip = document.createElement("span");
+  chip.className = "file-master-chip";
+  chip.title = "Maestro";
+  chip.textContent = "🗺";
+  return chip;
+}
+
 function addBar(el: HTMLElement, parentPath: string, h: FileTreeHandlers): void {
   const bar = document.createElement("div");
   bar.className = "ft-addbar";
@@ -100,11 +112,20 @@ function addBar(el: HTMLElement, parentPath: string, h: FileTreeHandlers): void 
   el.appendChild(bar);
 }
 
+export interface FileTreeState {
+  expanded: Set<string>;
+  selectedId: string | null;
+  me: { name: string; email: string };
+  // Master files (see masterChip above), keyed by TreeEntry.path. Optional so existing
+  // callers/tests that don't care about the badge don't need to thread an empty set.
+  masters?: Set<string>;
+}
+
 function renderNodes(
   container: HTMLElement,
   nodes: TreeNode[],
   depth: number,
-  state: { expanded: Set<string>; selectedId: string | null; me: { name: string; email: string } },
+  state: FileTreeState,
   h: FileTreeHandlers,
 ): void {
   for (const node of nodes) {
@@ -142,6 +163,8 @@ function renderNodes(
       name.textContent = "📄 " + node.name;
       const chip = lockChip(node.entry, state.me);
       if (chip) name.appendChild(chip);
+      const master = masterChip(node.entry, state.masters ?? new Set());
+      if (master) name.appendChild(master);
       name.addEventListener("click", () => h.onOpen(node.path));
       const menu = document.createElement("button");
       menu.type = "button"; menu.className = "ft-menu"; menu.textContent = "⋯";
@@ -156,7 +179,7 @@ function renderNodes(
 export function renderFileTree(
   el: HTMLElement,
   entries: TreeEntry[],
-  state: { expanded: Set<string>; selectedId: string | null; me: { name: string; email: string } },
+  state: FileTreeState,
   handlers: FileTreeHandlers,
 ): void {
   el.innerHTML = "";
