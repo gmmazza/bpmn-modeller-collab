@@ -6,11 +6,16 @@
 import { createCompareModeler, installViewSelectGuard, type ViewerLike } from "../compareView";
 import { parseCallLinks } from "../processDocs/diagramInfo";
 import { callLinksFromEls, type CallLink } from "./callActivityLinks";
+import { parseMasterBoundaries, type MasterBoundary } from "./boundaryLinks";
 import { classifyLinks, type LinkStatus } from "./linkStatus";
 import type { ProcessRegistry } from "./processRegistry";
 
 export function badgeLabel(state: LinkStatus["state"]): string {
   return state === "resolved" ? "🗺" : "⚠";
+}
+
+export function outcomeBadgeText(destinationName: string): string {
+  return destinationName.trim() ? `→ ${destinationName.trim()}` : "→ (sin destino)";
 }
 
 export interface MasterPaneDeps {
@@ -22,6 +27,8 @@ export interface MasterPaneDeps {
   // link popover off the LIVE clicked element's businessObject, without reaching into
   // this module's DOM (data-element-id) or re-parsing the master XML per click.
   onElementClick?(info: { elementId: string; name: string; calledElement?: string; anchor: DOMRect }): void;
+  // Plain-language name for a boundary's outgoing target node id (a master element).
+  resolveDestinationName?(elementId: string): string;
 }
 
 // Only these box-ish flow-element types make sense as a "link this to a subprocess"
@@ -59,6 +66,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
   });
 
   let links: CallLink[] = [];
+  let boundaries: MasterBoundary[] = [];
   let overlayIds: string[] = [];
   let currentMarker: string | null = null;
 
@@ -108,6 +116,29 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
         /* skip */
       }
     }
+    for (const b of boundaries) {
+      const destName = deps.resolveDestinationName?.(b.outgoingTargetId ?? "") ?? "";
+      const html = document.createElement("div");
+      html.className = "subproc-outcome-badge";
+      html.textContent = outcomeBadgeText(destName);
+      // Drill from the outcome badge into the subprocess whose Call Activity this
+      // boundary is attached to (so the reader lands on the process that raises it).
+      const link = links.find((l) => l.elementId === b.callActivityId);
+      const file = link ? deps.registry.resolve(link.calledElement)?.file : undefined;
+      if (file) {
+        html.classList.add("subproc-badge-clickable");
+        html.title = "Ir al subproceso de este resultado";
+        html.addEventListener("click", (e) => {
+          e.stopPropagation();
+          void deps.openStage(file).catch(deps.onError);
+        });
+      }
+      try {
+        overlayIds.push(overlays().add(b.boundaryId, { position: { bottom: -6, left: 0 }, html }));
+      } catch {
+        /* boundary not overlay-able yet / gone — skip, matches the link badge loop */
+      }
+    }
   }
 
   return {
@@ -115,6 +146,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
       await viewer.importXML(masterXml);
       const els = await parseCallLinks(masterXml);
       links = callLinksFromEls(els);
+      boundaries = await parseMasterBoundaries(masterXml);
       refreshBadges();
     },
     setCurrentStage(processId: string | null) {

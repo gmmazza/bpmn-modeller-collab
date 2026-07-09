@@ -40,6 +40,7 @@
     "bpmn-js-token-simulation": "^0.39.4",
     "bpmn-moddle": "^10.0.0",
     "bpmnlint": "^11.12.1",
+    "bpmnlint-plugin-bpmncompartida": "file:./bpmnlint-plugin-bpmncompartida",
     "diagram-js-grid": "^2.0.1",
     "diagram-js-minimap": "^5.3.0",
     "dompurify": "^3.4.11",

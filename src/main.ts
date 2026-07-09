@@ -88,6 +88,10 @@ import { callLinksFromEls, linkBox, unlinkBox, newSubprocessSkeleton } from "./s
 import { createProcessRegistry } from "./subprocesos/processRegistry";
 import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
 import { renderLinkPopover } from "./subprocesos/linkPopover";
+import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageOverlays";
+import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
+import { renderOutcomePopover } from "./subprocesos/outcomePopover";
+import { typeBadgeFor } from "./subprocesos/typeBadges";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -165,6 +169,10 @@ async function bootstrap() {
   });
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
+  let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
+  let masterNodeTypes = new Map<string, string>(); // elementId -> $type, to filter valid outcome destinations
+  let masterNodeCalled = new Map<string, string>(); // callActivity elementId -> calledElement (processId), for exit navigation
+  let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
@@ -249,6 +257,71 @@ async function bootstrap() {
     if (state.kind === "editing" && state.conflict) return;
     const newMasterXml = await api.getXml(masterFile);
     await enterMasterMode(masterFile, newMasterXml);
+  }
+
+  // ---- A.3 assisted outcome authoring (Marcar como resultado alternativo / Volver) ----
+  // Clicking an end event in the stage editor (while a stage is open in master mode) opens
+  // a popover to convert a plain none-end into an escalation end (declaring the escalation
+  // and adding the master's matching interrupting boundary wired to a chosen destination),
+  // or the inverse. Both sides round-trip through the existing draft->publish + conflict
+  // path (see markOutcomeAlternative / revertOutcomeNormal). The click handler is
+  // registered once in mountModeler and gated on currentMasterFile + an open stage.
+  function openOutcomePopover(endEl: any, stageFile: string): void {
+    const masterFile = currentMasterFile;
+    if (!masterFile) return;
+    const isEscalation = ((endEl.businessObject?.eventDefinitions ?? [])[0]?.$type ?? "").endsWith("EscalationEventDefinition");
+    // Destinations = master stages (Call Activities) + master end events only. Filtering by
+    // type keeps tasks/gateways/sequence-flows out of the picker: a non-node target would
+    // make addEscalationBoundary's modeling.connect throw or corrupt the diagram.
+    const destinations = [...masterNodeNames.entries()]
+      .filter(([id]) => { const t = masterNodeTypes.get(id) ?? ""; return t.endsWith("CallActivity") || t.endsWith("EndEvent"); })
+      .map(([id, name]) => ({ id, label: name || id }));
+    const rect = endEl.gfx?.getBoundingClientRect?.() ?? new DOMRect();
+    renderOutcomePopover(rect, {
+      end: { id: endEl.id, name: endEl.businessObject?.name ?? "", isEscalation },
+      destinations,
+      onMarkAlternative: (destId) => markOutcomeAlternative(stageFile, masterFile, endEl.id, destId),
+      onRevertNormal: () => revertOutcomeNormal(stageFile, masterFile, endEl.id),
+    });
+  }
+
+  async function markOutcomeAlternative(stageFile: string, masterFile: string, endId: string, destinationId: string): Promise<void> {
+    // 1) Subprocess side: mark the end as escalation, publish the stage.
+    const stageEnd = (modeler.get("elementRegistry") as any).get(endId);
+    if (!stageEnd) { showToast("No se encontró el resultado en el subproceso"); return; }
+    const pid = (await parseDiagramInfo(await api.getXml(stageFile))).processId;
+    const outcomeName = stageEnd.businessObject?.name ?? endId;
+    const code = markEndAsEscalation(modeler, stageEnd, { processId: pid, outcomeName });
+    await save(stageFile);
+    if (state.kind === "editing" && state.conflict) return; // let the user resolve
+    // 2) Master side: open master, add the interrupting boundary + destination flow, publish.
+    const callActivityId = callLinksFromEls(await parseCallLinks(await api.getXml(masterFile)))
+      .find((l) => l.calledElement === pid)?.elementId;
+    if (!callActivityId) { showToast("No se encontró la etapa en el mapa"); return; }
+    await openFile(masterFile, { asPlainEditor: true });
+    addEscalationBoundary(modeler, { callActivityId, escalationCode: code, outcomeName, destinationId });
+    await save(masterFile);
+    if (state.kind === "editing" && state.conflict) return;
+    // 3) Re-enter the map and re-open the stage so badges/overlays reflect the new outcome.
+    await enterMasterMode(masterFile, await api.getXml(masterFile));
+    await openStage(stageFile);
+  }
+
+  async function revertOutcomeNormal(stageFile: string, masterFile: string, endId: string): Promise<void> {
+    const stageEnd = (modeler.get("elementRegistry") as any).get(endId);
+    if (!stageEnd) return;
+    const code = ((stageEnd.businessObject?.eventDefinitions ?? [])[0]?.escalationRef?.escalationCode) as string | undefined;
+    revertEscalationToNormal(modeler, stageEnd);
+    await save(stageFile);
+    if (state.kind === "editing" && state.conflict) return;
+    if (code) {
+      await openFile(masterFile, { asPlainEditor: true });
+      removeEscalationBoundary(modeler, code);
+      await save(masterFile);
+      if (state.kind === "editing" && state.conflict) return;
+    }
+    await enterMasterMode(masterFile, await api.getXml(masterFile));
+    await openStage(stageFile);
   }
 
   // "Crear subproceso nuevo": generate a fresh skeleton .bpmn, write it to the shared
@@ -558,6 +631,17 @@ async function bootstrap() {
         const file = findEventCounterpart(events[0], docsFileId, idx);
         if (file) { showToast(`Ir al proceso vinculado: ${baseNameOfFile(file)}`); await openFile(file); }
       })().catch(onError);
+    });
+    // A.3: while a stage is open inside a master map, clicking an end event offers the
+    // outcome popover (Marcar como resultado alternativo / Volver a resultado normal).
+    // Registered once here (not per openStage) since the modeler persists across
+    // drill-downs; gated on master mode + an open stage (state.fileId is that stage).
+    modeler.get("eventBus").on("element.click", (e: { element: any }) => {
+      const el = e?.element;
+      if (!currentMasterFile || !el || !(el.type ?? "").endsWith("EndEvent")) return;
+      const stageFile = state.kind === "editing" ? state.fileId : null;
+      if (!stageFile) return;
+      openOutcomePopover(el, stageFile);
     });
   }
 
@@ -1870,9 +1954,20 @@ async function bootstrap() {
     renderBreadcrumb(null);
     showStageHint(true);
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    masterNodeNames = new Map();
+    masterNodeTypes = new Map();
+    masterNodeCalled = new Map();
+    try {
+      const els = await parseCallLinks(masterXml); // RawEl[] carry id + name + type
+      for (const el of els) { masterNodeNames.set(el.id, el.name ?? ""); masterNodeTypes.set(el.id, el.type ?? ""); }
+      for (const l of callLinksFromEls(els)) masterNodeCalled.set(l.elementId, l.calledElement);
+    } catch { /* names are best-effort */ }
     if (mc) {
       mc.innerHTML = "";
-      masterHandle = await mountMasterPane(mc, { registry, openStage, onError, onElementClick: onMasterElementClick });
+      masterHandle = await mountMasterPane(mc, {
+        registry, openStage, onError, onElementClick: onMasterElementClick,
+        resolveDestinationName: (id) => masterNodeNames.get(id) ?? "",
+      });
       await masterHandle.load(masterXml);
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.
@@ -1883,6 +1978,8 @@ async function bootstrap() {
     if (!document.body.classList.contains("master-mode") && !masterHandle) return;
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
+    masterNodeNames = new Map(); masterNodeTypes = new Map(); masterNodeCalled = new Map();
     currentMasterFile = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
@@ -1901,6 +1998,51 @@ async function bootstrap() {
       const xml = await api.getXml(file);
       masterHandle?.setCurrentStage((await parseDiagramInfo(xml)).processId);
     } catch { /* highlight is best-effort */ }
+    stageOverlaysHandle?.clear();
+    stageOverlaysHandle = null;
+    if (currentMasterFile) {
+      try {
+        const stageXml = await api.getXml(file);
+        const masterXml = await api.getXml(currentMasterFile);
+        const pid = (await parseDiagramInfo(stageXml)).processId;
+        const link = callLinksFromEls(await parseCallLinks(masterXml)).find((l) => l.calledElement === pid);
+        if (link) {
+          const model = await buildStageOverlayModel({
+            stageXml, masterXml, callActivityId: link.elementId,
+            resolveName: (id) => masterNodeNames.get(id) ?? "",
+          });
+          const overlays = (modeler.get("overlays") as { add(id: string, o: any): string; remove(id: string): void });
+          const host = {
+            add: (elId: string, html: HTMLElement) => overlays.add(elId, { position: { top: -12, left: 0 }, html }),
+            remove: (id: string) => overlays.remove(id),
+          };
+          stageOverlaysHandle = mountStageOverlays(host, model, {
+            goToSource: (s) => { masterHandle?.setCurrentStage(s.processId); },
+            goToExit: (mid) => { if (mid) masterHandle?.setCurrentStage(masterNodeCalled.get(mid) ?? null); },
+          });
+        }
+      } catch { /* overlays are best-effort */ }
+    }
+    // Type badges (A.3): label precise task/event types on the stage for non-technical
+    // readers. Cleared automatically on the next importXML (editor reload wipes overlays).
+    try {
+      const overlays = modeler.get("overlays") as { add(id: string, o: any): string };
+      const registry = modeler.get("elementRegistry") as { getAll(): any[] };
+      for (const el of registry.getAll()) {
+        const badge = typeBadgeFor({
+          type: el.type,
+          eventDefinitions: el.businessObject?.eventDefinitions,
+          cancelActivity: el.businessObject?.cancelActivity,
+          attachedToRef: el.businessObject?.attachedToRef,
+        });
+        if (!badge) continue;
+        const html = document.createElement("div");
+        html.className = "subproc-type-badge";
+        html.textContent = `${badge.icon} ${badge.label}`;
+        html.title = badge.label;
+        try { overlays.add(el.id, { position: { bottom: 0, right: 0 }, html }); } catch { /* skip */ }
+      }
+    } catch { /* best-effort */ }
   }
 
   // Best-effort: if a directly-opened stage is referenced by some master in the folder,
@@ -1946,6 +2088,7 @@ async function bootstrap() {
   async function openFile(fileId: string, opts?: { asPlainEditor?: boolean; keepMaster?: boolean }) {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
+    stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     clearPreviewUI(); // leaving any active revision preview
     clearCompareUI(); // leaving any active compare
     await flushDraft();
