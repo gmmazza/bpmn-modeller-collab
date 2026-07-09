@@ -171,6 +171,7 @@ async function bootstrap() {
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
   let masterNodeTypes = new Map<string, string>(); // elementId -> $type, to filter valid outcome destinations
+  let masterNodeCalled = new Map<string, string>(); // callActivity elementId -> calledElement (processId), for exit navigation
   let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
@@ -1955,9 +1956,11 @@ async function bootstrap() {
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     masterNodeNames = new Map();
     masterNodeTypes = new Map();
+    masterNodeCalled = new Map();
     try {
       const els = await parseCallLinks(masterXml); // RawEl[] carry id + name + type
       for (const el of els) { masterNodeNames.set(el.id, el.name ?? ""); masterNodeTypes.set(el.id, el.type ?? ""); }
+      for (const l of callLinksFromEls(els)) masterNodeCalled.set(l.elementId, l.calledElement);
     } catch { /* names are best-effort */ }
     if (mc) {
       mc.innerHTML = "";
@@ -1976,6 +1979,7 @@ async function bootstrap() {
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
+    masterNodeNames = new Map(); masterNodeTypes = new Map(); masterNodeCalled = new Map();
     currentMasterFile = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
@@ -2014,7 +2018,7 @@ async function bootstrap() {
           };
           stageOverlaysHandle = mountStageOverlays(host, model, {
             goToSource: (s) => { masterHandle?.setCurrentStage(s.processId); },
-            goToExit: (mid) => { if (mid) masterHandle?.setCurrentStage(masterNodeNames.has(mid) ? null : null); },
+            goToExit: (mid) => { if (mid) masterHandle?.setCurrentStage(masterNodeCalled.get(mid) ?? null); },
           });
         }
       } catch { /* overlays are best-effort */ }
