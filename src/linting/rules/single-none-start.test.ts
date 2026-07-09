@@ -14,6 +14,14 @@ describe("single-none-start", () => {
     expect(reports.map((r) => r.id)).toEqual(["p"]);
     expect(reports[0].message).toBe("Un subproceso llamado debe tener exactamente un inicio simple (none).");
   });
+  it("flags a process with a single typed (non-none) start", async () => {
+    const reports = await lintRule(
+      rule,
+      wrap('<bpmn:startEvent id="s1"><bpmn:timerEventDefinition/></bpmn:startEvent>')
+    );
+    expect(reports.map((r) => r.id)).toEqual(["p"]);
+    expect(reports[0].message).toBe("Un subproceso llamado debe tener exactamente un inicio simple (none).");
+  });
   it("does not flag a process with one plain start", async () => {
     const reports = await lintRule(rule, wrap('<bpmn:startEvent id="s1"/>'));
     expect(reports).toEqual([]);
