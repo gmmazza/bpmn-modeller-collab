@@ -88,6 +88,7 @@ import { callLinksFromEls, linkBox, unlinkBox, newSubprocessSkeleton } from "./s
 import { createProcessRegistry } from "./subprocesos/processRegistry";
 import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
 import { renderLinkPopover } from "./subprocesos/linkPopover";
+import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageOverlays";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -166,6 +167,7 @@ async function bootstrap() {
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
+  let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
@@ -1892,6 +1894,7 @@ async function bootstrap() {
     if (!document.body.classList.contains("master-mode") && !masterHandle) return;
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     currentMasterFile = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
@@ -1910,6 +1913,31 @@ async function bootstrap() {
       const xml = await api.getXml(file);
       masterHandle?.setCurrentStage((await parseDiagramInfo(xml)).processId);
     } catch { /* highlight is best-effort */ }
+    stageOverlaysHandle?.clear();
+    stageOverlaysHandle = null;
+    if (currentMasterFile) {
+      try {
+        const stageXml = await api.getXml(file);
+        const masterXml = await api.getXml(currentMasterFile);
+        const pid = (await parseDiagramInfo(stageXml)).processId;
+        const link = callLinksFromEls(await parseCallLinks(masterXml)).find((l) => l.calledElement === pid);
+        if (link) {
+          const model = await buildStageOverlayModel({
+            stageXml, masterXml, callActivityId: link.elementId,
+            resolveName: (id) => masterNodeNames.get(id) ?? "",
+          });
+          const overlays = (modeler.get("overlays") as { add(id: string, o: any): string; remove(id: string): void });
+          const host = {
+            add: (elId: string, html: HTMLElement) => overlays.add(elId, { position: { top: -12, left: 0 }, html }),
+            remove: (id: string) => overlays.remove(id),
+          };
+          stageOverlaysHandle = mountStageOverlays(host, model, {
+            goToSource: (s) => { masterHandle?.setCurrentStage(s.processId); },
+            goToExit: (mid) => { if (mid) masterHandle?.setCurrentStage(masterNodeNames.has(mid) ? null : null); },
+          });
+        }
+      } catch { /* overlays are best-effort */ }
+    }
   }
 
   // Best-effort: if a directly-opened stage is referenced by some master in the folder,
@@ -1955,6 +1983,7 @@ async function bootstrap() {
   async function openFile(fileId: string, opts?: { asPlainEditor?: boolean; keepMaster?: boolean }) {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
+    stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     clearPreviewUI(); // leaving any active revision preview
     clearCompareUI(); // leaving any active compare
     await flushDraft();
