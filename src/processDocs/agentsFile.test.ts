@@ -98,6 +98,12 @@ describe("AGENTS_MD orquestador (anti-duplicación)", () => {
     expect(AGENTS_MD).toContain("procesado/");
     expect(AGENTS_MD).toContain("fuente:");
   });
+
+  it("documents the datos.json sidecar and the Mostrar en el diagrama anchor", () => {
+    expect(AGENTS_MD).toContain("## Datos y herramientas");
+    expect(AGENTS_MD).toContain("datos.json");
+    expect(AGENTS_MD).toContain("Mostrar en el diagrama");
+  });
 });
 
 describe("ensureLocalOverlay (team, ensure-once)", () => {

@@ -21,6 +21,7 @@ Este es un workspace de procesos BPMN colaborativo. Trabajás sobre **tres capas
 - **Trabajar entre capas** (agregar elemento → nota; hallazgo → idea; idea → mejora): leé
   \`_bpmn-design/app/cross-layer-workflows.md\`.
 - **Fuentes** (material de origen, \`.fuentes/\`): protocolo abajo.
+- **Datos y herramientas** (formularios/almacenamiento/tools por elemento, \`.datos.json\`): protocolo abajo.
 
 ## Protocolo de colaboración (.bpmn): borrador/publicar y reservas
 
@@ -62,6 +63,22 @@ Protocolo del agente:
 3. Cuando el conocimiento de la fuente ya está reflejado, **movéla a \`procesado/\`**.
 4. Respetá borrador/publicar: si hay trabajo humano sin publicar o una reserva \`.lock\`,
    **proponé** (idea/comentario o \`.req\`) en vez de pisar.
+
+## Datos y herramientas
+
+\`<diagrama>.datos.json\` documenta, por elemento del diagrama, qué **formularios** lo
+alimentan (hoy: JotForm), dónde se **almacena** lo que produce (hoy: una lista de
+ClickUp) y qué otras **herramientas** intervienen. Es referencia (nombre + URL), nunca
+credenciales ni llamadas a APIs externas.
+
+- No edites este sidecar a mano salvo que te lo pidan explícitamente: usá la pestaña
+  "Datos y herramientas" de la app, o si trabajás fuera de la app, replicá su esquema
+  (\`{ version, elementos: { "<id>": { formularios: [...], almacenamiento: [...],
+  herramientas: [...] } } }\`, cada entrada \`{ tool, nombre, url }\`).
+- El diagrama solo muestra que un paso tiene datos/herramientas mediante un anchor
+  **estándar** BPMN (\`bpmn:DataObjectReference\`/\`bpmn:DataStoreReference\` + asociación),
+  creado por la acción "Mostrar en el diagrama" del panel — nunca escribas la URL/id de
+  JotForm o ClickUp directamente en el \`.bpmn\`.
 
 ## Precedencia de instrucciones (mayor autoridad primero)
 
