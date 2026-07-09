@@ -16,6 +16,10 @@ contextBridge.exposeInMainWorld("fsapi", {
   openPath: (root, rel) => ipcRenderer.invoke("shell:openPath", root, rel),
 });
 
+contextBridge.exposeInMainWorld("urlapi", {
+  openExternal: (url) => ipcRenderer.invoke("shell:openExternalUrl", url),
+});
+
 contextBridge.exposeInMainWorld("termapi", {
   openExternal: (command) => ipcRenderer.invoke("terminal:openExternal", command ?? null),
 });
