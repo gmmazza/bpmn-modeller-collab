@@ -117,6 +117,24 @@ describe("renderDatosPanel — with a selected element", () => {
     expect(host.querySelector('[data-entry-id="' + entry.id + '"] [data-act="mostrar"]')).toBeNull();
   });
 
+  it("fires onChanged after a successful add and after a Quitar remove", async () => {
+    const host = document.createElement("div");
+    const onChanged = vi.fn();
+    const d = deps({ onChanged });
+    await renderDatosPanel(host, d);
+
+    const form = host.querySelector('section[data-category="formularios"] form') as HTMLFormElement;
+    (form.querySelector(".dato-add-nombre") as HTMLInputElement).value = "Recepción — alta";
+    (form.querySelector(".dato-add-tool") as HTMLSelectElement).value = "jotform";
+    form.dispatchEvent(new Event("submit", { cancelable: true }));
+    await flush();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+
+    (host.querySelector('[data-category="formularios"][data-entry-id] [data-act="quitar"]') as HTMLButtonElement).click();
+    await flush();
+    expect(onChanged).toHaveBeenCalledTimes(2);
+  });
+
   it("does not duplicate sections when rendered twice concurrently for the same element", async () => {
     const host = document.createElement("div");
     const d = deps();

@@ -896,6 +896,7 @@ async function bootstrap() {
       openExternalUrl: (url) => openExternalUrl(url),
       onError,
       onMostrarEnDiagrama: (category, entry) => mostrarEnDiagrama(category, entry),
+      onChanged: () => { void refreshDatosBadges(); },
     });
   }
 

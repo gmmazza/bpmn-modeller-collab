@@ -18,6 +18,8 @@ export interface DatosPanelDeps {
   openExternalUrl(url: string): Promise<void>;
   onError(e: unknown): void;
   onMostrarEnDiagrama(category: DatosCategory, entry: DatosEntry): Promise<void>;
+  // Called after a sidecar mutation (add/remove) so the caller can refresh diagram badges.
+  onChanged?(): void;
 }
 
 function row(category: DatosCategory, entry: DatosEntry, deps: DatosPanelDeps, elementId: string, refresh: () => void): HTMLElement {
@@ -60,6 +62,7 @@ function row(category: DatosCategory, entry: DatosEntry, deps: DatosPanelDeps, e
 
   act("Quitar", "quitar", async () => {
     await deps.client.remove(elementId, category, entry.id);
+    deps.onChanged?.();
     refresh();
   });
 
@@ -100,7 +103,7 @@ function addForm(category: DatosCategory, deps: DatosPanelDeps, elementId: strin
     e.preventDefault();
     void deps.client
       .add(elementId, category, { tool: tool.value as ToolKind, nombre: nombre.value, url: url.value })
-      .then(refresh)
+      .then(() => { deps.onChanged?.(); refresh(); })
       .catch(deps.onError);
   });
   return form;
