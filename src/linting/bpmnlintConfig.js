@@ -3076,6 +3076,196 @@ function requireSuperfluousTermination () {
 var superfluousTerminationExports = requireSuperfluousTermination();
 var rule_24 = /*@__PURE__*/getDefaultExportFromCjs(superfluousTerminationExports);
 
+var noUntypedTask;
+var hasRequiredNoUntypedTask;
+
+function requireNoUntypedTask () {
+	if (hasRequiredNoUntypedTask) return noUntypedTask;
+	hasRequiredNoUntypedTask = 1;
+	// Flag a bare bpmn:Task (no precise type). Warn-level: allowed in a draft.
+	noUntypedTask = function () {
+	  function check(node, reporter) {
+	    // Match the exact $type — is(node, 'bpmn:Task') would also match subtypes (UserTask,
+	    // etc.) because they extend Task, which is not what we want here.
+	    if (node.$type === "bpmn:Task") {
+	      reporter.report(node.id, "La tarea no tiene un tipo preciso (usá manual, de usuario o de servicio).");
+	    }
+	  }
+	  return { check };
+	};
+	return noUntypedTask;
+}
+
+var noUntypedTaskExports = requireNoUntypedTask();
+var rule_25 = /*@__PURE__*/getDefaultExportFromCjs(noUntypedTaskExports);
+
+var exclusiveSplitNeedsDefault;
+var hasRequiredExclusiveSplitNeedsDefault;
+
+function requireExclusiveSplitNeedsDefault () {
+	if (hasRequiredExclusiveSplitNeedsDefault) return exclusiveSplitNeedsDefault;
+	hasRequiredExclusiveSplitNeedsDefault = 1;
+	// A diverging (2+ outgoing) exclusive gateway must declare a `default` flow — no-runtime
+	// determinism. Joining exclusive gateways (<=1 outgoing) are exempt.
+	exclusiveSplitNeedsDefault = function () {
+	  function check(node, reporter) {
+	    if (node.$type !== "bpmn:ExclusiveGateway") return;
+	    const outgoing = node.outgoing || [];
+	    if (outgoing.length < 2) return;
+	    if (!node.default) {
+	      reporter.report(node.id, "La compuerta exclusiva que se abre debe tener un camino por defecto.");
+	    }
+	  }
+	  return { check };
+	};
+	return exclusiveSplitNeedsDefault;
+}
+
+var exclusiveSplitNeedsDefaultExports = requireExclusiveSplitNeedsDefault();
+var rule_26 = /*@__PURE__*/getDefaultExportFromCjs(exclusiveSplitNeedsDefaultExports);
+
+var noInclusiveComplexGateway;
+var hasRequiredNoInclusiveComplexGateway;
+
+function requireNoInclusiveComplexGateway () {
+	if (hasRequiredNoInclusiveComplexGateway) return noInclusiveComplexGateway;
+	hasRequiredNoInclusiveComplexGateway = 1;
+	// Inclusive and complex gateways are excluded from the profile: they add branching/merging
+	// semantics that are hard to review at a glance and rarely needed at this abstraction level.
+	noInclusiveComplexGateway = function () {
+	  function check(node, reporter) {
+	    if (node.$type === "bpmn:InclusiveGateway" || node.$type === "bpmn:ComplexGateway") {
+	      reporter.report(node.id, "Las compuertas inclusivas y complejas no están permitidas en el perfil.");
+	    }
+	  }
+	  return { check };
+	};
+	return noInclusiveComplexGateway;
+}
+
+var noInclusiveComplexGatewayExports = requireNoInclusiveComplexGateway();
+var rule_27 = /*@__PURE__*/getDefaultExportFromCjs(noInclusiveComplexGatewayExports);
+
+var messageNeedsMessageref;
+var hasRequiredMessageNeedsMessageref;
+
+function requireMessageNeedsMessageref () {
+	if (hasRequiredMessageNeedsMessageref) return messageNeedsMessageref;
+	hasRequiredMessageNeedsMessageref = 1;
+	// A message start/catch/throw/boundary event must declare which message it carries.
+	messageNeedsMessageref = function () {
+	  function check(node, reporter) {
+	    const defs = node.eventDefinitions || [];
+	    for (const def of defs) {
+	      if ((def.$type || "").endsWith("MessageEventDefinition") && !def.messageRef) {
+	        reporter.report(node.id, "El evento de mensaje debe declarar un mensaje (messageRef).");
+	        return;
+	      }
+	    }
+	  }
+	  return { check };
+	};
+	return messageNeedsMessageref;
+}
+
+var messageNeedsMessagerefExports = requireMessageNeedsMessageref();
+var rule_28 = /*@__PURE__*/getDefaultExportFromCjs(messageNeedsMessagerefExports);
+
+var noOrphanCategory;
+var hasRequiredNoOrphanCategory;
+
+function requireNoOrphanCategory () {
+	if (hasRequiredNoOrphanCategory) return noOrphanCategory;
+	hasRequiredNoOrphanCategory = 1;
+	// Report declared categories that no group references. Runs at Definitions scope so it can
+	// see both the category root elements and every group artifact.
+	noOrphanCategory = function () {
+	  function check(node, reporter) {
+	    if (node.$type !== "bpmn:Definitions") return;
+	    const roots = node.rootElements || [];
+	    const categories = roots.filter((r) => r.$type === "bpmn:Category");
+	    if (!categories.length) return;
+
+	    // Collect referenced categoryValue ids from every group in every process/collaboration.
+	    const referenced = new Set();
+	    function walk(container) {
+	      for (const fe of container.flowElements || []) if (fe.flowElements) walk(fe);
+	      for (const art of container.artifacts || []) {
+	        if (art.$type === "bpmn:Group" && art.categoryValueRef) referenced.add(art.categoryValueRef.id);
+	      }
+	    }
+	    for (const r of roots) if (r.flowElements || r.artifacts) walk(r);
+
+	    for (const cat of categories) {
+	      const values = cat.categoryValue || [];
+	      const anyUsed = values.some((v) => referenced.has(v.id));
+	      if (values.length === 0 || !anyUsed) {
+	        reporter.report(cat.id, "Hay una categoría sin uso; eliminala.");
+	      }
+	    }
+	  }
+	  return { check };
+	};
+	return noOrphanCategory;
+}
+
+var noOrphanCategoryExports = requireNoOrphanCategory();
+var rule_29 = /*@__PURE__*/getDefaultExportFromCjs(noOrphanCategoryExports);
+
+var singleNoneStart;
+var hasRequiredSingleNoneStart;
+
+function requireSingleNoneStart () {
+	if (hasRequiredSingleNoneStart) return singleNoneStart;
+	hasRequiredSingleNoneStart = 1;
+	// A called subprocess must have exactly one none start event. Reported per Process scope.
+	// (Masters legitimately have multiple starts; they are exempt by carrying a call activity.)
+	singleNoneStart = function () {
+	  function check(node, reporter) {
+	    if (node.$type !== "bpmn:Process") return;
+	    const flow = node.flowElements || [];
+	    // A master orchestrates call activities → exempt (its multi-start is legitimate).
+	    const isMaster = flow.some((fe) => fe.$type === "bpmn:CallActivity" && fe.calledElement);
+	    if (isMaster) return;
+	    const starts = flow.filter((fe) => fe.$type === "bpmn:StartEvent");
+	    const nonNone = starts.filter((s) => (s.eventDefinitions || []).length > 0);
+	    if (starts.length > 1 || nonNone.length > 0) {
+	      reporter.report(node.id, "Un subproceso llamado debe tener exactamente un inicio simple (none).");
+	    }
+	  }
+	  return { check };
+	};
+	return singleNoneStart;
+}
+
+var singleNoneStartExports = requireSingleNoneStart();
+var rule_30 = /*@__PURE__*/getDefaultExportFromCjs(singleNoneStartExports);
+
+var noGatewaySplitAndJoin;
+var hasRequiredNoGatewaySplitAndJoin;
+
+function requireNoGatewaySplitAndJoin () {
+	if (hasRequiredNoGatewaySplitAndJoin) return noGatewaySplitAndJoin;
+	hasRequiredNoGatewaySplitAndJoin = 1;
+	// A gateway that both joins (2+ incoming) and splits (2+ outgoing) at once is hard to read at
+	// a glance; split it into a dedicated join gateway followed by a dedicated split gateway.
+	noGatewaySplitAndJoin = function () {
+	  function check(node, reporter) {
+	    if (!(node.$type || "").endsWith("Gateway")) return;
+	    const incoming = node.incoming || [];
+	    const outgoing = node.outgoing || [];
+	    if (incoming.length > 1 && outgoing.length > 1) {
+	      reporter.report(node.id, "Una compuerta debe abrir o cerrar caminos, no ambas cosas a la vez.");
+	    }
+	  }
+	  return { check };
+	};
+	return noGatewaySplitAndJoin;
+}
+
+var noGatewaySplitAndJoinExports = requireNoGatewaySplitAndJoin();
+var rule_31 = /*@__PURE__*/getDefaultExportFromCjs(noGatewaySplitAndJoinExports);
+
 const cache = {};
 
 /**
@@ -3130,7 +3320,14 @@ const rules = {
   "start-event-required": "error",
   "sub-process-blank-start-event": "error",
   "superfluous-gateway": "warn",
-  "superfluous-termination": "warn"
+  "superfluous-termination": "warn",
+  "bpmncompartida/no-untyped-task": "warn",
+  "bpmncompartida/exclusive-split-needs-default": "error",
+  "bpmncompartida/no-inclusive-complex-gateway": "error",
+  "bpmncompartida/message-needs-messageref": "error",
+  "bpmncompartida/no-orphan-category": "warn",
+  "bpmncompartida/single-none-start": "error",
+  "bpmncompartida/no-gateway-split-and-join": "error"
 };
 
 const config = {
@@ -3194,5 +3391,19 @@ cache['bpmnlint/sub-process-blank-start-event'] = rule_22;
 cache['bpmnlint/superfluous-gateway'] = rule_23;
 
 cache['bpmnlint/superfluous-termination'] = rule_24;
+
+cache['bpmnlint-plugin-bpmncompartida/no-untyped-task'] = rule_25;
+
+cache['bpmnlint-plugin-bpmncompartida/exclusive-split-needs-default'] = rule_26;
+
+cache['bpmnlint-plugin-bpmncompartida/no-inclusive-complex-gateway'] = rule_27;
+
+cache['bpmnlint-plugin-bpmncompartida/message-needs-messageref'] = rule_28;
+
+cache['bpmnlint-plugin-bpmncompartida/no-orphan-category'] = rule_29;
+
+cache['bpmnlint-plugin-bpmncompartida/single-none-start'] = rule_30;
+
+cache['bpmnlint-plugin-bpmncompartida/no-gateway-split-and-join'] = rule_31;
 
 export { config, bundle as default, moddleExtensions, resolver };

@@ -17,6 +17,9 @@ describe("packed bpmnlint config", () => {
     // Spot-check: a well-known recommended rule must be present.
     // Keys in config.rules are unprefixed (e.g. "end-event-required").
     expect(ruleNames).toContain("end-event-required");
+    // Spot-check: the local bpmncompartida plugin rules are packed too, prefixed with the
+    // plugin's short name (as parsed from `bpmnlint-plugin-bpmncompartida`).
+    expect(ruleNames).toContain("bpmncompartida/single-none-start");
   });
 
   it("is an ES module, not CommonJS (CJS `exports` in src crashes the Vite browser bundle → white screen)", () => {
