@@ -44,13 +44,52 @@ describe("parseSubprocessBoundaries", () => {
     expect(info.startEventIds).toEqual(["S1", "S2"]);
     expect(info.noneStartId).toBeNull();
   });
+
+  it("returns noneStartId=null when the sole start is typed", async () => {
+    const typedStart = SUB.replace(
+      "<bpmn:startEvent id=\"S1\"/>",
+      "<bpmn:startEvent id=\"S1\"><bpmn:timerEventDefinition id=\"ted1\"/></bpmn:startEvent>",
+    );
+    const info = await parseSubprocessBoundaries(typedStart);
+    expect(info.startEventIds).toEqual(["S1"]);
+    expect(info.noneStartId).toBeNull();
+  });
 });
+
+const MASTER_TWO = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="d3" targetNamespace="x">
+  <bpmn:escalation id="Esc_dev" name="Devuelto" escalationCode="proc_rep_3__devuelto"/>
+  <bpmn:escalation id="Esc_rech" name="Rechazado" escalationCode="proc_rep_3__rechazado"/>
+  <bpmn:process id="proc_mapa" isExecutable="false">
+    <bpmn:callActivity id="s3" calledElement="proc_rep_3"/>
+    <bpmn:boundaryEvent id="B_ni" attachedToRef="s3" cancelActivity="false">
+      <bpmn:escalationEventDefinition id="eed_ni" escalationRef="Esc_dev"/>
+      <bpmn:outgoing>f_ni</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="B_i" attachedToRef="s3">
+      <bpmn:escalationEventDefinition id="eed_i" escalationRef="Esc_rech"/>
+      <bpmn:outgoing>f_i</bpmn:outgoing>
+    </bpmn:boundaryEvent>
+    <bpmn:endEvent id="dest_ni"/>
+    <bpmn:endEvent id="dest_i"/>
+    <bpmn:sequenceFlow id="f_ni" sourceRef="B_ni" targetRef="dest_ni"/>
+    <bpmn:sequenceFlow id="f_i" sourceRef="B_i" targetRef="dest_i"/>
+  </bpmn:process>
+</bpmn:definitions>`;
 
 describe("parseMasterBoundaries", () => {
   it("reads the interrupting escalation boundary, its call activity, code and outgoing target", async () => {
     const bs = await parseMasterBoundaries(MASTER);
     expect(bs).toEqual([
       { boundaryId: "B1", callActivityId: "s3", escalationCode: "proc_rep_3__devuelto", interrupting: true, outgoingTargetId: "dest_dev" },
+    ]);
+  });
+
+  it("marks cancelActivity=false as non-interrupting and absent cancelActivity as interrupting", async () => {
+    const bs = await parseMasterBoundaries(MASTER_TWO);
+    expect(bs).toEqual([
+      { boundaryId: "B_ni", callActivityId: "s3", escalationCode: "proc_rep_3__devuelto", interrupting: false, outgoingTargetId: "dest_ni" },
+      { boundaryId: "B_i", callActivityId: "s3", escalationCode: "proc_rep_3__rechazado", interrupting: true, outgoingTargetId: "dest_i" },
     ]);
   });
 });
