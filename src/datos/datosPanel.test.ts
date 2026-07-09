@@ -117,6 +117,14 @@ describe("renderDatosPanel — with a selected element", () => {
     expect(host.querySelector('[data-entry-id="' + entry.id + '"] [data-act="mostrar"]')).toBeNull();
   });
 
+  it("does not duplicate sections when rendered twice concurrently for the same element", async () => {
+    const host = document.createElement("div");
+    const d = deps();
+    await Promise.all([renderDatosPanel(host, d), renderDatosPanel(host, d)]);
+    expect(host.querySelectorAll('section[data-category="formularios"]').length).toBe(1);
+    expect(host.querySelectorAll("section").length).toBe(3);
+  });
+
   it("Quitar removes the entry and re-renders", async () => {
     const host = document.createElement("div");
     const client = createDatosClient(fakeApi(), "d.bpmn");

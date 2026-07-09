@@ -125,6 +125,13 @@ function section(
 
 export async function renderDatosPanel(host: HTMLElement, deps: DatosPanelDeps): Promise<void> {
   const refresh = () => { void renderDatosPanel(host, deps); };
+  // Reentrancy guard: activating the Datos tab can invoke renderDatos twice (the toolbar
+  // click handler plus createInspector's onChange), and each render clears then awaits
+  // client.list() then appends its three sections. Without a per-host generation token both
+  // resumed renders append and the panel duplicates. Stamp a fresh generation now; after each
+  // await we bail unless we're still the latest render, so only the newest one appends.
+  const gen = String((Number(host.dataset.datosGen ?? "0") + 1) % 1_000_000_000);
+  host.dataset.datosGen = gen;
   host.innerHTML = "";
 
   if (!deps.elementId) {
@@ -150,7 +157,9 @@ export async function renderDatosPanel(host: HTMLElement, deps: DatosPanelDeps):
     deps.onError(e);
     datos = emptyElementoDatos();
   }
-  // The user could have re-selected a different element while `list` was in flight.
+  // The user could have re-selected a different element while `list` was in flight, or a
+  // newer render of the SAME element could have started (see the generation guard above).
+  if (host.dataset.datosGen !== gen) return; // a newer render superseded this one
   if (host.dataset.elementId !== elementId) return;
 
   host.appendChild(section("formularios", datos.formularios, deps, elementId, refresh));
