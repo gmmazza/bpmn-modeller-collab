@@ -41,6 +41,12 @@ import { createTemplatesClient, type TemplatesClient } from "./layers/layerTempl
 import { createFuentesClient } from "./fuentes/fuentesClient";
 import { renderFuentesPanel } from "./fuentes/fuentesPanel";
 import { hasOpenPath, openSourceExternal } from "./fuentesApi";
+import { createDatosClient } from "./datos/datosClient";
+import { renderDatosPanel } from "./datos/datosPanel";
+import { createDatosOverlays } from "./datos/datosBadges";
+import { openExternalUrl } from "./datos/externalUrl";
+import { anchorFormulario, anchorAlmacenamiento } from "./datos/datosAnchor";
+import type { DatosCategory, DatosEntry } from "./datos/datosModel";
 import {
   addColorDimension, addAnnotationDimension, renameDimension, deleteDimension,
   addCategory, updateCategory, deleteCategory, mergeTemplate, reorderCategory, type LayerFile,
@@ -155,6 +161,7 @@ async function bootstrap() {
   let templatesClient: TemplatesClient | null = null;
   let layersModalEl: HTMLElement | null = null;
   let fuentesOpenConfirmed = false; // "Abrir" confirm shown once per session, not per file
+  let datosOverlays: ReturnType<typeof createDatosOverlays>;
   let inspector: Inspector;
   let expanded = new Set<string>();
   let treeVersions = new Map<string, string>();
@@ -590,6 +597,11 @@ async function bootstrap() {
     selectedId = null;
     if (layerFile) reapplyLayers();
     tagPools();
+    datosOverlays = createDatosOverlays({
+      add: (elementId: string, html: HTMLElement) =>
+        (modeler.get("overlays") as any).add(elementId, "datos", { position: { bottom: -14, left: -10 }, html }),
+      remove: (id: string) => (modeler.get("overlays") as any).remove(id),
+    });
     // pools/lanes created or rebuilt by edits lose the tag → re-tag on every change.
     modeler.get("eventBus").on("import.done", () => tagPools());
     modeler.get("eventBus").on("commandStack.changed", () => {
@@ -602,6 +614,7 @@ async function bootstrap() {
     modeler.get("eventBus").on("selection.changed", (e: { newSelection: Array<{ id: string }> }) => {
       selectedId = e.newSelection.length === 1 ? e.newSelection[0].id : null;
       renderLayers();
+      void renderDatos();
       docsSelectionCbs.forEach((cb) => cb());
     });
     editor.onDirtyChange((dirty) => {
@@ -798,6 +811,7 @@ async function bootstrap() {
   async function loadDocs(fileId: string): Promise<void> {
     docsFileId = fileId;
     await docsController?.refresh();
+    void refreshDatosBadges().catch(onError);
   }
 
   // Drag the inspector's left edge to resize its width (persisted). Width drives
@@ -901,6 +915,7 @@ async function bootstrap() {
     await editor.load(xml);
     if (layerFile) reapplyLayers();
     tagPools();
+    void refreshDatosBadges().catch(onError);
   }
 
   function renderLayers(): void {
@@ -946,6 +961,57 @@ async function bootstrap() {
         ideasCtl?.setFuenteFilter(fuente);
       },
     });
+  }
+
+  function selectedElementLabel(): string {
+    if (!selectedId) return "";
+    const el = (modeler?.get("elementRegistry") as any)?.get?.(selectedId);
+    return (el && el.businessObject && el.businessObject.name) || selectedId;
+  }
+
+  async function renderDatos(): Promise<void> {
+    const panel = inspector.paneEl("datos");
+    if (!panel || panel.hidden || !docsFileId) return;
+    const client = createDatosClient(api, docsFileId);
+    await renderDatosPanel(panel, {
+      client,
+      elementId: selectedId,
+      elementLabel: selectedElementLabel(),
+      openExternalUrl: (url) => openExternalUrl(url),
+      onError,
+      onMostrarEnDiagrama: (category, entry) => mostrarEnDiagrama(category, entry),
+      onChanged: () => { void refreshDatosBadges(); },
+    });
+  }
+
+  // Best-effort: badges are a read-model over the sidecar, never block canvas interaction.
+  async function refreshDatosBadges(): Promise<void> {
+    if (!docsFileId || !datosOverlays) return;
+    const client = createDatosClient(api, docsFileId);
+    const file = await client.load();
+    datosOverlays.render(file, (elementId) => {
+      const el = (modeler?.get("elementRegistry") as any)?.get?.(elementId);
+      if (el) (modeler?.get("selection") as any)?.select?.(el);
+      inspector.setTab("datos");
+      void renderDatos();
+    });
+  }
+
+  // "Mostrar en el diagrama": creates the standard Data Object/Store anchor for the given
+  // entry, publishes it directly (a programmatic action from the panel, not the toolbar
+  // Publicar button — skips the confirm dialog, same precedent as linkMasterBox/unlinkMasterBox),
+  // then stamps the created anchor's id back onto the sidecar entry so the button hides.
+  async function mostrarEnDiagrama(category: DatosCategory, entry: DatosEntry): Promise<void> {
+    if (state.kind !== "editing" || !selectedId) return;
+    const el = (modeler.get("elementRegistry") as any).get(selectedId);
+    if (!el) { showToast("No se encontró el elemento en el diagrama"); return; }
+    const anchor =
+      category === "formularios" ? anchorFormulario(modeler, el, entry.nombre) : anchorAlmacenamiento(modeler, el, entry.nombre);
+    await save(docsFileId);
+    if (state.kind === "editing" && state.conflict) return; // conflict bar showing — let the user resolve it normally
+    const client = createDatosClient(api, docsFileId);
+    await client.markAnchored(selectedId, category, entry.id, anchor.id);
+    await refreshDatosBadges();
   }
 
   async function assignLayer(dimId: string, elementId: string, value: string | null): Promise<void> {
@@ -1085,6 +1151,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
           <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
           <button class="btn icon-only" id="tab-fuentes" type="button" title="Fuentes">${icon("paperclip")}</button>
+          <button class="btn icon-only" id="tab-datos" type="button" title="Datos y herramientas">${icon("database")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Ajustes">${icon("settings")}</button>
             <div id="vizsettings" class="popover" hidden></div>
@@ -1143,12 +1210,14 @@ async function bootstrap() {
       { id: "historial", label: "Historial" },
       { id: "documentacion", label: "Documentación" },
       { id: "fuentes", label: "Fuentes" },
+      { id: "datos", label: "Datos y herramientas" },
       { id: "ideas", label: "Ideas" },
     ], (tabId) => {
       // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
       const on = tabId === "ideas";
       void ideaMode?.setEnabled(on);
       if (on) void ideasCtl?.refresh();
+      if (tabId === "datos") void renderDatos();
     });
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
     inspector.paneEl("propiedades").id = "propspanel";
@@ -1434,9 +1503,10 @@ async function bootstrap() {
     $("tab-props").addEventListener("click", () => openInspector("propiedades"));
     $("tab-docs").addEventListener("click", () => { inspector.setTab("documentacion"); void docsController?.refresh(); reflectInspectorToggle(); });
     $("tab-fuentes").addEventListener("click", () => { inspector.setTab("fuentes"); void renderFuentes(); reflectInspectorToggle(); });
+    $("tab-datos").addEventListener("click", () => { inspector.setTab("datos"); void renderDatos(); reflectInspectorToggle(); });
     $("toggle-inspector").addEventListener("click", () => {
       if (inspector.isVisible()) inspector.hide();
-      else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); }
+      else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); void renderDatos(); }
       reflectInspectorToggle();
     });
     const setFilesCollapsed = (on: boolean): void => {
@@ -1450,7 +1520,7 @@ async function bootstrap() {
     );
     // Apply persisted state: files default expanded, inspector default collapsed.
     setFilesCollapsed(getColl("files", false));
-    if (!getColl("inspector", true)) { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); }
+    if (!getColl("inspector", true)) { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); void renderDatos(); }
     else inspector.hide();
     reflectInspectorToggle();
     $("settings").addEventListener("click", () => renderVizSettings());

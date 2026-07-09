@@ -290,6 +290,18 @@ ipcMain.handle("shell:openPath", async (_e, _root, rel) => {
   return { ok: true };
 });
 
+// Open an external https:// URL (JotForm/ClickUp links documented in a datos.json
+// sidecar) with the system browser. Distinct from shell:openPath (local files): this
+// never touches the authorized folder, so no guardedPath check — but the URL scheme
+// IS re-validated here (not just in the renderer's src/datos/externalUrl.ts) because the
+// sidecar is shared-folder data a malicious collaborator could tamper with.
+ipcMain.handle("shell:openExternalUrl", (_e, url) => {
+  if (typeof url !== "string" || !/^https:\/\//.test(url)) {
+    throw new Error("solo se permiten URLs https://");
+  }
+  shell.openExternal(url);
+});
+
 ipcMain.handle("fsapi:rename", async (_e, _root, from, to) => {
   const dst = await guardedPath(to);
   await fs.mkdir(path.dirname(dst), { recursive: true });
