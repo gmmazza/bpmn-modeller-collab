@@ -263,76 +263,6 @@ function requireAdHocSubProcess () {
 var adHocSubProcessExports = requireAdHocSubProcess();
 var rule_0 = /*@__PURE__*/getDefaultExportFromCjs(adHocSubProcessExports);
 
-var conditionalFlows;
-var hasRequiredConditionalFlows;
-
-function requireConditionalFlows () {
-	if (hasRequiredConditionalFlows) return conditionalFlows;
-	hasRequiredConditionalFlows = 1;
-	const {
-	  annotateRule
-	} = requireHelper();
-
-
-	/**
-	 * A rule that checks that sequence flows outgoing from a
-	 * conditional forking gateway or activity are
-	 * either default flows _or_ have a condition attached
-	 *
-	 * @type { import('../lib/types.js').RuleFactory }
-	 */
-	conditionalFlows = function() {
-
-	  function check(node, reporter) {
-
-	    if (!isConditionalForking(node)) {
-	      return;
-	    }
-
-	    const outgoing = node.outgoing || [];
-
-	    outgoing.forEach((flow) => {
-	      const missingCondition = (
-	        !hasCondition(flow) &&
-	        !isDefaultFlow(node, flow)
-	      );
-
-	      if (missingCondition) {
-	        reporter.report(flow.id, 'Sequence flow is missing condition', [ 'conditionExpression' ]);
-	      }
-	    });
-	  }
-
-	  return annotateRule('conditional-flows', {
-	    check
-	  });
-
-	};
-
-
-	// helpers /////////////////////////////
-
-	function isConditionalForking(node) {
-
-	  const defaultFlow = node['default'];
-	  const outgoing = node.outgoing || [];
-
-	  return defaultFlow || outgoing.find(hasCondition);
-	}
-
-	function hasCondition(flow) {
-	  return !!flow.conditionExpression;
-	}
-
-	function isDefaultFlow(node, flow) {
-	  return node['default'] === flow;
-	}
-	return conditionalFlows;
-}
-
-var conditionalFlowsExports = requireConditionalFlows();
-var rule_1 = /*@__PURE__*/getDefaultExportFromCjs(conditionalFlowsExports);
-
 var endEventRequired;
 var hasRequiredEndEventRequired;
 
@@ -3297,7 +3227,7 @@ const resolver = new Resolver();
 
 const rules = {
   "ad-hoc-sub-process": "error",
-  "conditional-flows": "error",
+  "conditional-flows": 0,
   "end-event-required": "error",
   "event-based-gateway": "error",
   "event-sub-process-typed-start-event": "error",
@@ -3343,8 +3273,6 @@ const bundle = {
 };
 
 cache['bpmnlint/ad-hoc-sub-process'] = rule_0;
-
-cache['bpmnlint/conditional-flows'] = rule_1;
 
 cache['bpmnlint/end-event-required'] = rule_2;
 
