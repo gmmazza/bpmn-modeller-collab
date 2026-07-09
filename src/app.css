@@ -483,6 +483,18 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .subproc-badge-clickable { cursor: pointer; }
 .djs-element.subproc-current .djs-visual > :first-child { stroke: #2471A3 !important; stroke-width: 3px !important; }
 
+/* Master pane (A.3) — per-boundary outcome badge ("→ destino"), anchored on the
+   escalation boundary event, drills into the subprocess raising it. */
+.subproc-outcome-badge {
+  font-size: 11px;
+  background: #fff3cd;
+  border: 1px solid #e0a800;
+  border-radius: 10px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+.subproc-outcome-badge.subproc-badge-clickable { cursor: pointer; }
+
 /* Ideas panel — focus header (shown when an element is selected) */
 .ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -165,6 +165,7 @@ async function bootstrap() {
   });
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
+  let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
@@ -1870,9 +1871,17 @@ async function bootstrap() {
     renderBreadcrumb(null);
     showStageHint(true);
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
+    masterNodeNames = new Map();
+    try {
+      const els = await parseCallLinks(masterXml); // RawEl[] carry id + name
+      for (const el of els) masterNodeNames.set(el.id, el.name ?? "");
+    } catch { /* names are best-effort */ }
     if (mc) {
       mc.innerHTML = "";
-      masterHandle = await mountMasterPane(mc, { registry, openStage, onError, onElementClick: onMasterElementClick });
+      masterHandle = await mountMasterPane(mc, {
+        registry, openStage, onError, onElementClick: onMasterElementClick,
+        resolveDestinationName: (id) => masterNodeNames.get(id) ?? "",
+      });
       await masterHandle.load(masterXml);
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.

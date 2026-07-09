@@ -26,13 +26,22 @@ vi.mock("../compareView", () => ({
   installViewSelectGuard: vi.fn(),
 }));
 
-import { badgeLabel, mountMasterPane } from "./masterPane";
+import { badgeLabel, mountMasterPane, outcomeBadgeText } from "./masterPane";
 
 describe("badgeLabel", () => {
   it("maps link states to badge glyphs", () => {
     expect(badgeLabel("resolved")).toBe("🗺");
     expect(badgeLabel("unresolved")).toBe("⚠");
     expect(badgeLabel("ambiguous")).toBe("⚠");
+  });
+});
+
+describe("outcomeBadgeText", () => {
+  it("prefixes the destination name with an arrow", () => {
+    expect(outcomeBadgeText("Devuelto sin reparar")).toBe("→ Devuelto sin reparar");
+  });
+  it("falls back to a dash when the destination is unnamed", () => {
+    expect(outcomeBadgeText("")).toBe("→ (sin destino)");
   });
 });
 
