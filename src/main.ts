@@ -91,6 +91,7 @@ import { renderLinkPopover } from "./subprocesos/linkPopover";
 import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageOverlays";
 import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
 import { renderOutcomePopover } from "./subprocesos/outcomePopover";
+import { typeBadgeFor } from "./subprocesos/typeBadges";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -2018,6 +2019,26 @@ async function bootstrap() {
         }
       } catch { /* overlays are best-effort */ }
     }
+    // Type badges (A.3): label precise task/event types on the stage for non-technical
+    // readers. Cleared automatically on the next importXML (editor reload wipes overlays).
+    try {
+      const overlays = modeler.get("overlays") as { add(id: string, o: any): string };
+      const registry = modeler.get("elementRegistry") as { getAll(): any[] };
+      for (const el of registry.getAll()) {
+        const badge = typeBadgeFor({
+          type: el.type,
+          eventDefinitions: el.businessObject?.eventDefinitions,
+          cancelActivity: el.businessObject?.cancelActivity,
+          attachedToRef: el.businessObject?.attachedToRef,
+        });
+        if (!badge) continue;
+        const html = document.createElement("div");
+        html.className = "subproc-type-badge";
+        html.textContent = `${badge.icon} ${badge.label}`;
+        html.title = badge.label;
+        try { overlays.add(el.id, { position: { bottom: 0, right: 0 }, html }); } catch { /* skip */ }
+      }
+    } catch { /* best-effort */ }
   }
 
   // Best-effort: if a directly-opened stage is referenced by some master in the folder,
