@@ -143,6 +143,44 @@ An event's trigger is a child definition, e.g. `<bpmn:timerEventDefinition/>`,
   `<bpmn:messageFlow id=".." sourceRef=".." targetRef=".." />` (dashed).
 - **Data:** `bpmn:dataObjectReference`, `bpmn:dataStoreReference`, linked by `bpmn:association` — informational.
 
+### Escalation end ↔ boundary pairing (subprocess outcomes)
+An escalation is thrown by an **end event** carrying an `escalationEventDefinition escalationRef="…"`,
+and caught by an **interrupting boundary event** on the calling Call Activity with the same definition.
+They are matched by the **`escalationCode`** string on the referenced `<bpmn:escalation>` — **each file
+declares its own** `<bpmn:escalation escalationCode="…">`; the code, not the id, is the join key across
+files.
+```xml
+<!-- in the subprocess (throws) -->
+<bpmn:endEvent id="ee_no" name="No cubre">
+  <bpmn:incoming>f_no</bpmn:incoming>
+  <bpmn:escalationEventDefinition escalationRef="Esc_no" />
+</bpmn:endEvent>
+<bpmn:escalation id="Esc_no" name="No cubre" escalationCode="proc_diagnostico__no_cubre" />
+
+<!-- in the master (catches, on the Call Activity) -->
+<bpmn:boundaryEvent id="be_dx" attachedToRef="ca_dx" cancelActivity="true">
+  <bpmn:outgoing>f_nocubre</bpmn:outgoing>
+  <bpmn:escalationEventDefinition escalationRef="Esc_m_nocubre" />
+</bpmn:boundaryEvent>
+<bpmn:escalation id="Esc_m_nocubre" name="No cubre" escalationCode="proc_diagnostico__no_cubre" />
+```
+This is the standard construct behind this app's subprocess contract — see `profile.md` §3.
+
+### Data / tools anchors (standard, name-only)
+To show that a step has a form or a store without any tool specifics in the `.bpmn`: a
+`bpmn:dataObjectReference` (form) via `dataInputAssociation`, a `bpmn:dataStoreReference` (store) via
+`dataOutputAssociation`. The reference carries **only a human name**; the JotForm/ClickUp URL or id
+lives in the `<d>.datos.json` sidecar, **never in the XML** (`profile.md` §4).
+```xml
+<bpmn:dataObjectReference id="do_form" name="Formulario Recepción" dataObjectRef="DataObj_1" />
+<bpmn:dataObject id="DataObj_1" />
+<bpmn:userTask id="t_rec" name="Recepcionar motor">
+  <bpmn:dataInputAssociation id="dia_1"><bpmn:sourceRef>do_form</bpmn:sourceRef></bpmn:dataInputAssociation>
+</bpmn:userTask>
+<bpmn:dataStoreReference id="ds_cu" name="Almacenamiento Reparaciones" />
+```
+Every data reference and boundary event also needs its own `BPMNShape`/`BPMNEdge` (§4).
+
 ### Camunda 7 extensions (optional)
 `camunda:assignee`, `camunda:candidateGroups`, `camunda:formKey` on `userTask`; `camunda:class`,
 `camunda:delegateExpression`, `camunda:topic` on `serviceTask`; `camunda:formData` inside

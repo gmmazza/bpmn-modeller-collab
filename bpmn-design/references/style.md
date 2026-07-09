@@ -106,6 +106,11 @@ gateway merely routes based on the end state that activity produced. Most misund
   labels match (`Charge ok` end → `Charge ok` gate). *Why:* mechanical traceability — the reader drills
   from the parent gateway into the child and finds the matching outcome. This is what turns BPMN from
   "compliant" into genuine communication.
+- **4.4 (BPMN-compartida):** this app expresses the same traceability *without* a gateway after the
+  stage. The decision lives **inside** the subprocess; each distinct outcome is an **escalation end**
+  paired to an **escalation boundary** on the master's Call Activity by `escalationCode`. The number and
+  names of the subprocess's escalation ends are what the master's outcome-exits must match. See
+  `profile.md` §3.
 
 ---
 

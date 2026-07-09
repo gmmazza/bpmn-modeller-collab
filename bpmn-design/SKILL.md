@@ -8,7 +8,9 @@ description: >-
   gets fulfilled", "turn this SOP into a flowchart"). Also to review, critique, fix, or validate an
   existing BPMN diagram, or answer "how do I model X in BPMN". Produces .bpmn XML that actually renders
   in bpmn.io/Camunda (semantic + diagram-interchange layers) with correct notation, naming, and layout.
-  NOT for other diagram kinds — skip it for UML class/sequence diagrams, ER/database schemas, org
+  Inside a BPMN-compartida workspace (a synced folder with `_bpmn-design/`) it also applies this app's
+  element profile, two-level master/subprocess contract, and data/tools layer so the diagram passes the
+  project lint and publishes. NOT for other diagram kinds — skip it for UML class/sequence diagrams, ER/database schemas, org
   charts, Gantt charts, mind maps, cloud or software-architecture diagrams, or code control-flow /
   state-machine diagrams, even when the user says "process", "flow", or "diagram".
 ---
@@ -22,6 +24,12 @@ Generate `.bpmn` files that render correctly, and review/improve existing diagra
 2. **A `.bpmn` has two layers** — *semantic* (logic) and *DI* (coordinates). Both must be present and
    paired 1:1, or the file parses but **renders blank**. This is the #1 failure mode. A bundled script
    checks it for you (see *Validate*).
+
+**In a BPMN-compartida workspace there is a third truth:** the model must follow **this project's
+profile and contract** to publish — precise task typing, a mandatory `default` on every exclusive
+split, a single-entry/classified-outcome **subprocess contract**, and satellite data in **sidecars,
+never in the `.bpmn`**. That layer lives in `references/profile.md`; read it whenever you generate or
+review a diagram for this app. The universal craft below still applies underneath it.
 
 ## Load only what the task needs (progressive disclosure)
 
@@ -45,6 +53,9 @@ addressable (each file has a table of contents) — read the *section*, not the 
 | Many steps (~10+) / needs phases | `style.md` §7 (hierarchy, collapse into sub-processes) |
 | Will run on an engine (executable) | `correctness.md` §1 + `xml-serialization.md` §3 (conditions, extensions, `isExecutable="true"`) |
 | Naming/clarity of a business model | `style.md` §2 (naming) + §6 (layout) |
+| **A BPMN-compartida workspace** (element profile, publish lint) | `profile.md` §1–2 + §5 |
+| **Master + drillable stages / subprocess outcomes** | `profile.md` §3 (Call Activity, escalation-code pairing) |
+| **Forms / storage / tools per step** | `profile.md` §4 (`.datos.json` + standard data anchors) |
 
 ## Core rules (always apply — the safety net)
 
@@ -64,6 +75,35 @@ addressable (each file has a table of contents) — read the *section*, not the 
   don't cross flows. Sizes: task 100×80, event 36×36, gateway 50×50.
 - **Both layers, every element:** every node → a `BPMNShape`; every flow → a `BPMNEdge` (≥2 waypoints).
 
+## Project profile & subprocess contract (BPMN-compartida workspaces)
+
+When the diagram lives in this app's workspace, layer these **on top of** the craft rules. Full detail
+and a worked example in `profile.md`.
+
+- **Type every task, precisely.** `manualTask`(N1) / `userTask`(N2) / `serviceTask`(N3) map to
+  automation maturity — never a bare untyped `task`. Curated event palette only: none / message
+  (with `messageRef`) / timer (waits, deadlines, SLA) / escalation / error / terminate.
+- **Every diverging exclusive gateway needs a `default` flow** (there is no runtime to evaluate
+  conditions). Parallel splits must be balanced. Inclusive/complex are out; a gateway is a split **or**
+  a join, not both. Actors = **lanes** in a single pool; multi-pool collaboration is deferred.
+- **Two-level structure.** A **master** orchestrates stages as **Call Activities**
+  (`calledElement` = the target subprocess's `<bpmn:process id>`, resolved by id across files). One
+  hierarchy level only.
+- **Subprocess contract.** Each called subprocess has **exactly one `none` start** ("viene de" is
+  derived from the master, not modeled) and outcomes = **one `none` end + N escalation ends**. Each
+  escalation end pairs to an **interrupting escalation boundary** on the caller's Call Activity by
+  `escalationCode = <process-id>__<outcome-slug>`. **Decisions live inside the subprocess** (as an
+  exclusive gateway → escalation ends), not as a gateway after the box in the master.
+- **Satellite data → sidecars, never the `.bpmn`.** Docs/ideas → `<d>.docs/`; colors/actor/maturity →
+  `<d>.layers.json`; source material → `<d>.fuentes/`; forms/storage/tools → `<d>.datos.json`. In the
+  diagram, data appears only as a **standard anchor** (`bpmn:dataObjectReference` = form,
+  `bpmn:dataStoreReference` = storage, via data associations) carrying **only a human name** — never a
+  JotForm/ClickUp URL or id.
+- **Editing never locks** (draft → Publicar). As an agent, **prefer proposing** (ideas/comments) over
+  overwriting human work; respect an advisory `.bpmn.lock` Reserva.
+- **Publish gate:** to Publicar, the diagram must pass `bpmnlint:recommended` +
+  `plugin:bpmncompartida/recommended` (the profile + contract above). See `profile.md` §5.
+
 ## Workflow: generate
 
 1. **Understand first.** Pin down: what one *instance* is, the trigger(s), the end state(s), the
@@ -76,6 +116,9 @@ addressable (each file has a table of contents) — read the *section*, not the 
 5. **Serialize both layers** from `assets/skeleton.bpmn`; keep IDs stable; every node a shape, every flow
    an edge. Standard sizes; left-to-right; nodes inside their lane band. (`xml-serialization.md` §3–5.)
 6. **Validate** (see below), fix every failure, then **self-review** against the core rules.
+7. **In a workspace:** apply the project profile & subprocess contract (`profile.md`) — type every task,
+   `default` on every XOR split, master = Call Activities, subprocess = one none-start + escalation-end
+   outcomes, data/tools in `<d>.datos.json`. The diagram must pass the publish lint (`profile.md` §5).
 
 Deliver the `.bpmn` plus a short note on choices, palette, and any assumptions/open questions.
 
@@ -108,6 +151,8 @@ via `correctness.md` §3. Treat the script as the mechanical floor, not the whol
 - **Two parties:** two pools + message flows; each pool its own start/end; model an undetailed party as a black-box pool.
 - **Race (first of several events):** **event-based gateway** → each branch to a catch event / receive task.
 - **Complexity:** collapse a phase into a **collapsed sub-process** (`⊞`); make its end states match the following gateway's gates.
+- **Stage with a non-happy outcome (this app):** subprocess decides internally (XOR + `default`) → one `none` end (happy) + an **escalation end** per alternative; the master's Call Activity carries a matching **interrupting escalation boundary** paired by `escalationCode`. Not a gateway after the box. (`profile.md` §3.)
+- **Attach a form/store to a step (this app):** document it in `<d>.datos.json`; optionally add a standard `bpmn:dataObjectReference` / `dataStoreReference` anchor (name only). (`profile.md` §4.)
 
 ## What not to do
 
@@ -115,3 +160,7 @@ via `correctness.md` §3. Treat the script as the mechanical floor, not the whol
 - Branch/merge on a task; cross a pool boundary with a sequence flow; connect same-pool nodes with a message flow.
 - Label parallel/inclusive/event-based gateways as questions (only XOR gateways are questions).
 - Reach for the executable palette (formal conditions, service bindings) for a documentation diagram.
+- **(Workspace)** Leave a task untyped, or a diverging XOR without a `default`; give a subprocess more
+  than one start; put a decision gateway in the master after a stage instead of escalation ends inside
+  the subprocess; write a JotForm/ClickUp URL or id (or any color/doc/source data) into the `.bpmn`
+  instead of the sidecar.

@@ -181,7 +181,9 @@ or vice-versa. Within one pool → sequence flow. Across pools → message flow.
 - **Embedded (expanded) sub-process:** shares parent data; exactly **one None start** + ≥1 end
   internally; no sequence flow crosses its boundary; completes when all inner tokens are consumed.
 - **Call activity:** invokes an independently-defined process/global task (not inlined); own scope;
-  data via mappings.
+  data via mappings. A called process legitimately has a **single None start** and multiple ends; an
+  **escalation end** propagates to a matching **escalation boundary** on the caller by escalation code —
+  the standard basis for this app's single-entry/classified-outcome subprocess contract (`profile.md` §3).
 - **Event sub-process:** an inline handler inside a process/sub-process, **not** connected by sequence
   flow; triggered by its start event (Error/Escalation/Message/Timer/Signal/Conditional/Compensation).
   Interrupting (solid) cancels the enclosing scope; non-interrupting (dashed) runs in parallel.

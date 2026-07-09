@@ -145,6 +145,10 @@ Markers can combine (e.g. a collapsed sub-process that is also multi-instance).
 - **Meaning:** references a reusable, globally-defined process or task (not inlined). Use to re-use
   logic across models. A call activity's name **may** duplicate another activity's (normal tasks
   should not).
+- **In a BPMN-compartida workspace** a Call Activity **is** a master's stage: `calledElement` = the
+  target subprocess's `<bpmn:process id>` (resolved by id across files), and alternative outcomes surface
+  as **interrupting escalation boundary events** paired to the subprocess's escalation ends by
+  `escalationCode`. See `profile.md` §3.
 
 ---
 
