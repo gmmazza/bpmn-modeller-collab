@@ -100,6 +100,18 @@ describe("AGENTS_MD orquestador (anti-duplicación)", () => {
   });
 });
 
+describe("AGENTS_MD BPMN profile + subprocess contract (A.3)", () => {
+  it("documents the single none-start, escalation-by-code and default-flow contract", () => {
+    expect(AGENTS_MD).toContain("## Perfil BPMN y contrato de subprocesos");
+    expect(AGENTS_MD).toContain("único inicio simple");
+    expect(AGENTS_MD).toContain("escalación");
+    expect(AGENTS_MD).toContain("emparejados por código");
+    expect(AGENTS_MD).toContain("<id-proceso>__<slug>");
+    expect(AGENTS_MD).toContain("camino por defecto");
+    expect(AGENTS_MD).toContain("obligatorio");
+  });
+});
+
 describe("ensureLocalOverlay (team, ensure-once)", () => {
   it("creates AGENTS.local.md when absent", async () => {
     const fs = createFsClient(createFakeDir());

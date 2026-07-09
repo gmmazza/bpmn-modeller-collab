@@ -63,6 +63,20 @@ Protocolo del agente:
 4. Respetá borrador/publicar: si hay trabajo humano sin publicar o una reserva \`.lock\`,
    **proponé** (idea/comentario o \`.req\`) en vez de pisar.
 
+## Perfil BPMN y contrato de subprocesos
+
+Los diagramas de este workspace siguen un perfil BPMN fijo (detalle completo y enforcement en
+\`_bpmn-design/\`), con tres reglas clave:
+
+- Cada subproceso llamado tiene **un único inicio simple** (none start event) — nunca más de uno,
+  nunca tipado.
+- Sus salidas alternativas se modelan como **eventos de escalación**, emparejados por código entre
+  el fin del subproceso y el borde de escalación en el llamador: \`<id-proceso>__<slug>\`.
+- Toda compuerta exclusiva que se abre (2+ salidas) debe declarar un **camino por defecto
+  (default) obligatorio**.
+
+El lint del proyecto hace cumplir estas tres reglas al publicar.
+
 ## Precedencia de instrucciones (mayor autoridad primero)
 
 1. **Protocolo de colaboración** (arriba) — no negociable; la app lo enforcea mecánicamente.
