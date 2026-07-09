@@ -157,4 +157,18 @@ describe("addEscalationBoundary / removeEscalationBoundary (master side)", () =>
     const stillThere = process.flowElements.find((fe: any) => (fe.$type ?? "").endsWith("BoundaryEvent"));
     expect(stillThere).toBeUndefined();
   });
+
+  it("reuses an existing escalation with the same code across two boundary attachments", async () => {
+    const modeler = await fakeModeler(MASTER_XML);
+    addEscalationBoundary(modeler, {
+      callActivityId: "s3", escalationCode: code, outcomeName: "Devuelto sin reparar", destinationId: "end_norep",
+    });
+    addEscalationBoundary(modeler, {
+      callActivityId: "s4", escalationCode: code, outcomeName: "Devuelto sin reparar", destinationId: "end_norep",
+    });
+    const escalations = modeler.__definitions.rootElements.filter(
+      (r: any) => (r.$type ?? "").endsWith("Escalation") && r.escalationCode === code,
+    );
+    expect(escalations).toHaveLength(1);
+  });
 });

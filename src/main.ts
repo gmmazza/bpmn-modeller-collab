@@ -169,6 +169,7 @@ async function bootstrap() {
   let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
+  let masterNodeTypes = new Map<string, string>(); // elementId -> $type, to filter valid outcome destinations
   let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
 
@@ -267,8 +268,12 @@ async function bootstrap() {
     const masterFile = currentMasterFile;
     if (!masterFile) return;
     const isEscalation = ((endEl.businessObject?.eventDefinitions ?? [])[0]?.$type ?? "").endsWith("EscalationEventDefinition");
-    // Destinations = master stages + master end events (id + name), from masterNodeNames.
-    const destinations = [...masterNodeNames.entries()].map(([id, name]) => ({ id, label: name || id }));
+    // Destinations = master stages (Call Activities) + master end events only. Filtering by
+    // type keeps tasks/gateways/sequence-flows out of the picker: a non-node target would
+    // make addEscalationBoundary's modeling.connect throw or corrupt the diagram.
+    const destinations = [...masterNodeNames.entries()]
+      .filter(([id]) => { const t = masterNodeTypes.get(id) ?? ""; return t.endsWith("CallActivity") || t.endsWith("EndEvent"); })
+      .map(([id, name]) => ({ id, label: name || id }));
     const rect = endEl.gfx?.getBoundingClientRect?.() ?? new DOMRect();
     renderOutcomePopover(rect, {
       end: { id: endEl.id, name: endEl.businessObject?.name ?? "", isEscalation },
@@ -1948,9 +1953,10 @@ async function bootstrap() {
     showStageHint(true);
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     masterNodeNames = new Map();
+    masterNodeTypes = new Map();
     try {
-      const els = await parseCallLinks(masterXml); // RawEl[] carry id + name
-      for (const el of els) masterNodeNames.set(el.id, el.name ?? "");
+      const els = await parseCallLinks(masterXml); // RawEl[] carry id + name + type
+      for (const el of els) { masterNodeNames.set(el.id, el.name ?? ""); masterNodeTypes.set(el.id, el.type ?? ""); }
     } catch { /* names are best-effort */ }
     if (mc) {
       mc.innerHTML = "";

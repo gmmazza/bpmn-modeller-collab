@@ -5,6 +5,21 @@
 // (and the app's coarse-undo layer) captures them.
 import { escalationCodeFor } from "./escalationCode";
 
+// Find an existing bpmn:Escalation root element with this code, or declare a new one
+// (id convention `Escalation_<code>` so re-marking / re-attaching reuses the same
+// declaration). Shared by the subprocess side (markEndAsEscalation) and the master side
+// (addEscalationBoundary).
+function findOrCreateEscalation(defs: any, bpmnFactory: any, code: string, name: string): any {
+  let escalation = (defs.rootElements ?? []).find(
+    (r: any) => (r.$type ?? "").endsWith("Escalation") && r.escalationCode === code,
+  );
+  if (!escalation) {
+    escalation = bpmnFactory.create("bpmn:Escalation", { id: `Escalation_${code}`, name, escalationCode: code });
+    defs.rootElements.push(escalation);
+  }
+  return escalation;
+}
+
 function definitionsOf(modeler: { get(s: string): any }): any {
   // Deliberately NOT `modeler.get("canvas").getRootElement().businessObject.$parent`:
   // in happy-dom, calling canvas.getRootElement() lazily triggers Canvas._setRoot,
@@ -29,16 +44,7 @@ export function markEndAsEscalation(
   const code = escalationCodeFor(args.processId, args.outcomeName);
   const defs = definitionsOf(modeler);
 
-  // Reuse an existing escalation with this code, or declare a new root element.
-  let escalation = (defs.rootElements ?? []).find(
-    (r: any) => (r.$type ?? "").endsWith("Escalation") && r.escalationCode === code,
-  );
-  if (!escalation) {
-    escalation = bpmnFactory.create("bpmn:Escalation", {
-      id: `Escalation_${code}`, name: args.outcomeName, escalationCode: code,
-    });
-    defs.rootElements.push(escalation);
-  }
+  const escalation = findOrCreateEscalation(defs, bpmnFactory, code, args.outcomeName);
   const def = bpmnFactory.create("bpmn:EscalationEventDefinition", { escalationRef: escalation });
   def.$parent = endElement.businessObject;
   modeling.updateProperties(endElement, { eventDefinitions: [def] });
@@ -64,16 +70,12 @@ export function addEscalationBoundary(
 
   const callActivity = elementRegistry.get(args.callActivityId);
   const destination = elementRegistry.get(args.destinationId);
+  // Both endpoints must resolve to live shapes; otherwise modeling.createShape/connect would
+  // dereference undefined and throw mid-mutation, leaving the command stack half-applied.
+  if (!callActivity) throw new Error(`addEscalationBoundary: call activity not found: ${args.callActivityId}`);
+  if (!destination) throw new Error(`addEscalationBoundary: destination not found: ${args.destinationId}`);
 
-  let escalation = (defs.rootElements ?? []).find(
-    (r: any) => (r.$type ?? "").endsWith("Escalation") && r.escalationCode === args.escalationCode,
-  );
-  if (!escalation) {
-    escalation = bpmnFactory.create("bpmn:Escalation", {
-      id: `Escalation_${args.escalationCode}`, name: args.outcomeName, escalationCode: args.escalationCode,
-    });
-    defs.rootElements.push(escalation);
-  }
+  const escalation = findOrCreateEscalation(defs, bpmnFactory, args.escalationCode, args.outcomeName);
   const eventDef = bpmnFactory.create("bpmn:EscalationEventDefinition", { escalationRef: escalation });
   const boundaryBo = bpmnFactory.create("bpmn:BoundaryEvent", {
     cancelActivity: true, attachedToRef: callActivity.businessObject, eventDefinitions: [eventDef],

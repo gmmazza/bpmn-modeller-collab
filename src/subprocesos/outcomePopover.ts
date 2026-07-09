@@ -44,7 +44,7 @@ export function renderOutcomePopover(anchor: DOMRect, deps: OutcomePopoverDeps):
     mark.className = "idea-pop-row";
     mark.type = "button";
     mark.textContent = "Marcar como resultado alternativo";
-    mark.addEventListener("click", () => { const dest = select.value; close(); void deps.onMarkAlternative(dest); });
+    mark.addEventListener("click", () => { const dest = select.value; if (!dest) return; close(); void deps.onMarkAlternative(dest); });
     pop.append(select, mark);
   }
 
