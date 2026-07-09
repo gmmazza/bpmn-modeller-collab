@@ -89,6 +89,8 @@ import { createProcessRegistry } from "./subprocesos/processRegistry";
 import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
 import { renderLinkPopover } from "./subprocesos/linkPopover";
 import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageOverlays";
+import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
+import { renderOutcomePopover } from "./subprocesos/outcomePopover";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -252,6 +254,67 @@ async function bootstrap() {
     if (state.kind === "editing" && state.conflict) return;
     const newMasterXml = await api.getXml(masterFile);
     await enterMasterMode(masterFile, newMasterXml);
+  }
+
+  // ---- A.3 assisted outcome authoring (Marcar como resultado alternativo / Volver) ----
+  // Clicking an end event in the stage editor (while a stage is open in master mode) opens
+  // a popover to convert a plain none-end into an escalation end (declaring the escalation
+  // and adding the master's matching interrupting boundary wired to a chosen destination),
+  // or the inverse. Both sides round-trip through the existing draft->publish + conflict
+  // path (see markOutcomeAlternative / revertOutcomeNormal). The click handler is
+  // registered once in mountModeler and gated on currentMasterFile + an open stage.
+  function openOutcomePopover(endEl: any, stageFile: string): void {
+    const masterFile = currentMasterFile;
+    if (!masterFile) return;
+    const isEscalation = ((endEl.businessObject?.eventDefinitions ?? [])[0]?.$type ?? "").endsWith("EscalationEventDefinition");
+    // Destinations = master stages + master end events (id + name), from masterNodeNames.
+    const destinations = [...masterNodeNames.entries()].map(([id, name]) => ({ id, label: name || id }));
+    const rect = endEl.gfx?.getBoundingClientRect?.() ?? new DOMRect();
+    renderOutcomePopover(rect, {
+      end: { id: endEl.id, name: endEl.businessObject?.name ?? "", isEscalation },
+      destinations,
+      onMarkAlternative: (destId) => markOutcomeAlternative(stageFile, masterFile, endEl.id, destId),
+      onRevertNormal: () => revertOutcomeNormal(stageFile, masterFile, endEl.id),
+    });
+  }
+
+  async function markOutcomeAlternative(stageFile: string, masterFile: string, endId: string, destinationId: string): Promise<void> {
+    // 1) Subprocess side: mark the end as escalation, publish the stage.
+    const stageEnd = (modeler.get("elementRegistry") as any).get(endId);
+    if (!stageEnd) { showToast("No se encontró el resultado en el subproceso"); return; }
+    const pid = (await parseDiagramInfo(await api.getXml(stageFile))).processId;
+    const outcomeName = stageEnd.businessObject?.name ?? endId;
+    const code = markEndAsEscalation(modeler, stageEnd, { processId: pid, outcomeName });
+    await save(stageFile);
+    if (state.kind === "editing" && state.conflict) return; // let the user resolve
+    // 2) Master side: open master, add the interrupting boundary + destination flow, publish.
+    const callActivityId = callLinksFromEls(await parseCallLinks(await api.getXml(masterFile)))
+      .find((l) => l.calledElement === pid)?.elementId;
+    if (!callActivityId) { showToast("No se encontró la etapa en el mapa"); return; }
+    await openFile(masterFile, { asPlainEditor: true });
+    addEscalationBoundary(modeler, { callActivityId, escalationCode: code, outcomeName, destinationId });
+    await save(masterFile);
+    if (state.kind === "editing" && state.conflict) return;
+    // 3) Re-enter the map and re-open the stage so badges/overlays reflect the new outcome.
+    await enterMasterMode(masterFile, await api.getXml(masterFile));
+    await openStage(stageFile);
+  }
+
+  async function revertOutcomeNormal(stageFile: string, masterFile: string, endId: string): Promise<void> {
+    const stageEnd = (modeler.get("elementRegistry") as any).get(endId);
+    if (!stageEnd) return;
+    const code = ((stageEnd.businessObject?.eventDefinitions ?? [])[0]?.escalationRef?.escalationCode) as string | undefined;
+    revertEscalationToNormal(modeler, stageEnd);
+    await save(stageFile);
+    if (state.kind === "editing" && state.conflict) return;
+    if (code) {
+      await openFile(masterFile, { asPlainEditor: true });
+      removeEscalationBoundary(modeler, code);
+      await save(masterFile);
+      if (state.kind === "editing" && state.conflict) return;
+    }
+    await enterMasterMode(masterFile, await api.getXml(masterFile));
+    await openStage(stageFile);
   }
 
   // "Crear subproceso nuevo": generate a fresh skeleton .bpmn, write it to the shared
@@ -561,6 +624,17 @@ async function bootstrap() {
         const file = findEventCounterpart(events[0], docsFileId, idx);
         if (file) { showToast(`Ir al proceso vinculado: ${baseNameOfFile(file)}`); await openFile(file); }
       })().catch(onError);
+    });
+    // A.3: while a stage is open inside a master map, clicking an end event offers the
+    // outcome popover (Marcar como resultado alternativo / Volver a resultado normal).
+    // Registered once here (not per openStage) since the modeler persists across
+    // drill-downs; gated on master mode + an open stage (state.fileId is that stage).
+    modeler.get("eventBus").on("element.click", (e: { element: any }) => {
+      const el = e?.element;
+      if (!currentMasterFile || !el || !(el.type ?? "").endsWith("EndEvent")) return;
+      const stageFile = state.kind === "editing" ? state.fileId : null;
+      if (!stageFile) return;
+      openOutcomePopover(el, stageFile);
     });
   }
 
