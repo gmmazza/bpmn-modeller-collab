@@ -133,6 +133,35 @@ describe("renderFuentesPanel", () => {
     expect(host.querySelector('[data-name="a.docx"] [data-act="ver-ideas"]')).toBeNull();
   });
 
+  // Task 10 (empty-render regression) — render-layer guard. The reported symptom
+  // ("aparece totalmente sin contenido") was a main.ts wiring bug: renderFuentes
+  // early-returned on an empty docsFileId so renderFuentesPanel never ran (proven +
+  // guarded by the e2e in a5-ux.spec.ts). These lock the OTHER half: once the panel
+  // DOES render, it must never be blank — the dropzone always shows, and a file with
+  // no sources shows the empty-state copy rather than a bare pane.
+  it("always renders the dropzone, even with no sources", async () => {
+    const host = document.createElement("div");
+    const d = deps({ client: createFuentesClient(stubFs({}), "d.bpmn") });
+    await renderFuentesPanel(host, d);
+    expect(host.querySelector(".fuente-dropzone")).toBeTruthy();
+  });
+
+  it("shows the empty-state copy (and both counted sections) when there are no sources", async () => {
+    const host = document.createElement("div");
+    const d = deps({ client: createFuentesClient(stubFs({}), "d.bpmn") });
+    await renderFuentesPanel(host, d);
+    expect(host.querySelector(".fuente-empty")).toBeTruthy();
+    expect(host.querySelector('section[data-estado="pendiente"] h3')?.textContent).toContain("(0)");
+    expect(host.querySelector('section[data-estado="procesada"] h3')?.textContent).toContain("(0)");
+  });
+
+  it("does not show the empty-state copy when there are sources", async () => {
+    const host = document.createElement("div");
+    await renderFuentesPanel(host, deps());
+    expect(host.querySelector(".fuente-empty")).toBeNull();
+    expect(host.querySelector('section[data-estado="pendiente"] h3')?.textContent).toContain("(1)");
+  });
+
   it("a second click while the preview read is still in flight does not leak a duplicate preview", async () => {
     const host = document.createElement("div");
     let resolveRead!: (bytes: Uint8Array | null) => void;

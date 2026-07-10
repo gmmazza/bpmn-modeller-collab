@@ -1,8 +1,10 @@
 // Link popover for a call-activity box on the master pane: offers "Vincular" (pick an
-// existing process) + "Crear" when unlinked, or "Ir al subproceso" + "Desvincular" when
-// already linked. Mirrors processDocs/ideaElementPopover.ts's container/positioning/
-// dismiss pattern; unlike it, this returns the raw HTMLElement (not a {close()} handle)
-// so pure render/behavior can be asserted directly in tests.
+// existing process) + "Crear" when unlinked, or "Desvincular" when already linked.
+// Drilling into the linked subprocess is double-click only (see masterPane.ts's
+// onDrill), so this popover no longer offers a redundant "Ir al subproceso" action.
+// Mirrors processDocs/ideaElementPopover.ts's container/positioning/dismiss pattern;
+// unlike it, this returns the raw HTMLElement (not a {close()} handle) so pure
+// render/behavior can be asserted directly in tests.
 export interface LinkPopoverElement {
   id: string;
   name: string;
@@ -19,7 +21,6 @@ export interface LinkPopoverDeps {
   processes: LinkPopoverProcess[];
   onLinkExisting(processId: string): void | Promise<void>;
   onCreateNew(): void | Promise<void>;
-  onGoToSubprocess(): void | Promise<void>;
   onUnlink(): void | Promise<void>;
 }
 
@@ -36,14 +37,6 @@ export function renderLinkPopover(anchor: DOMRect, deps: LinkPopoverDeps): HTMLE
   pop.append(title);
 
   if (deps.element.calledElement) {
-    const goBtn = document.createElement("button");
-    goBtn.dataset.act = "ir";
-    goBtn.className = "idea-pop-row";
-    goBtn.type = "button";
-    goBtn.textContent = "Ir al subproceso";
-    goBtn.addEventListener("click", () => { close(); void deps.onGoToSubprocess(); });
-    pop.append(goBtn);
-
     const unlinkBtn = document.createElement("button");
     unlinkBtn.dataset.act = "desvincular";
     unlinkBtn.className = "idea-pop-row";

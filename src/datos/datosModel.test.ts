@@ -5,6 +5,7 @@ import {
   addEntry,
   removeEntry,
   setAnchoredId,
+  distinctTools,
 } from "./datosModel";
 
 describe("defaultDatosFile", () => {
@@ -20,14 +21,14 @@ describe("normalizeDatosFile", () => {
     expect(normalizeDatosFile({ elementos: "nope" })).toEqual({ version: 1, elementos: {} });
   });
 
-  it("keeps valid entries and drops malformed ones (missing nombre, unknown tool)", () => {
+  it("keeps free-text tools and only drops entries with an empty nombre", () => {
     const raw = {
       version: 1,
       elementos: {
         t1: {
           formularios: [
-            { id: "a", tool: "jotform", nombre: "Recepción", url: "https://x" },
-            { id: "b", tool: "carrier-pigeon", nombre: "malo", url: "" }, // unknown tool → dropped
+            { id: "a", tool: "JotForm", nombre: "Recepción", url: "https://x" },
+            { id: "b", tool: "Google Forms", nombre: "Alta", url: "" }, // free text → kept
             { id: "c", tool: "otro", nombre: "", url: "" }, // empty nombre → dropped
           ],
           almacenamiento: [],
@@ -36,7 +37,7 @@ describe("normalizeDatosFile", () => {
       },
     };
     const nf = normalizeDatosFile(raw);
-    expect(nf.elementos.t1.formularios).toEqual([{ id: "a", tool: "jotform", nombre: "Recepción", url: "https://x" }]);
+    expect(nf.elementos.t1.formularios.map((e) => e.tool)).toEqual(["JotForm", "Google Forms"]);
   });
 
   it("drops an element entry entirely once all its categories are empty", () => {
@@ -109,5 +110,17 @@ describe("setAnchoredId", () => {
     file = added.file;
     file = setAnchoredId(file, "t1", "formularios", added.entry.id, "DataObjectReference_1");
     expect(file.elementos.t1.formularios[0].anchoredId).toBe("DataObjectReference_1");
+  });
+});
+
+describe("distinctTools", () => {
+  it("collects distinct non-empty tools across files, sorted, case-insensitively deduped", () => {
+    const f1 = normalizeDatosFile({ version: 1, elementos: { t1: { formularios: [{ id: "a", tool: "JotForm", nombre: "R", url: "" }], almacenamiento: [{ id: "b", tool: "ClickUp", nombre: "S", url: "" }], herramientas: [] } } });
+    const f2 = normalizeDatosFile({ version: 1, elementos: { t2: { formularios: [{ id: "c", tool: "jotform", nombre: "T", url: "" }], almacenamiento: [], herramientas: [{ id: "d", tool: "Airtable", nombre: "U", url: "" }] } } });
+    expect(distinctTools([f1, f2])).toEqual(["Airtable", "ClickUp", "JotForm"]);
+  });
+  it("ignores empty tools", () => {
+    const f = normalizeDatosFile({ version: 1, elementos: { t1: { formularios: [{ id: "a", tool: "", nombre: "R", url: "" }], almacenamiento: [], herramientas: [] } } });
+    expect(distinctTools([f])).toEqual([]);
   });
 });

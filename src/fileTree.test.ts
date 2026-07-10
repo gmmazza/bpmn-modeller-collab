@@ -47,6 +47,43 @@ describe("renderFileTree", () => {
     renderFileTree(el2, entries, { expanded: new Set(), selectedId: null, me }, handlers);
     expect(el2.querySelector('[data-path="RRHH.bpmn"] .file-master-chip')).toBeNull();
   });
+  it("shows a .ft-open-chip and .ft-open class on rows whose path is in openPaths, none otherwise", () => {
+    const handlers = { onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {} };
+    const el = document.createElement("div");
+    renderFileTree(el, entries, { expanded: new Set(), selectedId: null, me, openPaths: new Set(["RRHH.bpmn"]) }, handlers);
+    const rowOpen = el.querySelector('[data-path="RRHH.bpmn"]')!;
+    const rowNotOpen = el.querySelector('[data-path="Ventas"]')!;
+    expect(rowOpen.querySelector(".ft-open-chip")).not.toBeNull();
+    expect(rowOpen.classList.contains("ft-open")).toBe(true);
+    expect(rowNotOpen.querySelector(".ft-open-chip")).toBeNull();
+    expect(rowNotOpen.classList.contains("ft-open")).toBe(false);
+
+    const el2 = document.createElement("div");
+    renderFileTree(el2, entries, { expanded: new Set(), selectedId: null, me }, handlers);
+    expect(el2.querySelector('[data-path="RRHH.bpmn"] .ft-open-chip')).toBeNull();
+    expect(el2.querySelector('[data-path="RRHH.bpmn"]')!.classList.contains("ft-open")).toBe(false);
+  });
+  it("wipes only the .files-tree content on repeated renders, leaving a sibling .files-resizer untouched (regression: resize handle used to be destroyed by tree refresh)", () => {
+    const outer = document.createElement("aside");
+    outer.id = "files";
+    const tree = document.createElement("div");
+    tree.className = "files-tree";
+    const resizer = document.createElement("div");
+    resizer.className = "files-resizer";
+    outer.append(tree, resizer);
+
+    const handlers = { onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {} };
+    renderFileTree(tree, entries, { expanded: new Set(), selectedId: null, me }, handlers);
+    // First render: tree content landed inside .files-tree, handle still a sibling in #files.
+    expect(tree.querySelector('[data-path="RRHH.bpmn"]')).not.toBeNull();
+    expect(outer.querySelector(".files-resizer")).not.toBeNull();
+
+    // Refresh (as refreshFileList() does repeatedly on the hot path).
+    renderFileTree(tree, entries, { expanded: new Set(["Ventas"]), selectedId: null, me }, handlers);
+    expect(tree.querySelector('[data-path="Ventas/B2B.bpmn"]')).not.toBeNull();
+    expect(outer.querySelector(".files-resizer")).not.toBeNull();
+    expect(outer.children.length).toBe(2); // still exactly .files-tree + .files-resizer
+  });
 });
 
 describe("visibleEntries", () => {

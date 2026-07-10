@@ -1,9 +1,10 @@
-export type ToolKind = "jotform" | "clickup" | "otro";
 export type DatosCategory = "formularios" | "almacenamiento" | "herramientas";
 
 export interface DatosEntry {
   id: string;
-  tool: ToolKind;
+  // Free text — any tool name the user types (JotForm, Google Forms, WhatsApp, an in-house
+  // system, …). Not a closed enum: the set of tools teams actually use is open-ended.
+  tool: string;
   nombre: string;
   url: string;
   // id of the standard bpmn:DataObjectReference/bpmn:DataStoreReference this entry was
@@ -21,7 +22,6 @@ export interface DatosFile {
   elementos: Record<string, ElementoDatos>;
 }
 
-const TOOL_KINDS: ReadonlySet<string> = new Set(["jotform", "clickup", "otro"]);
 const CATEGORIES: readonly DatosCategory[] = ["formularios", "almacenamiento", "herramientas"];
 
 export function defaultDatosFile(): DatosFile {
@@ -34,9 +34,6 @@ export function emptyElementoDatos(): ElementoDatos {
 function isStr(v: unknown): v is string {
   return typeof v === "string";
 }
-function isToolKind(v: unknown): v is ToolKind {
-  return isStr(v) && TOOL_KINDS.has(v);
-}
 function isElementoEmpty(e: ElementoDatos): boolean {
   return !e.formularios.length && !e.almacenamiento.length && !e.herramientas.length;
 }
@@ -44,8 +41,8 @@ function isElementoEmpty(e: ElementoDatos): boolean {
 function normEntry(raw: unknown): DatosEntry | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Record<string, unknown>;
-  if (!isStr(e.id) || !isToolKind(e.tool) || !isStr(e.nombre) || e.nombre.trim() === "") return null;
-  const entry: DatosEntry = { id: e.id, tool: e.tool, nombre: e.nombre, url: isStr(e.url) ? e.url : "" };
+  if (!isStr(e.id) || !isStr(e.nombre) || e.nombre.trim() === "") return null;
+  const entry: DatosEntry = { id: e.id, tool: isStr(e.tool) ? e.tool : "", nombre: e.nombre, url: isStr(e.url) ? e.url : "" };
   if (isStr(e.anchoredId)) entry.anchoredId = e.anchoredId;
   return entry;
 }
@@ -98,7 +95,7 @@ export function addEntry(
   file: DatosFile,
   elementId: string,
   category: DatosCategory,
-  input: { tool: ToolKind; nombre: string; url: string },
+  input: { tool: string; nombre: string; url: string },
 ): { file: DatosFile; entry: DatosEntry } {
   const nombre = input.nombre.trim();
   if (!nombre) throw new Error("el nombre es obligatorio");
@@ -140,4 +137,21 @@ export function setAnchoredId(
 // Exported for callers that need to iterate every category generically (e.g. badges).
 export function categories(): readonly DatosCategory[] {
   return CATEGORIES;
+}
+
+// Distinct non-empty tool names across many datos files (for the panel's autocomplete).
+// Case-insensitive dedupe keeps the FIRST-seen casing; sorted for a stable suggestion list.
+export function distinctTools(files: DatosFile[]): string[] {
+  const seen = new Map<string, string>();
+  for (const f of files) {
+    for (const el of Object.values(f.elementos)) {
+      for (const cat of CATEGORIES) {
+        for (const entry of el[cat]) {
+          const t = entry.tool.trim();
+          if (t && !seen.has(t.toLowerCase())) seen.set(t.toLowerCase(), t);
+        }
+      }
+    }
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }

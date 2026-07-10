@@ -52,11 +52,19 @@ describe("renderDatosPanel — with a selected element", () => {
     await renderDatosPanel(host, d);
     const form = host.querySelector('section[data-category="formularios"] form') as HTMLFormElement;
     (form.querySelector(".dato-add-nombre") as HTMLInputElement).value = "Recepción — alta";
-    (form.querySelector(".dato-add-tool") as HTMLSelectElement).value = "jotform";
+    (form.querySelector(".dato-add-tool") as HTMLInputElement).value = "Google Forms";
     (form.querySelector(".dato-add-url") as HTMLInputElement).value = "https://form.jotform.com/x";
     form.dispatchEvent(new Event("submit", { cancelable: true }));
     await flush();
-    expect(host.querySelector('[data-category="formularios"][data-entry-id] .dato-name')?.textContent).toBe("Recepción — alta");
+    const nameEl = host.querySelector('[data-category="formularios"][data-entry-id] .dato-name');
+    expect(nameEl?.textContent).toBe("Recepción — alta");
+  });
+
+  it("renders tool suggestions as <datalist> options from toolSuggestions", async () => {
+    const host = document.createElement("div");
+    await renderDatosPanel(host, deps({ toolSuggestions: ["Airtable", "JotForm"] }));
+    const opts = Array.from(host.querySelectorAll('datalist#dato-tools-formularios option')).map((o) => (o as HTMLOptionElement).value);
+    expect(opts).toEqual(["Airtable", "JotForm"]);
   });
 
   it("a duplicate nombre routes the error to onError instead of throwing", async () => {
@@ -125,7 +133,7 @@ describe("renderDatosPanel — with a selected element", () => {
 
     const form = host.querySelector('section[data-category="formularios"] form') as HTMLFormElement;
     (form.querySelector(".dato-add-nombre") as HTMLInputElement).value = "Recepción — alta";
-    (form.querySelector(".dato-add-tool") as HTMLSelectElement).value = "jotform";
+    (form.querySelector(".dato-add-tool") as HTMLInputElement).value = "JotForm";
     form.dispatchEvent(new Event("submit", { cancelable: true }));
     await flush();
     expect(onChanged).toHaveBeenCalledTimes(1);
