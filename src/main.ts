@@ -237,11 +237,6 @@ async function bootstrap() {
       processes: registry.all(),
       onLinkExisting: (processId) => linkMasterBox(masterFile, info.elementId, processId),
       onCreateNew: () => createAndLinkSubprocess(masterFile, { id: info.elementId, name: info.name, type: "" }),
-      onGoToSubprocess: async () => {
-        const entry = info.calledElement ? registry.resolve(info.calledElement) : null;
-        if (entry) await openStage(entry.file);
-        else showToast("No se pudo resolver el subproceso vinculado");
-      },
       onUnlink: () => unlinkMasterBox(masterFile, info.elementId),
     });
   }
