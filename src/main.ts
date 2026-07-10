@@ -875,6 +875,45 @@ async function bootstrap() {
     });
   }
 
+  // Drag the horizontal divider between the master map (top) and the open stage (bottom).
+  // Sets --master-split (a %) on #canvasarea; #master-canvas takes that as its flex-basis
+  // height while a stage is open. Persisted. Only meaningful in master-mode with a stage
+  // (the divider is [hidden] otherwise — toggled by showStageHint / enter/exitMasterMode).
+  // Uses direct pointer wiring (not mountResizer): the helper's setSize receives an
+  // absolute px-based size (startSize + px delta), which doesn't compose with a
+  // percent-based split — mirrors setupCanvasSplitResize below for the % case.
+  function setupMasterSplitResize(): void {
+    const area = document.getElementById("canvasarea");
+    const handle = document.getElementById("master-split-resizer");
+    if (!area || !handle) return;
+    const saved = Number(localStorage.getItem("masterSplit"));
+    if (saved >= 15 && saved <= 85) area.style.setProperty("--master-split", `${saved}%`);
+    let dragging = false;
+    const onMove = (e: MouseEvent): void => {
+      if (!dragging) return;
+      const r = area.getBoundingClientRect();
+      const pct = Math.min(85, Math.max(15, ((e.clientY - r.top) / r.height) * 100));
+      area.style.setProperty("--master-split", `${pct}%`);
+    };
+    const onUp = (): void => {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("col-resizing");
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      const cur = getComputedStyle(area).getPropertyValue("--master-split").trim();
+      const pct = Math.round(parseFloat(cur || "40"));
+      if (pct >= 15 && pct <= 85) { try { localStorage.setItem("masterSplit", String(pct)); } catch { /* ignore */ } }
+    };
+    handle.addEventListener("mousedown", (e) => {
+      dragging = true;
+      document.body.classList.add("col-resizing");
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
   // Draggable separator between the two compare panes. Sets --split (a %) on the area;
   // the axis follows the orientation (row → width, column → height). Clamped 15–85%.
   function setupCanvasSplitResize(): void {
@@ -1220,6 +1259,7 @@ async function bootstrap() {
         <aside id="files"><div class="files-tree"></div></aside>
         <section id="canvasarea">
           <section id="master-canvas" hidden></section>
+          <div id="master-split-resizer" class="master-split-resizer" hidden></div>
           <section id="canvas"></section>
           <div id="stage-hint" hidden>Elegí una etapa en el mapa</div>
           <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
@@ -1251,6 +1291,7 @@ async function bootstrap() {
     inspector.hide();
     setupInspectorResize();
     setupFilesResize();
+    setupMasterSplitResize();
     setupCanvasSplitResize();
 
     await mountModeler();
@@ -2037,6 +2078,8 @@ async function bootstrap() {
     const hint = document.getElementById("stage-hint");
     if (hint) (hint as HTMLElement).hidden = !show;
     document.body.classList.toggle("master-no-stage", show);
+    const split = document.getElementById("master-split-resizer");
+    if (split) (split as HTMLElement).hidden = show || !document.body.classList.contains("master-mode");
   }
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
@@ -2080,6 +2123,8 @@ async function bootstrap() {
     showStageHint(false);
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
     if (mc) { mc.hidden = true; mc.innerHTML = ""; }
+    const split = document.getElementById("master-split-resizer");
+    if (split) (split as HTMLElement).hidden = true;
     const bar = document.getElementById("master-bar") as HTMLElement | null;
     if (bar) { bar.hidden = true; bar.innerHTML = ""; }
   }

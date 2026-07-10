@@ -209,6 +209,12 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 body.master-mode #canvasarea { flex-direction: column; }
 #master-canvas { flex: 0 0 40%; min-height: 0; min-width: 0; position: relative; border-bottom: 1px solid var(--border); }
 #master-canvas[hidden] { display: none; }
+/* Draggable split between the master map (top) and the open stage (bottom) — only
+   meaningful once a stage is open (:not(.master-no-stage)); overrides the 40% fallback. */
+body.master-mode:not(.master-no-stage) #master-canvas { flex: 0 0 var(--master-split, 40%); }
+.master-split-resizer { flex: none; height: 6px; cursor: row-resize; background: var(--border); z-index: 4; }
+.master-split-resizer[hidden] { display: none; }
+.master-split-resizer:hover, body.col-resizing .master-split-resizer { background: #0d9488; }
 #stage-hint { flex: 1; min-height: 0; align-items: center; justify-content: center; color: var(--text); opacity: .6; font-size: 15px; display: none; }
 #stage-hint[hidden] { display: none; }
 body.master-mode.master-no-stage #stage-hint { display: flex; }
