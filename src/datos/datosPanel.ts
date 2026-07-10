@@ -1,7 +1,6 @@
 import type { DatosClient } from "./datosClient";
-import { emptyElementoDatos, type DatosEntry, type DatosCategory, type ElementoDatos, type ToolKind } from "./datosModel";
+import { emptyElementoDatos, type DatosEntry, type DatosCategory, type ElementoDatos } from "./datosModel";
 
-const TOOL_LABEL: Record<ToolKind, string> = { jotform: "JotForm", clickup: "ClickUp", otro: "Otro" };
 const CATEGORY_LABEL: Record<DatosCategory, string> = {
   formularios: "Formularios",
   almacenamiento: "Almacenamiento",
@@ -20,6 +19,9 @@ export interface DatosPanelDeps {
   onMostrarEnDiagrama(category: DatosCategory, entry: DatosEntry): Promise<void>;
   // Called after a sidecar mutation (add/remove) so the caller can refresh diagram badges.
   onChanged?(): void;
+  // Tool names already used elsewhere in the workspace — offered as <datalist> suggestions
+  // for the free-text tool input. Best-effort; absent/empty just means no suggestions.
+  toolSuggestions?: string[];
 }
 
 function row(category: DatosCategory, entry: DatosEntry, deps: DatosPanelDeps, elementId: string, refresh: () => void): HTMLElement {
@@ -35,7 +37,7 @@ function row(category: DatosCategory, entry: DatosEntry, deps: DatosPanelDeps, e
 
   const tag = document.createElement("span");
   tag.className = "dato-tool-tag";
-  tag.textContent = TOOL_LABEL[entry.tool];
+  tag.textContent = entry.tool || "—";
   el.appendChild(tag);
 
   const act = (label: string, key: string, fn: () => void | Promise<void>) => {
@@ -79,13 +81,22 @@ function addForm(category: DatosCategory, deps: DatosPanelDeps, elementId: strin
   nombre.placeholder = "Nombre";
   nombre.className = "dato-add-nombre";
 
-  const tool = document.createElement("select");
+  // Free text — any tool name (JotForm, Google Forms, WhatsApp, an in-house system, …), with
+  // a <datalist> of tools already used elsewhere in the workspace as a convenience, not a
+  // closed set. No imposed default: it starts empty.
+  const tool = document.createElement("input");
+  tool.type = "text";
+  tool.placeholder = "Herramienta (ej. JotForm, Google Forms, WhatsApp…)";
   tool.className = "dato-add-tool";
-  for (const [value, label] of Object.entries(TOOL_LABEL)) {
+  tool.setAttribute("autocomplete", "off");
+  const listId = `dato-tools-${category}`;
+  tool.setAttribute("list", listId);
+  const datalist = document.createElement("datalist");
+  datalist.id = listId;
+  for (const t of deps.toolSuggestions ?? []) {
     const opt = document.createElement("option");
-    opt.value = value;
-    opt.textContent = label;
-    tool.appendChild(opt);
+    opt.value = t;
+    datalist.appendChild(opt);
   }
 
   const url = document.createElement("input");
@@ -98,11 +109,11 @@ function addForm(category: DatosCategory, deps: DatosPanelDeps, elementId: strin
   submit.className = "btn";
   submit.textContent = "Agregar";
 
-  form.append(nombre, tool, url, submit);
+  form.append(nombre, tool, datalist, url, submit);
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     void deps.client
-      .add(elementId, category, { tool: tool.value as ToolKind, nombre: nombre.value, url: url.value })
+      .add(elementId, category, { tool: tool.value.trim(), nombre: nombre.value, url: url.value })
       .then(() => { deps.onChanged?.(); refresh(); })
       .catch(deps.onError);
   });

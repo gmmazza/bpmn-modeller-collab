@@ -6,11 +6,11 @@ import {
   addEntry,
   removeEntry,
   setAnchoredId,
+  distinctTools,
   type DatosFile,
   type DatosEntry,
   type ElementoDatos,
   type DatosCategory,
-  type ToolKind,
 } from "./datosModel";
 
 const SUFFIX = "datos.json";
@@ -39,7 +39,7 @@ export function createDatosClient(api: SidecarApi, diagramId: string) {
     async add(
       elementId: string,
       category: DatosCategory,
-      input: { tool: ToolKind; nombre: string; url: string },
+      input: { tool: string; nombre: string; url: string },
     ): Promise<DatosEntry> {
       const file = await load();
       const { file: next, entry } = addEntry(file, elementId, category, input);
@@ -58,3 +58,19 @@ export function createDatosClient(api: SidecarApi, diagramId: string) {
 }
 
 export type DatosClient = ReturnType<typeof createDatosClient>;
+
+// Scan every diagram's <id>.datos.json and collect the distinct tool names used across the
+// whole workspace — feeds the panel's free-text autocomplete. Best-effort: an unreadable or
+// corrupt sidecar is skipped rather than failing the whole aggregation.
+export async function collectDatosTools(api: SidecarApi, diagramIds: string[]): Promise<string[]> {
+  const files: DatosFile[] = [];
+  for (const id of diagramIds) {
+    try {
+      const txt = await api.readSidecar(id, SUFFIX);
+      files.push(txt ? normalizeDatosFile(JSON.parse(txt)) : defaultDatosFile());
+    } catch {
+      /* skip unreadable/corrupt sidecars */
+    }
+  }
+  return distinctTools(files);
+}

@@ -42,7 +42,7 @@ import { createTemplatesClient, type TemplatesClient } from "./layers/layerTempl
 import { createFuentesClient } from "./fuentes/fuentesClient";
 import { renderFuentesPanel } from "./fuentes/fuentesPanel";
 import { hasOpenPath, openSourceExternal } from "./fuentesApi";
-import { createDatosClient } from "./datos/datosClient";
+import { createDatosClient, collectDatosTools } from "./datos/datosClient";
 import { renderDatosPanel } from "./datos/datosPanel";
 import { createDatosOverlays } from "./datos/datosBadges";
 import { openExternalUrl } from "./datos/externalUrl";
@@ -1039,6 +1039,13 @@ async function bootstrap() {
     const panel = inspector.paneEl("datos");
     if (!panel || panel.hidden || !docsFileId) return;
     const client = createDatosClient(api, docsFileId);
+    const diagramIds = lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => e.path);
+    let toolSuggestions: string[] = [];
+    try {
+      toolSuggestions = await collectDatosTools(api, diagramIds);
+    } catch {
+      /* suggestions are best-effort — never block the panel */
+    }
     await renderDatosPanel(panel, {
       client,
       elementId: selectedId,
@@ -1047,6 +1054,7 @@ async function bootstrap() {
       onError,
       onMostrarEnDiagrama: (category, entry) => mostrarEnDiagrama(category, entry),
       onChanged: () => { void refreshDatosBadges(); },
+      toolSuggestions,
     });
   }
 
