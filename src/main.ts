@@ -179,7 +179,7 @@ async function bootstrap() {
     readXml: (f) => api.readPath(f),
     parseProcessId: async (xml) => (await parseDiagramInfo(xml)).processId,
   });
-  let masterHandle: MasterPaneHandle | null = null; // read-only master map viewer, when in master mode
+  let masterHandle: MasterPaneHandle | null = null; // editable master modeler pane, when in master mode
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
   let masterNodeTypes = new Map<string, string>(); // elementId -> $type, to filter valid outcome destinations
@@ -2389,6 +2389,12 @@ async function bootstrap() {
     if (ideaMode?.isOn()) void ideaMode.refresh();
     // A.2: a plain-opened stage may belong to a master's map — offer to view it there.
     if (!opts) void maybeOfferOpenInMap(fileId, shared).catch(onError);
+    // T6: refresh the tree so this file's "abierto" marker shows immediately, not just
+    // on the next incidental refresh (mirrors the renderTree(lastTree) calls the
+    // master-mode transitions already make — see enterMasterMode/openStage/closeStage/
+    // exitMasterMode). docsFileId and the "openedFile" dispatch are already set above,
+    // so openPathsNow() reflects this file as open.
+    renderTree(lastTree);
   }
 
   // Reserve the open file (optional advisory lock with a duration). Editing never

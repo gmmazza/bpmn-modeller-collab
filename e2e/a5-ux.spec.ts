@@ -149,6 +149,18 @@ test("master is editable and double-clicking a call activity drills into the sta
   expect(after!.height).toBeGreaterThan(before!.height);
 });
 
+test("opening a plain file highlights it in the tree immediately", async ({ page }) => {
+  // Fix for A.5 final review: a PLAIN (non-master) openFile() never called
+  // renderTree(lastTree), so a normally-opened file's ".ft-open" marker only
+  // appeared after the next incidental refresh. No master interaction here —
+  // this guards the plain path specifically (the test above already covers the
+  // master-mode transitions, which called renderTree(lastTree) from the start).
+  await openApp(page, { "plano.bpmn": PLAIN_BPMN });
+  await page.getByText("📄 plano.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+  await expect(page.locator('.ft-row[data-path="plano.bpmn"].ft-open')).toBeVisible();
+});
+
 test("left panel resizes and the open file is highlighted in the tree", async ({ page }) => {
   // The "abierto" (.ft-open) marker is wired via the master/stage split-pane tracking
   // (openPathsNow() + the explicit renderTree(lastTree) calls in enter/exitMasterMode and
