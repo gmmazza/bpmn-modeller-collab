@@ -35,29 +35,3 @@ export async function savePersonalInstructions(
   await api.writePath(path, HEADER + text.trim() + "\n");
   return "saved";
 }
-
-// Modal simple (modelado sobre changeFolder()/showHelp()). Efecto DOM; no se testea con Vitest.
-export function showPersonalInstructionsModal(api: Api, name: string | null): void {
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  const disabled = personalOverlayPath(name) ? "" : "disabled";
-  overlay.innerHTML = `
-    <div class="gate-card">
-      <h2>Instrucciones personales para la IA</h2>
-      <p>Se guardan en <code>${personalOverlayPath(name) ?? "(configurá tu nombre primero)"}</code>.
-         Tienen precedencia sobre tu skill BPMN personal, no sobre el canon del proyecto.</p>
-      <textarea id="pi-text" rows="10" style="width:100%" ${disabled}></textarea>
-      <div class="gate-actions">
-        <button class="btn" id="pi-cancel" type="button">Cancelar</button>
-        <button class="btn primary" id="pi-save" type="button" ${disabled}>Guardar</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const close = () => overlay.remove();
-  const ta = overlay.querySelector("#pi-text") as HTMLTextAreaElement;
-  void readPersonalInstructions(api, name).then((t) => { ta.value = t; });
-  overlay.querySelector("#pi-cancel")!.addEventListener("click", close);
-  overlay.querySelector("#pi-save")!.addEventListener("click", () => {
-    void savePersonalInstructions(api, name, ta.value).then(close);
-  });
-}

@@ -18,9 +18,7 @@ import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
 
-import { BUNDLED_BPMN_JS_VERSION, checkLatestBpmnJs } from "./version";
 import { evaluateUpdate } from "./appUpdate";
-import { wireAppUpdateSection } from "./updateSectionUi";
 import { createFsClient, type FsClient } from "./fsClient";
 import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
 import { createIdeasClient } from "./processDocs/ideasClient";
@@ -70,7 +68,8 @@ import { createDiffView, type DiffView } from "./diffView";
 import { isSyncConflict } from "./syncConflict";
 import { getPresets, getLastPresetId, setLastPresetId } from "./terminalPresets";
 import { openExternalTerminal, hasTermApi } from "./termApi";
-import { showAiConfigModal } from "./aiConfigModal";
+import { showConfigModal, type ConfigSection } from "./configModal";
+import { buildAiMenu } from "./aiMenu";
 import type { User, TreeEntry, LockInfo, LockState, RestorePoint } from "./types";
 import { renderFileTree } from "./fileTree";
 import { openContextMenu } from "./contextMenu";
@@ -662,55 +661,6 @@ async function bootstrap() {
     });
   }
 
-  function renderVizSettings(): void {
-    const panel = document.getElementById("vizsettings") as HTMLElement;
-    if (!panel.hidden) {
-      panel.hidden = true;
-      return;
-    }
-    const s = getVizSettings();
-    panel.innerHTML = `
-      <label><input type="checkbox" id="set-sketchy" ${s.sketchy ? "checked" : ""}/> Estilo sketchy (dibujado a mano)</label>
-      <label><input type="checkbox" id="set-heatmap" ${s.heatmap ? "checked" : ""}/> Heatmap de simulación (beta)</label>
-      <p class="hint">Se aplica recreando el editor; si tenés cambios sin guardar, se guardan primero.</p>
-      <hr/>
-      <div class="viz-version">
-        bpmn-js <b>${BUNDLED_BPMN_JS_VERSION}</b>
-        <button id="check-bpmnjs" type="button">Buscar actualización</button>
-        <span id="bpmnjs-status"></span>
-      </div>
-      ${window.appUpdate ? `<hr/>
-      <div class="viz-update">
-        <div>App <b id="app-version">…</b> <button id="check-app" type="button">Buscar actualización</button></div>
-        <div id="app-upd" class="app-upd"></div>
-      </div>` : ""}
-      <p class="hint">Build: ${__APP_BUILD__}</p>`;
-    panel.hidden = false;
-    const onToggle = () => {
-      const next: VizSettings = {
-        sketchy: (document.getElementById("set-sketchy") as HTMLInputElement).checked,
-        heatmap: (document.getElementById("set-heatmap") as HTMLInputElement).checked,
-      };
-      void applyVizSettings(next).catch(onError);
-    };
-    (document.getElementById("set-sketchy") as HTMLInputElement).addEventListener("change", onToggle);
-    (document.getElementById("set-heatmap") as HTMLInputElement).addEventListener("change", onToggle);
-    document.getElementById("check-bpmnjs")?.addEventListener("click", () => {
-      const status = document.getElementById("bpmnjs-status")!;
-      status.textContent = "Buscando…";
-      void checkLatestBpmnJs(fetchLatestBpmnJs)
-        .then((r) => {
-          status.textContent = r.isOutdated
-            ? `${r.latest} disponible — corré "npm run update:bpmn" y regenerá el .exe`
-            : `${r.latest} es la última ✓`;
-        })
-        .catch(() => {
-          status.textContent = "No se pudo verificar (offline o sin acceso)";
-        });
-    });
-    wireAppUpdateSection();
-  }
-
   async function applyVizSettings(next: VizSettings): Promise<void> {
     if (applyingViz) return;
     applyingViz = true;
@@ -1155,8 +1105,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="tab-fuentes" type="button" title="Fuentes">${icon("paperclip")}</button>
           <button class="btn icon-only" id="tab-datos" type="button" title="Datos y herramientas">${icon("database")}</button>
           <div class="menu" id="settingsmenu">
-            <button class="btn icon-only" id="settings" type="button" title="Ajustes">${icon("settings")}</button>
-            <div id="vizsettings" class="popover" hidden></div>
+            <button class="btn icon-only" id="settings" type="button" title="Configuraciones">${icon("settings")}</button>
           </div>
         </div>
         <span class="divider"></span>
@@ -1165,8 +1114,8 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
         </div>
-        <div class="tgroup ia-group">
-          <button class="btn icon-only" id="ai-config" type="button" title="Configuración de IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
+        <div class="tgroup ia-group menu">
+          <button class="btn icon-only" id="ai-config" type="button" title="IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
           <button class="btn icon-only" id="ai-quicklaunch" type="button" title="Lanzar el último preset" hidden>▶</button>
         </div>
         <span class="spacer"></span>
@@ -1366,9 +1315,13 @@ async function bootstrap() {
     });
 
     const $ = (id: string) => document.getElementById(id)!;
+    // Populated by the folder-label IIFE below; reused by both the chip's tooltip-free
+    // label and openConfigModal's "Generales" pane (deps.folderLabel) so there's one
+    // source of truth for "what folder am I in" text.
+    let folderLabel = "carpeta";
     $("folderchip").innerHTML = `${icon("folder")} <span class="folder-path"></span>`;
     $("folderchip").style.cursor = "pointer";
-    $("folderchip").addEventListener("click", () => changeFolder());
+    $("folderchip").addEventListener("click", () => openConfigModal("generales"));
     // Show the selected folder's path (Electron) or name (web). textContent — the
     // path/name is user data, never innerHTML.
     void (async () => {
@@ -1386,29 +1339,61 @@ async function bootstrap() {
       } else if (rootHandle) {
         label = rootHandle.name; full = rootHandle.name; // web (FSA) exposes only the folder name
       }
+      folderLabel = label;
       const span = $("folderchip").querySelector(".folder-path");
       if (span) span.textContent = label;
       $("folderchip").title = full ? `${full} — clic para cambiar la carpeta` : "Cambiar carpeta de trabajo";
     })();
-    const renderUserBtn = () => { $("userbtn").innerHTML = `${icon("user")} ${me.name} ${icon("chevron")}`; };
+    const renderUserBtn = () => { $("userbtn").innerHTML = `${icon("user")} ${me.name}`; };
     renderUserBtn();
     const renderThemeBtn = () => { $("themebtn").innerHTML = icon(getTheme() === "dark" ? "sun" : "moon"); };
     renderThemeBtn();
     $("themebtn").addEventListener("click", () => { toggleTheme(); renderThemeBtn(); });
     $("helpbtn").addEventListener("click", () => showHelp());
-    // Unified IA entry point (always visible). Launcher section is Electron-only (handled
-    // inside the modal via hasLauncher). Quick-launch (▶) fires the last-used preset.
-    document.getElementById("ai-config")?.addEventListener("click", () => {
+
+    // Configuraciones modal factory: a dumb view (configModal.ts) driven by the app's real
+    // closures — recreating the modeler on viz changes, reloading the folder, persisting the
+    // name, syncing the header buttons. Deep-linked by #settings, #folderchip, #userbtn, and
+    // the IA menu's "Administrar presets".
+    function openConfigModal(section: ConfigSection): void {
       if (!api) return;
-      showAiConfigModal({
+      showConfigModal({
         api,
         userName: getName(),
+        onNameChange: (n) => { setName(n); me = { name: n, email: n }; renderUserBtn(); },
+        folderLabel,
+        onChangeFolder: changeFolder, // the modal closes itself first (reload re-renders the DOM)
+        onThemeChange: () => { renderThemeBtn(); },
+        onVizChange: applyVizSettings,
+        onAutosaveChange: (on) => { render(); if (on) scheduleDraftSave(); }, // mirrors #autosave-toggle
+        fetchLatestBpmnJs,
         hasLauncher: hasTermApi(),
-        launch: (cmd) => openExternalTerminal(cmd),
+        onClose: refreshQuickLaunch, // presets may have changed in Config->IA; ▶ could be stale
         onError,
+        initialSection: section,
       });
-      refreshQuickLaunch(); // presets may have changed inside the modal; the modal exposes no
-      // close callback, so this reflects state at open time only — the next click re-syncs.
+    }
+
+    // Unified IA entry point (always visible): operational-only anchored menu — choose a
+    // preset and launch it, or open a terminal in the folder (both Electron-only, gated on
+    // hasTermApi()); "Administrar presets" deep-links to Configuraciones -> IA, where preset
+    // CRUD + personal instructions + the AGENTS.md viewer live. Toggle idiom mirrors #userbtn's.
+    document.getElementById("ai-config")?.addEventListener("click", () => {
+      const group = document.getElementById("ai-config")!.closest(".ia-group") as HTMLElement;
+      let pop = group.querySelector(".menu-pop");
+      if (pop) { pop.remove(); return; }
+      pop = document.createElement("div");
+      pop.className = "menu-pop";
+      pop.appendChild(buildAiMenu({
+        hasLauncher: hasTermApi(),
+        getPresets,
+        getLastPresetId,
+        setLastPresetId,
+        launch: (cmd) => openExternalTerminal(cmd),
+        onManagePresets: () => { pop!.remove(); openConfigModal("ia"); },
+        onError,
+      }));
+      group.appendChild(pop);
     });
 
     function refreshQuickLaunch(): void {
@@ -1457,23 +1442,7 @@ async function bootstrap() {
       overlay.querySelector("#nf-new")!.addEventListener("click", () => { close(); void newDiagram().catch(onError); });
     }, true);
 
-    $("userbtn").addEventListener("click", () => {
-      const menu = $("usermenu");
-      let pop = menu.querySelector(".menu-pop");
-      if (pop) { pop.remove(); return; }
-      pop = document.createElement("div");
-      pop.className = "menu-pop";
-      pop.innerHTML = `<button id="um-name" type="button">Cambiar nombre</button><button id="um-folder" type="button">Cambiar carpeta</button>`;
-      menu.appendChild(pop);
-      document.getElementById("um-name")!.addEventListener("click", () => {
-        pop!.remove();
-        void (async () => {
-          const n = await promptText("¿Tu nombre?", { initial: me.name });
-          if (n) { setName(n); me = { name: n, email: n }; renderUserBtn(); }
-        })().catch(onError);
-      });
-      document.getElementById("um-folder")!.addEventListener("click", () => { pop!.remove(); changeFolder(); });
-    });
+    $("userbtn").addEventListener("click", () => openConfigModal("generales"));
 
     $("newfile").addEventListener("click", guard(newDiagram));
     // ---- inspector tabs + collapsible side panels (independent, persisted) ----
@@ -1519,7 +1488,7 @@ async function bootstrap() {
     if (!getColl("inspector", true)) { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); void renderDatos(); }
     else inspector.hide();
     reflectInspectorToggle();
-    $("settings").addEventListener("click", () => renderVizSettings());
+    $("settings").addEventListener("click", () => openConfigModal("visualizacion"));
     $("more").addEventListener("click", () => { const p = document.getElementById("morepop"); if (p) p.hidden = !p.hidden; });
     $("exportSvg").addEventListener("click", guard(async () => {
       if (state.kind === "editing") await exportSvg(modeler, baseName(state.fileId));

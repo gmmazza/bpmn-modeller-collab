@@ -592,9 +592,13 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ia-group { display: inline-flex; align-items: center; gap: 4px; }
 /* .btn's display:inline-flex beats the UA [hidden] rule; force it off explicitly. */
 #ai-quicklaunch[hidden] { display: none; }
-.preset-row { display: flex; gap: 6px; margin: 4px 0; }
-.preset-row input { flex: 1; min-width: 0; }
 .idea-pop-add input { flex: 1; }
+
+/* Operational IA menu (.menu-pop content built by src/aiMenu.ts) — .menu-pop already
+   covers buttons (block, full-width); the select needs the same layout explicitly. */
+.ai-menu { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.ai-menu select.btn { display: block; width: 100%; }
+.ai-menu-hint.muted { color: var(--muted); font-size: 12px; margin: 2px 4px; }
 
 /* Configuraciones modal — sectioned settings window (nav + panes) */
 .config-card { max-width: min(760px, 92vw); width: 100%; max-height: 86vh; display: flex; flex-direction: column; text-align: left; }
