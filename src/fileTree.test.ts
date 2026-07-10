@@ -47,6 +47,22 @@ describe("renderFileTree", () => {
     renderFileTree(el2, entries, { expanded: new Set(), selectedId: null, me }, handlers);
     expect(el2.querySelector('[data-path="RRHH.bpmn"] .file-master-chip')).toBeNull();
   });
+  it("shows a .ft-open-chip and .ft-open class on rows whose path is in openPaths, none otherwise", () => {
+    const handlers = { onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {} };
+    const el = document.createElement("div");
+    renderFileTree(el, entries, { expanded: new Set(), selectedId: null, me, openPaths: new Set(["RRHH.bpmn"]) }, handlers);
+    const rowOpen = el.querySelector('[data-path="RRHH.bpmn"]')!;
+    const rowNotOpen = el.querySelector('[data-path="Ventas"]')!;
+    expect(rowOpen.querySelector(".ft-open-chip")).not.toBeNull();
+    expect(rowOpen.classList.contains("ft-open")).toBe(true);
+    expect(rowNotOpen.querySelector(".ft-open-chip")).toBeNull();
+    expect(rowNotOpen.classList.contains("ft-open")).toBe(false);
+
+    const el2 = document.createElement("div");
+    renderFileTree(el2, entries, { expanded: new Set(), selectedId: null, me }, handlers);
+    expect(el2.querySelector('[data-path="RRHH.bpmn"] .ft-open-chip')).toBeNull();
+    expect(el2.querySelector('[data-path="RRHH.bpmn"]')!.classList.contains("ft-open")).toBe(false);
+  });
   it("wipes only the .files-tree content on repeated renders, leaving a sibling .files-resizer untouched (regression: resize handle used to be destroyed by tree refresh)", () => {
     const outer = document.createElement("aside");
     outer.id = "files";

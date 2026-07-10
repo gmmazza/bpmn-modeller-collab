@@ -99,6 +99,17 @@ function masterChip(entry: TreeEntry | undefined, masters: Set<string>): HTMLEle
   return chip;
 }
 
+// Files currently open in an editor pane (the master + the drilled stage, at most two —
+// see FileTreeState.openPaths). Display-only, mirrors masterChip above.
+function openChip(entry: TreeEntry | undefined, openPaths: Set<string>): HTMLElement | null {
+  if (!entry || !openPaths.has(entry.path)) return null;
+  const chip = document.createElement("span");
+  chip.className = "ft-open-chip";
+  chip.title = "Abierto";
+  chip.textContent = "● abierto";
+  return chip;
+}
+
 function addBar(el: HTMLElement, parentPath: string, h: FileTreeHandlers): void {
   const bar = document.createElement("div");
   bar.className = "ft-addbar";
@@ -119,6 +130,10 @@ export interface FileTreeState {
   // Master files (see masterChip above), keyed by TreeEntry.path. Optional so existing
   // callers/tests that don't care about the badge don't need to thread an empty set.
   masters?: Set<string>;
+  // Paths currently open in an editor pane (master + drilled stage — at most two). Rows
+  // matching get an "abierto" marker (see openChip above). Optional so existing
+  // callers/tests that don't care don't need to thread an empty set.
+  openPaths?: Set<string>;
 }
 
 function renderNodes(
@@ -165,6 +180,9 @@ function renderNodes(
       if (chip) name.appendChild(chip);
       const master = masterChip(node.entry, state.masters ?? new Set());
       if (master) name.appendChild(master);
+      const open = openChip(node.entry, state.openPaths ?? new Set());
+      if (open) name.appendChild(open);
+      if (state.openPaths?.has(node.path)) row.classList.add("ft-open");
       name.addEventListener("click", () => h.onOpen(node.path));
       const menu = document.createElement("button");
       menu.type = "button"; menu.className = "ft-menu"; menu.textContent = "⋯";

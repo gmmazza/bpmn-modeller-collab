@@ -1931,6 +1931,16 @@ async function bootstrap() {
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
   }
 
+  // Files currently open in an editor pane: the master (top pane, master mode) plus the
+  // drilled-in stage (bottom pane), at most two. Display-only — mirrors mastersCache's
+  // role for the 🗺 badge, feeding renderTree's "abierto" marker (see fileTree.ts).
+  function openPathsNow(): Set<string> {
+    const s = new Set<string>();
+    if (currentMasterFile) s.add(currentMasterFile);
+    if (state.kind === "editing") s.add(state.fileId);
+    return s;
+  }
+
   // Renders the file browser for the given tree using whatever `mastersCache` currently
   // holds (may lag one refresh cycle behind while refreshMastersCache is still running —
   // see refreshFileList).
@@ -1939,7 +1949,7 @@ async function bootstrap() {
     renderFileTree(
       document.querySelector<HTMLElement>("#files .files-tree")!,
       clean,
-      { expanded, selectedId, me, masters: mastersCache },
+      { expanded, selectedId, me, masters: mastersCache, openPaths: openPathsNow() },
       {
         onOpen: (id) => void openFile(id).catch(onError),
         onToggle: (path) => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); void refreshFileList().catch(onError); },
@@ -2155,6 +2165,7 @@ async function bootstrap() {
     masterHandle?.setCurrentStage(null);
     renderBreadcrumb(null);
     focusMasterPane();
+    renderTree(lastTree); // the drilled stage is no longer open — drop its "abierto" marker
   }
 
   // Toggle the "Elegí una etapa en el mapa" placeholder that stands in for the bottom
@@ -2203,6 +2214,7 @@ async function bootstrap() {
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.
     dispatch({ type: "closedFile" });
+    renderTree(lastTree); // the master file is now open — show its "abierto" marker
   }
 
   function exitMasterMode(): void {
@@ -2224,6 +2236,7 @@ async function bootstrap() {
     if (split) (split as HTMLElement).hidden = true;
     const bar = document.getElementById("master-bar") as HTMLElement | null;
     if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+    renderTree(lastTree); // no master/stage open anymore — clear "abierto" markers
   }
 
   // Drill-down: load a stage (subprocess) into the bottom editor via the normal path
@@ -2281,6 +2294,7 @@ async function bootstrap() {
       }
     } catch { /* best-effort */ }
     masterPaneFocused = false; // the stage editor is now the active pane
+    renderTree(lastTree); // the drilled stage is now open — show its "abierto" marker
   }
 
   // Best-effort: if a directly-opened stage is referenced by some master in the folder,
