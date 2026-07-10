@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { showAiConfigModal } from "./aiConfigModal";
+import { getPresets } from "./terminalPresets";
 
 function fakeApi(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
@@ -11,6 +12,22 @@ function fakeApi(initial: Record<string, string> = {}) {
 }
 
 describe("showAiConfigModal", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("persists trimmed label/command, not the raw input (matches terminalPresetsModal save behavior)", () => {
+    const overlay = showAiConfigModal({ api: fakeApi(), userName: "Ana", hasLauncher: true, launch: vi.fn(), onError: vi.fn() });
+    (overlay.querySelector(".ai-preset-add") as HTMLButtonElement).click();
+    const row = overlay.querySelector(".ai-preset-row") as HTMLElement;
+    (row.querySelector(".ai-preset-label") as HTMLInputElement).value = "  Mi preset  ";
+    (row.querySelector(".ai-preset-cmd") as HTMLInputElement).value = "  claude --review  ";
+    row.dispatchEvent(new Event("change", { bubbles: true }));
+    const stored = getPresets();
+    expect(stored).toHaveLength(1);
+    expect(stored[0].label).toBe("Mi preset");
+    expect(stored[0].command).toBe("claude --review");
+    overlay.remove();
+  });
+
   it("renders the instructions section always and the launcher section only when hasLauncher", () => {
     const web = showAiConfigModal({ api: fakeApi(), userName: "Ana", hasLauncher: false, launch: vi.fn(), onError: vi.fn() });
     expect(web.querySelector(".ai-section-instructions")).toBeTruthy();

@@ -29,7 +29,6 @@ import { createIdeasControllerV2 } from "./processDocs/ideasControllerV2";
 import { aiAuthorName } from "./processDocs/aiIdentity";
 import { listDocumentableElements, toDiagramElement } from "./processDocs/bpmnDocsAdapter";
 import { ensureAgentsFile, ensureLocalOverlay } from "./processDocs/agentsFile";
-import { showPersonalInstructionsModal } from "./processDocs/personalInstructions";
 import { ensureBpmnDesignSkill } from "./processDocs/bpmnDesignSkill";
 import { buildFolderIndex, baseNameOf as baseNameOfFile, type IndexSource } from "./processDocs/folderIndex";
 import { resolveCalledProcess, findEventCounterpart, type DiagramInfo } from "./processDocs/resolveTargets";
@@ -69,8 +68,8 @@ import { computeDiff } from "./bpmnDiff";
 import { createDiffView, type DiffView } from "./diffView";
 import { isSyncConflict } from "./syncConflict";
 import { getPresets, getLastPresetId, setLastPresetId } from "./terminalPresets";
-import { showPresetsModal } from "./terminalPresetsModal";
 import { openExternalTerminal, hasTermApi } from "./termApi";
+import { showAiConfigModal } from "./aiConfigModal";
 import type { User, TreeEntry, LockInfo, LockState, RestorePoint } from "./types";
 import { renderFileTree } from "./fileTree";
 import { openContextMenu } from "./contextMenu";
@@ -1236,13 +1235,10 @@ async function bootstrap() {
           <button class="btn icon-only" id="exportSvg" type="button" title="Exportar SVG">${icon("download")}<span style="font-size:11px">SVG</span></button>
           <button class="btn icon-only" id="exportPng" type="button" title="Exportar PNG">${icon("download")}<span style="font-size:11px">PNG</span></button>
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
-          <button class="btn icon-only" id="ai-instructions" type="button" title="Instrucciones personales para la IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
-          <span class="tgroup terminal-group" id="terminal-group" hidden>
-            <select id="llm-preset" class="btn" title="Preset de comando LLM"></select>
-            <button class="btn icon-only" id="llm-run" type="button" title="Lanzar en terminal">▶</button>
-            <button class="btn icon-only" id="llm-term" type="button" title="Abrir terminal en la carpeta">⌨</button>
-            <button class="btn icon-only" id="llm-presets" type="button" title="Gestionar presets">${icon("settings")}</button>
-          </span>
+        </div>
+        <div class="tgroup ia-group">
+          <button class="btn icon-only" id="ai-config" type="button" title="Configuración de IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
+          <button class="btn icon-only" id="ai-quicklaunch" type="button" title="Lanzar el último preset" hidden>▶</button>
         </div>
         <span class="spacer"></span>
         <div class="tgroup" id="sharedgroup">
@@ -1471,44 +1467,38 @@ async function bootstrap() {
     renderThemeBtn();
     $("themebtn").addEventListener("click", () => { toggleTheme(); renderThemeBtn(); });
     $("helpbtn").addEventListener("click", () => showHelp());
-    document.getElementById("ai-instructions")?.addEventListener("click", () => {
-      if (api) showPersonalInstructionsModal(api, getName());
+    // Unified IA entry point (always visible). Launcher section is Electron-only (handled
+    // inside the modal via hasLauncher). Quick-launch (▶) fires the last-used preset.
+    document.getElementById("ai-config")?.addEventListener("click", () => {
+      if (!api) return;
+      showAiConfigModal({
+        api,
+        userName: getName(),
+        hasLauncher: hasTermApi(),
+        launch: (cmd) => openExternalTerminal(cmd),
+        onError,
+      });
+      refreshQuickLaunch(); // presets may have changed inside the modal; the modal exposes no
+      // close callback, so this reflects state at open time only — the next click re-syncs.
     });
 
-    function refreshLlmPresets(): void {
-      const sel = document.getElementById("llm-preset") as HTMLSelectElement | null;
-      if (!sel) return;
+    function refreshQuickLaunch(): void {
+      const q = document.getElementById("ai-quicklaunch") as HTMLButtonElement | null;
+      if (!q) return;
       const presets = getPresets();
-      sel.innerHTML = "";
-      for (const p of presets) {
-        const opt = document.createElement("option");
-        opt.value = p.id;
-        opt.textContent = p.label;
-        sel.appendChild(opt);
-      }
       const last = getLastPresetId();
-      if (last && presets.some((p) => p.id === last)) sel.value = last;
-      sel.disabled = presets.length === 0;
-      (document.getElementById("llm-run") as HTMLButtonElement).disabled = presets.length === 0;
+      const target = presets.find((p) => p.id === last) ?? presets[0];
+      // Hidden on web (no launcher) or when there is no preset to launch.
+      q.hidden = !hasTermApi() || !target;
+      q.title = target ? `Lanzar: ${target.label}` : "Sin presets";
     }
-    if (hasTermApi()) {
-      (document.getElementById("terminal-group") as HTMLElement).hidden = false;
-      refreshLlmPresets();
-      document.getElementById("llm-preset")?.addEventListener("change", (e) => {
-        setLastPresetId((e.target as HTMLSelectElement).value || null);
-      });
-      document.getElementById("llm-run")?.addEventListener("click", () => {
-        const id = (document.getElementById("llm-preset") as HTMLSelectElement).value;
-        const p = getPresets().find((x) => x.id === id);
-        if (p) void openExternalTerminal(p.command).catch(onError);
-      });
-      document.getElementById("llm-term")?.addEventListener("click", () => {
-        void openExternalTerminal(null).catch(onError);
-      });
-      document.getElementById("llm-presets")?.addEventListener("click", () => {
-        showPresetsModal(refreshLlmPresets);
-      });
-    }
+    document.getElementById("ai-quicklaunch")?.addEventListener("click", () => {
+      const presets = getPresets();
+      const last = getLastPresetId();
+      const target = presets.find((p) => p.id === last) ?? presets[0];
+      if (target) { setLastPresetId(target.id); void openExternalTerminal(target.command).catch(onError); }
+    });
+    refreshQuickLaunch();
 
     // No file open: intercept the first interaction with the canvas and explain
     // that a diagram must be selected/created before editing.

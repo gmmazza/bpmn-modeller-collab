@@ -103,7 +103,12 @@ export function showAiConfigModal(deps: AiConfigModalDeps): HTMLElement {
         command: (r.querySelector(".ai-preset-cmd") as HTMLInputElement).value,
       }));
     };
-    const persist = (): void => setPresets(draft.filter((p) => p.label.trim() && p.command.trim()));
+    const persist = (): void =>
+      setPresets(
+        draft
+          .filter((p) => p.label.trim() && p.command.trim())
+          .map((p) => ({ ...p, label: p.label.trim(), command: p.command.trim() })),
+      );
     const renderSelect = (): void => {
       const presets = getPresets();
       sel.innerHTML = "";

@@ -588,9 +588,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .app-upd { margin-top: 6px; color: var(--muted); }
 .app-upd-status { color: var(--muted); }
 
-/* Terminal LLM launcher — Electron-only toolbar group (Task 5) */
-.terminal-group { display: inline-flex; align-items: center; gap: 4px; }
-#llm-preset { max-width: 160px; }
+/* Unified IA entry point — reflow-protected toolbar group (Task 9) */
+.ia-group { display: inline-flex; align-items: center; gap: 4px; }
 .preset-row { display: flex; gap: 6px; margin: 4px 0; }
 .preset-row input { flex: 1; min-width: 0; }
 .idea-pop-add input { flex: 1; }
