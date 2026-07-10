@@ -2010,7 +2010,7 @@ async function bootstrap() {
   }
   // The master pane became the active editor: docsFileId + Publicar/Ctrl+S target the master.
   function focusMasterPane(): void {
-    if (!currentMasterFile) return;
+    if (!currentMasterFile || isStageOpen()) return;
     masterPaneFocused = true;
     void loadDocsSidecarsForFocus(currentMasterFile).catch(onError);
     render();
@@ -2169,6 +2169,8 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
+    try { openHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
+    catch { openHeadRevisionId = null; }
     closeLinkPopover();
     document.body.classList.add("master-mode");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
