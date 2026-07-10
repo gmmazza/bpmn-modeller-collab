@@ -16,6 +16,7 @@ import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
+import { mountResizer } from "./ui/resizer";
 
 import { BUNDLED_BPMN_JS_VERSION, checkLatestBpmnJs } from "./version";
 import { evaluateUpdate } from "./appUpdate";
@@ -851,6 +852,29 @@ async function bootstrap() {
     });
   }
 
+  // Drag the left file panel's right edge to resize its width (persisted). The width
+  // drives #files via the --files-width CSS var. Mirrors setupInspectorResize but for
+  // the LEFT panel, using the shared resizer helper.
+  function setupFilesResize(): void {
+    const files = document.getElementById("files");
+    if (!files || files.querySelector(".files-resizer")) return;
+    const MIN = 180, MAX = 520;
+    const saved = Number(localStorage.getItem("filesWidth"));
+    if (saved >= MIN && saved <= MAX) files.style.setProperty("--files-width", `${saved}px`);
+    const handle = document.createElement("div");
+    handle.className = "files-resizer";
+    handle.title = "Arrastrá para ajustar el ancho";
+    files.appendChild(handle);
+    mountResizer(handle, {
+      axis: "x",
+      min: MIN,
+      max: MAX,
+      getSize: () => files.getBoundingClientRect().width,
+      setSize: (px) => files.style.setProperty("--files-width", `${px}px`),
+      onCommit: (px) => { try { localStorage.setItem("filesWidth", String(Math.round(px))); } catch { /* ignore */ } },
+    });
+  }
+
   // Draggable separator between the two compare panes. Sets --split (a %) on the area;
   // the axis follows the orientation (row → width, column → height). Clamped 15–85%.
   function setupCanvasSplitResize(): void {
@@ -1226,6 +1250,7 @@ async function bootstrap() {
     inspector.paneEl("historial").id = "history";
     inspector.hide();
     setupInspectorResize();
+    setupFilesResize();
     setupCanvasSplitResize();
 
     await mountModeler();
