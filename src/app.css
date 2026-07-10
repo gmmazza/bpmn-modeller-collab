@@ -590,6 +590,8 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 
 /* Unified IA entry point — reflow-protected toolbar group (Task 9) */
 .ia-group { display: inline-flex; align-items: center; gap: 4px; }
+/* .btn's display:inline-flex beats the UA [hidden] rule; force it off explicitly. */
+#ai-quicklaunch[hidden] { display: none; }
 .preset-row { display: flex; gap: 6px; margin: 4px 0; }
 .preset-row input { flex: 1; min-width: 0; }
 .idea-pop-add input { flex: 1; }

@@ -32,21 +32,25 @@ test("Datos y herramientas: add form + store, see the badge, anchor it in the di
   await page.locator("#tab-datos").click();
   await expect(page.locator('[data-pane="datos"]')).not.toHaveAttribute("hidden", "");
 
-  // Add a JotForm form.
+  // Add a JotForm form. The tool field is free text (Task 7 dropped the enum <select> for an
+  // <input list=…>), so type a realistic display-cased tool name rather than selecting an option.
   const formularios = page.locator('[data-pane="datos"] section[data-category="formularios"]');
   await formularios.locator(".dato-add-nombre").fill("Recepción — alta de motor");
-  await formularios.locator(".dato-add-tool").selectOption("jotform");
+  await formularios.locator(".dato-add-tool").fill("JotForm");
   await formularios.locator(".dato-add-url").fill("https://form.jotform.com/example");
   await formularios.locator('button[type="submit"]').click();
   await expect(formularios.locator('[data-entry-id] .dato-name')).toHaveText("Recepción — alta de motor");
+  // The typed tool string is rendered verbatim (no enum label mapping anymore).
+  await expect(formularios.locator('[data-entry-id] .dato-tool-tag')).toHaveText("JotForm");
 
   // Add a ClickUp store.
   const almacenamiento = page.locator('[data-pane="datos"] section[data-category="almacenamiento"]');
   await almacenamiento.locator(".dato-add-nombre").fill("Lista Reparaciones");
-  await almacenamiento.locator(".dato-add-tool").selectOption("clickup");
+  await almacenamiento.locator(".dato-add-tool").fill("ClickUp");
   await almacenamiento.locator(".dato-add-url").fill("https://app.clickup.com/example");
   await almacenamiento.locator('button[type="submit"]').click();
   await expect(almacenamiento.locator('[data-entry-id] .dato-name')).toHaveText("Lista Reparaciones");
+  await expect(almacenamiento.locator('[data-entry-id] .dato-tool-tag')).toHaveText("ClickUp");
 
   // The diagram badge appears on the Task now that it has documented data/tools.
   // bpmn-js overlays are appended into a `.djs-overlays` container tagged with
