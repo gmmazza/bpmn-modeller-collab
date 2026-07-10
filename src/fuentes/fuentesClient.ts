@@ -63,6 +63,17 @@ export function createFuentesClient(fs: FuentesFs, diagramId: string): FuentesCl
     fuentesDir,
     relFor,
     async list() {
+      // NOTE (limitation, documented rather than "fixed"): ideally a missing
+      // `.fuentes/`/`.fuentes/procesado/` directory (expected — it may not exist yet)
+      // would swallow silently to [] while a real enumeration failure would surface via
+      // deps.onError. We cannot discriminate the two here: fsClient.ts's listDir
+      // (src/fsClient.ts ~L330-338, the FuentesFs passed in from main.ts) already
+      // catches *any* error internally — NotFound or otherwise — and resolves to []
+      // unconditionally, so no error ever reaches this `.catch`. Distinguishing the
+      // cases would require changing that shared, foundational fsClient.ts contract
+      // (used by many other callers), which is out of scope for this fix. Keeping the
+      // swallow here is consistent with the underlying API's current behavior, not a
+      // regression.
       const [rootEntries, procEntries] = await Promise.all([
         fs.listDir(fuentesDir).catch(() => []),
         fs.listDir(procesadoDir).catch(() => []),

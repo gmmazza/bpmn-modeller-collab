@@ -134,6 +134,16 @@ function section(estado: FuenteEstado, title: string, entries: FuenteEntry[], de
 export async function renderFuentesPanel(host: HTMLElement, deps: FuentesPanelDeps): Promise<void> {
   const refresh = () => { void renderFuentesPanel(host, deps); };
 
+  // Reentrancy guard: opening the Fuentes tab can invoke this twice (the tab-click
+  // handler plus the master-focus path via loadDocsSidecarsForFocus), and each render
+  // clears the host then awaits client.list() then appends its sections. Without a
+  // per-host generation token both resumed renders append and the panel duplicates
+  // (mirrors the same fix in datosPanel.ts's renderDatosPanel). Stamp a fresh
+  // generation now; after the await we bail unless we're still the latest render, so
+  // only the newest one appends.
+  const gen = String((Number(host.dataset.fuentesGen ?? "0") + 1) % 1_000_000_000);
+  host.dataset.fuentesGen = gen;
+
   // Belt-and-suspenders: a full re-render discards the row closures that own
   // closePreview(), so any open preview's blob object URL would otherwise
   // leak. Revoke directly from the DOM before wiping it.
@@ -171,6 +181,11 @@ export async function renderFuentesPanel(host: HTMLElement, deps: FuentesPanelDe
 
   let list: FuenteEntry[] = [];
   try { list = await deps.client.list(); } catch (e) { deps.onError(e); }
+
+  // A newer render (see the generation guard above) could have started and already
+  // cleared/repopulated the host while `list()` was in flight — bail so only the
+  // latest render appends its sections.
+  if (host.dataset.fuentesGen !== gen) return;
 
   const pendientes = list.filter((e) => e.estado === "pendiente");
   const procesadas = list.filter((e) => e.estado === "procesada");

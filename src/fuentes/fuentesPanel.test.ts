@@ -211,4 +211,12 @@ describe("renderFuentesPanel", () => {
 
     expect(revokeSpy).toHaveBeenCalledWith(previewSrc);
   });
+
+  it("does not duplicate sections when rendered twice concurrently", async () => {
+    const host = document.createElement("div");
+    const d = deps();
+    await Promise.all([renderFuentesPanel(host, d), renderFuentesPanel(host, d)]);
+    expect(host.querySelectorAll('section[data-estado="pendiente"]').length).toBe(1);
+    expect(host.querySelectorAll("section").length).toBe(2);
+  });
 });
