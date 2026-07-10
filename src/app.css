@@ -165,8 +165,13 @@ body.app-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
 .preview-bar .preview-exit:hover { filter: brightness(1.08); }
 
 main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-#files { position: relative; width: var(--files-width, 240px); box-sizing: border-box; flex: none; overflow: auto; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
+#files { position: relative; width: var(--files-width, 240px); box-sizing: border-box; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--surface); transition: margin-left .2s ease; }
 #files.collapsed { margin-left: calc(-1 * var(--files-width, 240px)); }
+/* The tree is re-rendered wholesale (innerHTML wiped) on every refresh; it must NOT be
+   the same node the resize handle is appended to (src/main.ts setupFilesResize), or the
+   handle gets wiped along with it. This nested element scrolls; #files itself is just
+   the flex/positioning shell the handle anchors to. */
+.files-tree { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .files-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; margin-right: -4px; cursor: col-resize; z-index: 6; }
 .files-resizer:hover, body.col-resizing .files-resizer { background: var(--accent); opacity: .35; }
 #canvasarea { flex: 1; min-width: 0; display: flex; }
@@ -283,8 +288,6 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .fp-folder.sel { background: var(--hover); font-weight: 600; }
 .fp-folder:disabled { opacity: .4; cursor: not-allowed; }
 .fp-actions { display: flex; justify-content: flex-end; gap: 8px; }
-
-#files { overflow: auto; }
 
 /* Gestionar capas (modal) */
 .lm-box { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); width: 560px; max-width: 92vw; max-height: 82vh; display: flex; flex-direction: column; }

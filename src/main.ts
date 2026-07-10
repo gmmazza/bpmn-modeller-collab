@@ -1217,7 +1217,7 @@ async function bootstrap() {
       <div id="map-offer" hidden></div>
       <div id="appupdate"></div>
       <main class="app">
-        <aside id="files"></aside>
+        <aside id="files"><div class="files-tree"></div></aside>
         <section id="canvasarea">
           <section id="master-canvas" hidden></section>
           <section id="canvas"></section>
@@ -1883,7 +1883,7 @@ async function bootstrap() {
   function renderTree(clean: TreeEntry[]): void {
     const selectedId = state.kind === "editing" ? state.fileId : null;
     renderFileTree(
-      document.getElementById("files")!,
+      document.querySelector<HTMLElement>("#files .files-tree")!,
       clean,
       { expanded, selectedId, me, masters: mastersCache },
       {
