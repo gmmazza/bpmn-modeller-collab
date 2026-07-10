@@ -121,6 +121,11 @@ async function bootstrap() {
   let state: AppState = initialState;
   let me: User = { name: "", email: "" };
   let openHeadRevisionId: string | null = null;
+  // Master mode has its own publish baseline, decoupled from openHeadRevisionId: drilling
+  // into a stage (openFile) overwrites openHeadRevisionId with the stage's revision, so
+  // publishMaster must not compare against it — otherwise "Cerrar subproceso" + Publicar
+  // on the master would spuriously conflict against the stage's revision id.
+  let masterHeadRevisionId: string | null = null;
   let forceOverwrite = false;
   let pollTimer: number | null = null;
   let openLock: LockInfo = {}; // reservation info for the currently-open file (display + expiry)
@@ -2044,13 +2049,13 @@ async function bootstrap() {
   async function publishMaster(): Promise<void> {
     const fileId = currentMasterFile;
     if (!fileId || !masterHandle) return;
-    if (openHeadRevisionId !== null) {
+    if (masterHeadRevisionId !== null) {
       const meta = await api.getMeta(fileId);
-      if (meta && meta.headRevisionId !== openHeadRevisionId) { showToast("El mapa cambió en el equipo — reabrilo para integrar"); return; }
+      if (meta && meta.headRevisionId !== masterHeadRevisionId) { showToast("El mapa cambió en el equipo — reabrilo para integrar"); return; }
     }
     const xml = await masterHandle.getXml();
     const res = await api.putXml(fileId, xml, me.name);
-    openHeadRevisionId = res.headRevisionId ?? openHeadRevisionId;
+    masterHeadRevisionId = res.headRevisionId ?? masterHeadRevisionId;
     masterHandle.markSaved();
     clearDraft(folderId, fileId);
     await loadHistory(fileId);
@@ -2169,8 +2174,8 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
-    try { openHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
-    catch { openHeadRevisionId = null; }
+    try { masterHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
+    catch { masterHeadRevisionId = null; }
     closeLinkPopover();
     document.body.classList.add("master-mode");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
@@ -2215,6 +2220,7 @@ async function bootstrap() {
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     masterNodeNames = new Map(); masterNodeTypes = new Map(); masterNodeCalled = new Map();
     currentMasterFile = null;
+    masterHeadRevisionId = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
