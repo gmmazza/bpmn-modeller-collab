@@ -41,7 +41,7 @@ test("opening a master enters master mode; drilling into a resolved stage opens 
 
   await page.getByText("📄 mapa.bpmn").click();
 
-  // Master mode entered: the top read-only map pane is shown, body flagged.
+  // Master mode entered: the top EDITABLE map pane is shown, body flagged.
   await expect(page.locator("#master-canvas")).toBeVisible();
   await expect(page.locator("body.master-mode")).toHaveCount(1);
   await expect(page.locator("#master-canvas .djs-container")).toBeVisible();

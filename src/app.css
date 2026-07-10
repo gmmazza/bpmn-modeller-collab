@@ -212,6 +212,8 @@ body.master-mode #canvasarea { flex-direction: column; }
 /* Draggable split between the master map (top) and the open stage (bottom) — only
    meaningful once a stage is open (:not(.master-no-stage)); overrides the 40% fallback. */
 body.master-mode:not(.master-no-stage) #master-canvas { flex: 0 0 var(--master-split, 40%); }
+/* No stage open → the editable master map takes the whole editing area (full-screen). */
+body.master-mode.master-no-stage #master-canvas { flex: 1 1 auto; }
 .master-split-resizer { flex: none; height: 6px; cursor: row-resize; background: var(--border); z-index: 4; }
 .master-split-resizer[hidden] { display: none; }
 .master-split-resizer:hover, body.col-resizing .master-split-resizer { background: #0d9488; }

@@ -182,6 +182,8 @@ async function bootstrap() {
   let masterNodeCalled = new Map<string, string>(); // callActivity elementId -> calledElement (processId), for exit navigation
   let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
+  let masterPaneFocused = false; // true → the master pane is the active editor for Publicar/Ctrl+S
+  let masterDraftTimer: number | null = null; // debounce for the master pane's local-draft autosave
 
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
   // registry's re-parse-only-what-changed pattern so a large folder doesn't re-read every
@@ -239,12 +241,13 @@ async function bootstrap() {
     });
   }
 
-  // Apply a calledElement change to a box on the master via a transient "Editar el
-  // mapa" round-trip: open the master in the normal editor (same path as the
-  // breadcrumb's "Editar el mapa" button — this exits master mode), mutate with the
-  // modeler-touching helper, publish directly (this is a programmatic action from the
-  // popover, not the toolbar Publicar button, so it skips the confirm dialog), then
-  // re-enter master mode so the badges/registry reflect the new link.
+  // Apply a calledElement change to a box on the master via a transient round-trip:
+  // open the master in the normal editor (asPlainEditor — this exits master mode),
+  // mutate with the modeler-touching helper, publish directly (this is a programmatic
+  // action from the popover, not the toolbar Publicar button, so it skips the confirm
+  // dialog), then re-enter master mode so the badges/registry reflect the new link.
+  // (The master pane is itself editable now (A.5 Task 4); inlining these popover
+  // link/unlink mutations into it is a deliberate follow-up, out of scope here.)
   async function linkMasterBox(masterFile: string, elementId: string, processId: string): Promise<void> {
     await openFile(masterFile, { asPlainEditor: true });
     const el = (modeler.get("elementRegistry") as any).get(elementId);
@@ -1702,7 +1705,10 @@ async function bootstrap() {
     })().catch(onError));
     $("undo").addEventListener("click", () => void doUndo().catch(onError));
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
-    $("save").addEventListener("click", guard(async () => { if (state.kind === "editing") await publish(state.fileId); }));
+    $("save").addEventListener("click", guard(async () => {
+      if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
+      if (state.kind === "editing") await publish(state.fileId);
+    }));
     // Local group: manual draft save + autosave on/off toggle.
     $("savedraft").addEventListener("click", guard(async () => {
       if (state.kind !== "editing") return;
@@ -1752,6 +1758,7 @@ async function bootstrap() {
       if (!(ev.ctrlKey || ev.metaKey)) return;
       if (ev.key.toLowerCase() === "s") {
         ev.preventDefault();
+        if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
         if (state.kind === "editing") void publish(state.fileId).catch(onError);
       }
     });
@@ -1856,6 +1863,12 @@ async function bootstrap() {
     // Compare is pure visualization — both panes read-only, so editing/publishing is off.
     const compareRO = comparing;
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
+    // Editable master pane (full-screen, no stage): app state is "browsing" but Publicar/
+    // Ctrl+S target the master via publishMaster(). Keep the button live + the dot on while
+    // it has unpublished edits (mirrors the stage's `dirty || hasDraft`).
+    const masterActive = masterPaneFocused && !!currentMasterFile && !isStageOpen();
+    const masterUnpublished = masterActive
+      && (!!masterHandle?.isDirty() || (currentMasterFile ? hasDraft(folderId, currentMasterFile) : false));
     // Notorious frame means "you hold a reservation" — suppressed while previewing or
     // comparing, where the indigo preview / teal compare frame takes over instead.
     document.body.classList.toggle("app-editing", mine && !previewing && !comparing);
@@ -1894,9 +1907,9 @@ async function bootstrap() {
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
     // Never publish from a read-only preview / read-only compare (would push an old version).
-    if (saveBtn) saveBtn.disabled = !unpublished || previewing || compareRO;
+    if (saveBtn) saveBtn.disabled = (!unpublished && !masterUnpublished) || previewing || compareRO;
     const dot = document.getElementById("savedot");
-    if (dot) (dot as HTMLElement).hidden = !unpublished;
+    if (dot) (dot as HTMLElement).hidden = !unpublished && !masterUnpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
     const editable = editing && !previewing && !compareRO;
@@ -1987,6 +2000,67 @@ async function bootstrap() {
     s.classList.toggle("dirty", draftPending);
   }
 
+  // ---- Editable master pane: focus tracking + its own local-draft autosave + publish ----
+  // Two editable modelers can be alive at once (master top pane + stage bottom pane). The
+  // "focused" pane owns docsFileId and is the target of Publicar/Ctrl+S. openStage() flips
+  // focus to the stage; a pointerdown in the master pane (onFocus) flips it back.
+  // A stage is "open" when master-mode is on but NOT the full-screen no-stage layout.
+  function isStageOpen(): boolean {
+    return document.body.classList.contains("master-mode") && !document.body.classList.contains("master-no-stage");
+  }
+  // The master pane became the active editor: docsFileId + Publicar/Ctrl+S target the master.
+  function focusMasterPane(): void {
+    if (!currentMasterFile) return;
+    masterPaneFocused = true;
+    void loadDocsSidecarsForFocus(currentMasterFile).catch(onError);
+    render();
+  }
+  // Point the docs/fuentes/datos panels at the focused file WITHOUT reloading the editor.
+  async function loadDocsSidecarsForFocus(fileId: string): Promise<void> {
+    docsFileId = fileId;
+    await docsController?.refresh();
+    void renderFuentes();
+    void renderDatos();
+  }
+  function scheduleMasterDraftSave(): void {
+    if (!getAutosave() || !masterHandle || !currentMasterFile) return;
+    if (masterDraftTimer) clearTimeout(masterDraftTimer);
+    masterDraftTimer = window.setTimeout(() => {
+      void (async () => {
+        if (masterHandle && currentMasterFile && masterHandle.isDirty()) {
+          saveDraft(folderId, currentMasterFile, await masterHandle.getXml());
+        }
+      })().catch(onError);
+    }, 800);
+  }
+  async function flushMasterDraft(): Promise<void> {
+    if (masterDraftTimer) { clearTimeout(masterDraftTimer); masterDraftTimer = null; }
+    if (masterHandle && currentMasterFile && masterHandle.isDirty()) {
+      saveDraft(folderId, currentMasterFile, await masterHandle.getXml());
+    }
+  }
+  // Publish the master pane's live edits. Mirrors save() (conflict guard + putXml + prune),
+  // but reads from the master editor and re-syncs the registry/badges afterward.
+  async function publishMaster(): Promise<void> {
+    const fileId = currentMasterFile;
+    if (!fileId || !masterHandle) return;
+    if (openHeadRevisionId !== null) {
+      const meta = await api.getMeta(fileId);
+      if (meta && meta.headRevisionId !== openHeadRevisionId) { showToast("El mapa cambió en el equipo — reabrilo para integrar"); return; }
+    }
+    const xml = await masterHandle.getXml();
+    const res = await api.putXml(fileId, xml, me.name);
+    openHeadRevisionId = res.headRevisionId ?? openHeadRevisionId;
+    masterHandle.markSaved();
+    clearDraft(folderId, fileId);
+    await loadHistory(fileId);
+    // Re-sync registry so badges/masters reflect any new/removed links.
+    await registry.sync(lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => ({ path: e.path, version: e.version ?? "" })));
+    masterHandle.refreshBadges();
+    render();
+    showToast("Mapa publicado");
+  }
+
   // ---- Coarse (snapshot) undo/redo, layered ON TOP of bpmn-js' native CommandStack ----
   // A history-restore replaces the whole diagram via importXML, which wipes the native
   // command stack — so restoring can't be undone natively. We keep XML snapshots of the
@@ -2059,17 +2133,28 @@ async function bootstrap() {
     const crumb = document.createElement("span");
     crumb.className = "master-crumb";
     crumb.textContent = stageName ? `Mapa: ${master} ▸ ${stageName}` : `Mapa: ${master}`;
-    const edit = document.createElement("button");
-    edit.className = "btn";
-    edit.type = "button";
-    edit.textContent = "Editar el mapa";
-    edit.title = "Abrir el mapa en el editor normal";
-    edit.addEventListener("click", () => {
-      const f = currentMasterFile;
-      if (f) void openFile(f, { asPlainEditor: true }).catch(onError);
-    });
-    bar.append(crumb, edit);
+    bar.append(crumb);
+    // When a stage is open, offer to return to the full-screen master. The map itself is
+    // now directly editable in place — no "Editar el mapa" round-trip needed anymore.
+    if (stageName) {
+      const back = document.createElement("button");
+      back.className = "btn"; back.type = "button"; back.textContent = "Cerrar subproceso";
+      back.title = "Volver al mapa a pantalla completa";
+      back.addEventListener("click", () => closeStage());
+      bar.append(back);
+    }
     (bar as HTMLElement).hidden = false;
+  }
+
+  // Return to the full-screen editable master: hide the stage editor (via master-no-stage),
+  // drop the stage overlays + current-stage highlight, and refocus the master pane. The
+  // stage editor content is left mounted but hidden — reopening a stage reloads it.
+  function closeStage(): void {
+    stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
+    showStageHint(true); // hides #canvas, shows the hint, hides the split divider
+    masterHandle?.setCurrentStage(null);
+    renderBreadcrumb(null);
+    focusMasterPane();
   }
 
   // Toggle the "Elegí una etapa en el mapa" placeholder that stands in for the bottom
@@ -2104,9 +2189,15 @@ async function bootstrap() {
       mc.innerHTML = "";
       masterHandle = await mountMasterPane(mc, {
         registry, openStage, onError, onElementClick: onMasterElementClick,
+        onDrill: (info) => { const entry = registry.resolve(info.calledElement); if (entry) void openStage(entry.file).catch(onError); },
+        onDirty: () => { masterPaneFocused = true; scheduleMasterDraftSave(); render(); },
+        onFocus: () => { focusMasterPane(); },
         resolveDestinationName: (id) => masterNodeNames.get(id) ?? "",
       });
       await masterHandle.load(masterXml);
+      // Resume a private unpublished draft of the master, if one exists.
+      if (hasDraft(folderId, fileId)) { try { await masterHandle.load(loadDraft(folderId, fileId) ?? masterXml); } catch { /* keep shared */ } }
+      focusMasterPane();
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.
     dispatch({ type: "closedFile" });
@@ -2114,6 +2205,9 @@ async function bootstrap() {
 
   function exitMasterMode(): void {
     if (!document.body.classList.contains("master-mode") && !masterHandle) return;
+    void flushMasterDraft().catch(() => {});
+    if (masterDraftTimer) { clearTimeout(masterDraftTimer); masterDraftTimer = null; }
+    masterPaneFocused = false;
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
@@ -2183,6 +2277,7 @@ async function bootstrap() {
         try { overlays.add(el.id, { position: { bottom: 0, right: 0 }, html }); } catch { /* skip */ }
       }
     } catch { /* best-effort */ }
+    masterPaneFocused = false; // the stage editor is now the active pane
   }
 
   // Best-effort: if a directly-opened stage is referenced by some master in the folder,
