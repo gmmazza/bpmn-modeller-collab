@@ -199,15 +199,9 @@ test("the IA modal opens with instructions; the launcher section and quick-launc
   // hasTermApi() is false in the web e2e (no window.termapi) — web-degrade contract:
   // the launcher section is not rendered at all, and the ▶ quick-launch stays hidden.
   await expect(page.locator(".ai-section-launcher")).toHaveCount(0);
-  // KNOWN BUG (found while writing this test, product code — not fixed here per task
-  // constraints): #ai-quicklaunch's `hidden` attribute is set correctly (q.hidden = true,
-  // per refreshQuickLaunch() in main.ts and the passing JS-property check in
-  // terminal-launcher.spec.ts), but `.btn { display: inline-flex }` (app.css) is an author
-  // rule with no !important, so it wins the cascade over the UA `[hidden] { display: none }`
-  // default and the button stays visually rendered. Every other [hidden]-toggled element in
-  // this app that collides with an author display rule has an explicit override for exactly
-  // this reason (#master-canvas[hidden], #master-bar[hidden], .inspector-pane[hidden]" — see
-  // app.css ~182-221 and ~366) — #ai-quicklaunch[hidden] is missing the same one-liner.
-  // Fix: add `#ai-quicklaunch[hidden] { display: none; }` to app.css.
+  // #ai-quicklaunch is display:none when hidden on web. Its `hidden` attribute alone lost
+  // the cascade to `.btn { display: inline-flex }` (an author rule); app.css carries an
+  // explicit `#ai-quicklaunch[hidden] { display: none; }` override — like the other
+  // [hidden]-toggled elements that collide with an author display rule — so it is truly hidden.
   await expect(page.locator("#ai-quicklaunch")).toBeHidden();
 });
