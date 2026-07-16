@@ -1144,7 +1144,7 @@ async function bootstrap() {
           <section id="master-canvas" hidden></section>
           <div id="master-split-resizer" class="master-split-resizer" hidden></div>
           <section id="canvas"></section>
-          <div id="stage-hint" hidden>Elegí una etapa en el mapa</div>
+          <div id="stage-hint" hidden>Doble-clic en una etapa para abrirla</div>
           <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
           <section id="canvas2" hidden></section>
         </section>
@@ -2082,8 +2082,8 @@ async function bootstrap() {
     renderTree(lastTree); // the drilled stage is no longer open — drop its "abierto" marker
   }
 
-  // Toggle the "Elegí una etapa en el mapa" placeholder that stands in for the bottom
-  // editor while a master is open but no stage has been picked yet.
+  // Toggle the "Doble-clic en una etapa para abrirla" floating hint pill that overlays
+  // the master map while a master is open but no stage has been picked yet.
   function showStageHint(show: boolean): void {
     const hint = document.getElementById("stage-hint");
     if (hint) (hint as HTMLElement).hidden = !show;

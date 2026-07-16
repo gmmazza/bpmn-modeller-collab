@@ -93,6 +93,23 @@ test("opening a master as the first file renders its Fuentes (not a blank pane)"
   await expect(page.locator('[data-estado="pendiente"] [data-name="mapasrc.pdf"]')).toBeVisible();
 });
 
+test("a master with no stage open fills the full height (no empty bottom split); the hint is a floating pill", async ({ page }) => {
+  await openApp(page, { "mapa.bpmn": MAPA_BPMN, "etapa1.bpmn": ETAPA1_BPMN });
+
+  // No stage drilled in — master-no-stage should be active.
+  await page.getByText("📄 mapa.bpmn").click();
+  await expect(page.locator("#master-canvas .djs-container")).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/master-no-stage/);
+
+  const area = await page.locator("#canvasarea").boundingBox();
+  const master = await page.locator("#master-canvas").boundingBox();
+  // Master canvas fills (near) the full canvas area height — no bottom pane stealing ~half.
+  expect(master!.height).toBeGreaterThan(area!.height * 0.9);
+  await expect(page.locator("#master-split-resizer")).toBeHidden();
+  await expect(page.locator("#stage-hint")).toBeVisible();
+  await expect(page.locator("#stage-hint")).toHaveText("Doble-clic en una etapa para abrirla");
+});
+
 test("drilling into a stage re-points Fuentes at the stage's own sources", async ({ page }) => {
   await openApp(page, {
     "mapa.bpmn": MAPA_BPMN,
