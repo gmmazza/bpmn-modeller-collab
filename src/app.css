@@ -493,10 +493,16 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
 
+/* Fuentes panel */
+.fuente-error { padding: 8px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.fuente-error p { margin: 0; color: var(--accent); }
+
 /* Datos y herramientas panel */
 .dato-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 999px; padding: 2px 8px; font-size: 13px; line-height: 1.2; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--accent-contrast); }
 .dato-badge:hover { filter: brightness(1.1); }
 .dato-empty { padding: 8px; opacity: .8; }
+.dato-error { padding: 8px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.dato-error p { margin: 0; color: var(--accent); }
 .dato-title { margin: 4px 0; }
 .dato-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
 .dato-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -154,6 +154,35 @@ export async function renderFuentesPanel(host: HTMLElement, deps: FuentesPanelDe
 
   host.innerHTML = "";
 
+  let list: FuenteEntry[];
+  try {
+    list = await deps.client.list();
+  } catch (e) {
+    deps.onError(e);
+    // A newer render (see the generation guard above) could have started and
+    // already cleared/repopulated the host while `list()` was in flight — bail
+    // so only the latest render mutates the host.
+    if (host.dataset.fuentesGen !== gen) return;
+    const errorEl = document.createElement("div");
+    errorEl.className = "fuente-error";
+    const msg = document.createElement("p");
+    msg.textContent = "No se pudieron leer las fuentes.";
+    errorEl.appendChild(msg);
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "btn";
+    retry.textContent = "Reintentar";
+    retry.addEventListener("click", refresh);
+    errorEl.appendChild(retry);
+    host.appendChild(errorEl);
+    return; // do NOT fall through to the dropzone/sections — this is an error, not an empty state
+  }
+
+  // A newer render (see the generation guard above) could have started and already
+  // cleared/repopulated the host while `list()` was in flight — bail so only the
+  // latest render appends its sections.
+  if (host.dataset.fuentesGen !== gen) return;
+
   const drop = document.createElement("div");
   drop.className = "fuente-dropzone";
   drop.textContent = "Arrastrá archivos acá para agregarlos como fuentes";
@@ -178,14 +207,6 @@ export async function renderFuentesPanel(host: HTMLElement, deps: FuentesPanelDe
     }
   });
   host.appendChild(input);
-
-  let list: FuenteEntry[] = [];
-  try { list = await deps.client.list(); } catch (e) { deps.onError(e); }
-
-  // A newer render (see the generation guard above) could have started and already
-  // cleared/repopulated the host while `list()` was in flight — bail so only the
-  // latest render appends its sections.
-  if (host.dataset.fuentesGen !== gen) return;
 
   const pendientes = list.filter((e) => e.estado === "pendiente");
   const procesadas = list.filter((e) => e.estado === "procesada");

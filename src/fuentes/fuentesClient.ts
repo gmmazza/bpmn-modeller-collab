@@ -45,6 +45,10 @@ export function createFuentesClient(fs: FuentesFs, diagramId: string): FuentesCl
 
   async function existing(estado: FuenteEstado): Promise<Set<string>> {
     const dir = estado === "procesada" ? procesadoDir : fuentesDir;
+    // Kept tolerant (unlike list() below): this is only used to compute a dedup
+    // name for add/procesar/restaurar. A real listDir failure here would abort
+    // those mutations over what is, at worst, a stale/incomplete dedup set — not
+    // worth surfacing as a hard error, so we keep swallowing to [] on any failure.
     const entries = await fs.listDir(dir).catch(() => []);
     return new Set(entries.filter((e) => e.kind === "file").map((e) => e.name));
   }
@@ -63,20 +67,16 @@ export function createFuentesClient(fs: FuentesFs, diagramId: string): FuentesCl
     fuentesDir,
     relFor,
     async list() {
-      // NOTE (limitation, documented rather than "fixed"): ideally a missing
-      // `.fuentes/`/`.fuentes/procesado/` directory (expected — it may not exist yet)
-      // would swallow silently to [] while a real enumeration failure would surface via
-      // deps.onError. We cannot discriminate the two here: fsClient.ts's listDir
-      // (src/fsClient.ts ~L330-338, the FuentesFs passed in from main.ts) already
-      // catches *any* error internally — NotFound or otherwise — and resolves to []
-      // unconditionally, so no error ever reaches this `.catch`. Distinguishing the
-      // cases would require changing that shared, foundational fsClient.ts contract
-      // (used by many other callers), which is out of scope for this fix. Keeping the
-      // swallow here is consistent with the underlying API's current behavior, not a
-      // regression.
+      // NOTE (resolved): fsClient.ts's listDir (src/fsClient.ts ~L330-341, the
+      // FuentesFs passed in from main.ts) now discriminates a missing directory
+      // (NotFoundError -> []; `.fuentes/`/`.fuentes/procesado/` may legitimately not
+      // exist yet) from a real enumeration/permission failure (rethrown). We
+      // deliberately do NOT catch here: a real failure must reject this list()
+      // call so the caller (fuentesPanel.ts) can render an error-state instead of
+      // a false empty panel, rather than swallowing it as before.
       const [rootEntries, procEntries] = await Promise.all([
-        fs.listDir(fuentesDir).catch(() => []),
-        fs.listDir(procesadoDir).catch(() => []),
+        fs.listDir(fuentesDir),
+        fs.listDir(procesadoDir),
       ]);
       const out: FuenteEntry[] = [];
       for (const e of rootEntries) {

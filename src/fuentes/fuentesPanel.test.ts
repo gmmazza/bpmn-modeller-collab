@@ -219,4 +219,42 @@ describe("renderFuentesPanel", () => {
     expect(host.querySelectorAll('section[data-estado="pendiente"]').length).toBe(1);
     expect(host.querySelectorAll("section").length).toBe(2);
   });
+
+  it("renders a .fuente-error with a Reintentar button (not the empty-state/dropzone) when client.list() rejects", async () => {
+    const host = document.createElement("div");
+    const baseClient = createFuentesClient(stubFs({ "d.fuentes/a.docx": [1] }), "d.bpmn");
+    const d = deps({
+      client: { ...baseClient, list: vi.fn(async () => { throw new Error("real enumeration failure"); }) },
+    });
+    await renderFuentesPanel(host, d);
+    expect(host.querySelector(".fuente-error")).toBeTruthy();
+    expect(host.querySelector(".fuente-error button")?.textContent).toBe("Reintentar");
+    expect(host.querySelector(".fuente-empty")).toBeNull();
+    expect(host.querySelector(".fuente-dropzone")).toBeNull();
+    expect(d.onError).toHaveBeenCalledOnce();
+  });
+
+  it("Reintentar re-invokes the render and recovers once list() succeeds", async () => {
+    const host = document.createElement("div");
+    const baseClient = createFuentesClient(stubFs({ "d.fuentes/a.docx": [1] }), "d.bpmn");
+    let calls = 0;
+    const d = deps({
+      client: {
+        ...baseClient,
+        list: vi.fn(async () => {
+          calls++;
+          if (calls === 1) throw new Error("real enumeration failure");
+          return baseClient.list();
+        }),
+      },
+    });
+    await renderFuentesPanel(host, d);
+    expect(host.querySelector(".fuente-error")).toBeTruthy();
+
+    (host.querySelector(".fuente-error button") as HTMLButtonElement).click();
+    await flush();
+
+    expect(host.querySelector(".fuente-error")).toBeNull();
+    expect(host.querySelector('[data-estado="pendiente"] [data-name="a.docx"]')).toBeTruthy();
+  });
 });

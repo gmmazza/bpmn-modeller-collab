@@ -160,4 +160,41 @@ describe("renderDatosPanel — with a selected element", () => {
     await flush();
     expect(host.querySelector('[data-entry-id="' + entry.id + '"]')).toBeNull();
   });
+
+  it("renders a .dato-error with a Reintentar button (not the empty category sections) when client.list() rejects", async () => {
+    const host = document.createElement("div");
+    const baseClient = createDatosClient(fakeApi(), "d.bpmn");
+    const d = deps({
+      client: { ...baseClient, list: vi.fn(async () => { throw new Error("real enumeration failure"); }) },
+    });
+    await renderDatosPanel(host, d);
+    expect(host.querySelector(".dato-error")).toBeTruthy();
+    expect(host.querySelector(".dato-error button")?.textContent).toBe("Reintentar");
+    expect(host.querySelector("section")).toBeNull();
+    expect(d.onError).toHaveBeenCalledOnce();
+  });
+
+  it("Reintentar re-invokes the render and recovers once list() succeeds", async () => {
+    const host = document.createElement("div");
+    const baseClient = createDatosClient(fakeApi(), "d.bpmn");
+    let calls = 0;
+    const d = deps({
+      client: {
+        ...baseClient,
+        list: vi.fn(async (elementId: string) => {
+          calls++;
+          if (calls === 1) throw new Error("real enumeration failure");
+          return baseClient.list(elementId);
+        }),
+      },
+    });
+    await renderDatosPanel(host, d);
+    expect(host.querySelector(".dato-error")).toBeTruthy();
+
+    (host.querySelector(".dato-error button") as HTMLButtonElement).click();
+    await flush();
+
+    expect(host.querySelector(".dato-error")).toBeNull();
+    expect(host.querySelector('section[data-category="formularios"]')).toBeTruthy();
+  });
 });

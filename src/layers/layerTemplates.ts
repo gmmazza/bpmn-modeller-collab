@@ -19,7 +19,8 @@ function stripAssignments(dims: Dimension[]): Dimension[] {
 }
 
 async function listEntries(api: TemplatesApi): Promise<{ slug: string; name: string }[]> {
-  const entries = await api.listDir(DIR);
+  // tolerate any listDir failure here (missing dir or read error) — non-critical listing
+  const entries = await api.listDir(DIR).catch(() => []);
   const out: { slug: string; name: string }[] = [];
   for (const e of entries) {
     if (e.kind !== "file" || !e.name.endsWith(".json")) continue;
