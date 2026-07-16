@@ -55,6 +55,20 @@ test("the IA menu's 'Administrar presets' deep-links to Configuraciones -> IA", 
   await expect(page.locator(".cfg-preset-add")).toBeVisible();
 });
 
+test("the IA menu dismisses on an outside click (does not stay persistent)", async ({ page }) => {
+  await openApp(page);
+  const menu = page.locator(".ia-group .menu-pop");
+
+  await page.locator("#ai-config").click();
+  await expect(menu).toBeVisible();
+
+  // Click a neutral element outside the .ia-group (the "Compartido" group label) — the
+  // anchored menu must close. (Avoid the canvas: with no file open its pointerdown
+  // interceptor preventDefaults, which would suppress the outside mousedown in this fixture.)
+  await page.locator("#sharedgroup .glabel").click();
+  await expect(menu).toHaveCount(0);
+});
+
 test("the name chip opens Configuraciones -> Generales with the current name pre-filled", async ({ page }) => {
   await openApp(page); // installFsMock seeds the name "Ana"
   await page.locator("#userbtn").click();

@@ -604,10 +604,15 @@ body.col-resizing { cursor: col-resize; user-select: none; }
    covers buttons (block, full-width); the select needs the same layout explicitly. */
 .ai-menu { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
 .ai-menu select.btn { display: block; width: 100%; }
-.ai-menu-hint.muted { color: var(--muted); font-size: 12px; margin: 2px 4px; }
+.ai-menu-title { font-weight: 600; font-size: 12px; padding: 2px 4px 0; }
+.ai-menu-caption.muted, .ai-menu-hint.muted { color: var(--muted); font-size: 12px; margin: 0 4px 2px; }
+.ai-menu-launch.primary { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+.ai-menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 /* Configuraciones modal — sectioned settings window (nav + panes) */
-.config-card { max-width: min(760px, 92vw); width: 100%; max-height: 86vh; display: flex; flex-direction: column; text-align: left; }
+/* Fixed height (not max-height) so the window keeps ONE size across sections;
+   .config-panes scrolls when a section overflows instead of the card resizing. */
+.config-card { max-width: min(760px, 92vw); width: 100%; height: min(560px, 86vh); display: flex; flex-direction: column; text-align: left; }
 .config-body { display: flex; gap: 18px; flex: 1; min-height: 0; }
 .config-nav { display: flex; flex-direction: column; gap: 2px; flex: none; width: 170px; border-right: 1px solid var(--border); padding-right: 14px; }
 .config-nav button { text-align: left; background: transparent; border: none; color: var(--text); padding: 8px 10px; border-radius: var(--radius); cursor: pointer; font-size: 13.5px; font-family: inherit; }

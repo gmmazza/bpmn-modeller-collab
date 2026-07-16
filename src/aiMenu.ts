@@ -20,8 +20,20 @@ export function buildAiMenu(deps: AiMenuDeps): HTMLElement {
   const el = document.createElement("div");
   el.className = "ai-menu";
 
+  // Title clarifies the whole menu is about AI agents (the ✨ button alone is ambiguous).
+  const title = document.createElement("div");
+  title.className = "ai-menu-title";
+  title.textContent = "Agentes IA";
+  el.appendChild(title);
+
   if (deps.hasLauncher) {
     const presets = deps.getPresets();
+
+    // Caption frames the two-step dynamic: pick a preset, then Lanzar.
+    const caption = document.createElement("p");
+    caption.className = "ai-menu-caption muted";
+    caption.textContent = "Elegí un preset y lanzalo en la carpeta:";
+    el.appendChild(caption);
 
     const sel = document.createElement("select");
     sel.className = "btn ai-menu-preset";
@@ -39,8 +51,8 @@ export function buildAiMenu(deps: AiMenuDeps): HTMLElement {
 
     const launchBtn = document.createElement("button");
     launchBtn.type = "button";
-    launchBtn.className = "btn ai-menu-launch";
-    launchBtn.textContent = "Lanzar";
+    launchBtn.className = "btn primary ai-menu-launch";
+    launchBtn.textContent = "▶  Lanzar preset"; // ▶ ties it to the toolbar's quick-launch button
     launchBtn.addEventListener("click", () => {
       const p = deps.getPresets().find((x) => x.id === sel.value);
       if (!p) return;
@@ -64,10 +76,15 @@ export function buildAiMenu(deps: AiMenuDeps): HTMLElement {
     el.appendChild(hint);
   }
 
+  // Separate the config action from the operational ones above it.
+  const sep = document.createElement("div");
+  sep.className = "ai-menu-sep";
+  el.appendChild(sep);
+
   const manageBtn = document.createElement("button");
   manageBtn.type = "button";
   manageBtn.className = "btn ai-menu-manage";
-  manageBtn.textContent = "Administrar presets";
+  manageBtn.textContent = "Administrar presets…"; // … signals it opens Configuraciones → IA
   manageBtn.addEventListener("click", () => deps.onManagePresets());
   el.appendChild(manageBtn);
 
