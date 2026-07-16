@@ -98,6 +98,7 @@ import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageO
 import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
 import { renderOutcomePopover } from "./subprocesos/outcomePopover";
 import { typeBadgeFor } from "./subprocesos/typeBadges";
+import { buildMasterSubs } from "./subprocesos/masterSubsIndex";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -194,6 +195,11 @@ async function bootstrap() {
   // file's XML on each refresh. Best-effort — never blocks rendering the tree.
   const mastersCache = new Set<string>();
   const masterFileVersions = new Map<string, string>(); // path -> version already checked
+  // A.6: master -> same-folder subprocess files, rebuilt alongside mastersCache (only
+  // re-parsing version-changed masters). Feeds nestSubprocesses in renderTree.
+  const masterSubs = new Map<string, string[]>();               // masterPath -> sub file paths
+  const masterLinksCache = new Map<string, { version: string; called: string[] }>(); // per-master calledElements
+  const collapsedMasters = new Set<string>();                    // master paths whose sub-group is collapsed
   async function refreshMastersCache(files: TreeEntry[]): Promise<void> {
     // Mutates the shared `mastersCache` Set per-key (mirrors processRegistry.ts's
     // `sync`) instead of snapshot-then-swap: refreshFileList() has many call sites
@@ -207,6 +213,7 @@ async function bootstrap() {
       if (!seen.has(path)) {
         masterFileVersions.delete(path);
         mastersCache.delete(path);
+        masterLinksCache.delete(path);
       }
     }
     for (const f of bpmn) {
@@ -214,9 +221,36 @@ async function bootstrap() {
       if (masterFileVersions.get(f.path) === version) continue; // unchanged, keep cached verdict
       masterFileVersions.set(f.path, version);
       const xml = await api.readPath(f.path).catch(() => null);
-      if (xml && (await xmlIsMaster(xml))) mastersCache.add(f.path);
-      else mastersCache.delete(f.path);
+      if (xml && (await xmlIsMaster(xml))) {
+        mastersCache.add(f.path);
+        // Cache this master's calledElements for the subprocess index (best-effort).
+        try {
+          const called = callLinksFromEls(await parseCallLinks(xml)).map((l) => l.calledElement);
+          masterLinksCache.set(f.path, { version, called });
+        } catch { masterLinksCache.set(f.path, { version, called: [] }); }
+      } else {
+        mastersCache.delete(f.path);
+        masterLinksCache.delete(f.path);
+      }
     }
+    // getFolderIndex() (main.ts:544) is async + memoized (invalidated to null in
+    // refreshFileList); resolve it once, then rebuild the index synchronously.
+    const idx = await getFolderIndex().catch(() => [] as DiagramInfo[]);
+    rebuildMasterSubs(idx);
+  }
+
+  function rebuildMasterSubs(idx: DiagramInfo[]): void {
+    // resolve a calledElement to a file: registry first (processId), then folderIndex
+    // baseName fallback (parity with the drill-down's resolveCalledProcess).
+    const resolve = (called: string): string | null =>
+      registry.resolve(called)?.file ?? resolveCalledProcess(called, idx);
+    const next = buildMasterSubs(
+      [...mastersCache],
+      (m) => masterLinksCache.get(m)?.called ?? [],
+      resolve,
+    );
+    masterSubs.clear();
+    for (const [k, v] of next) masterSubs.set(k, v);
   }
 
   function closeLinkPopover(): void {
@@ -1852,14 +1886,20 @@ async function bootstrap() {
     renderFileTree(
       document.querySelector<HTMLElement>("#files .files-tree")!,
       clean,
-      { expanded, selectedId, me, masters: mastersCache, openPaths: openPathsNow() },
+      { expanded, selectedId, me, masters: mastersCache, openPaths: openPathsNow(), collapsedMasters },
       {
         onOpen: (id) => void openFile(id).catch(onError),
-        onToggle: (path) => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); void refreshFileList().catch(onError); },
+        onToggle: (path) => {
+          if (mastersCache.has(path)) {
+            if (collapsedMasters.has(path)) collapsedMasters.delete(path); else collapsedMasters.add(path);
+          } else if (expanded.has(path)) { expanded.delete(path); } else { expanded.add(path); }
+          void refreshFileList().catch(onError);
+        },
         onNewFile: (parent) => void newDiagramIn(parent).catch(onError),
         onNewFolder: (parent) => void newFolderIn(parent).catch(onError),
         onMenu: (target, anchor) => openItemMenu(target, anchor),
       },
+      masterSubs,
     );
   }
 

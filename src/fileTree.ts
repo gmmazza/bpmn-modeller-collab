@@ -1,5 +1,6 @@
 import type { TreeEntry } from "./types";
 import { readLock, lockState } from "./lockManager";
+import { nestSubprocesses } from "./subprocesos/nestSubprocesses";
 
 export interface TreeNode {
   name: string;
@@ -220,8 +221,11 @@ export function renderFileTree(
   entries: TreeEntry[],
   state: FileTreeState,
   handlers: FileTreeHandlers,
+  masterSubs?: Map<string, string[]>,
 ): void {
   el.innerHTML = "";
-  renderNodes(el, buildTree(visibleEntries(entries)), 0, state, handlers);
+  const tree = buildTree(visibleEntries(entries));
+  const nested = masterSubs && masterSubs.size ? nestSubprocesses(tree, masterSubs) : tree;
+  renderNodes(el, nested, 0, state, handlers);
   addBar(el, "", handlers);
 }
