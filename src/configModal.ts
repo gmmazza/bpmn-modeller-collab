@@ -101,9 +101,16 @@ export function showConfigModal(deps: ConfigModalDeps): HTMLElement {
     b.addEventListener("click", () => showSection(b.dataset.section as ConfigSection));
   });
 
+  // Name snapshot, kept live: the Generales pane can change the name within the same
+  // modal session, and the IA pane's save/overlay-path must follow it — not the stale
+  // deps.userName captured at open time.
+  let currentName: string | null = deps.userName;
   wireVisualizacion($, deps);
-  wireIa($, deps);
-  wireGenerales($, deps, close);
+  const refreshIaForName = wireIa($, deps, () => currentName);
+  wireGenerales($, deps, close, (v) => {
+    currentName = v;
+    refreshIaForName(v);
+  });
   wireVersion($, deps, overlay);
 
   showSection(deps.initialSection ?? "visualizacion");
@@ -156,7 +163,7 @@ function paneIa(deps: ConfigModalDeps): string {
   return `
     <section class="config-pane" data-pane="ia" hidden>
       <h3>Instrucciones para la IA</h3>
-      <p>Tuyas, para este proyecto. Se guardan en <code>${esc(overlayPath ?? "(configurá tu nombre primero)")}</code>.
+      <p>Tuyas, para este proyecto. Se guardan en <code class="cfg-overlay-path">${esc(overlayPath ?? "(configurá tu nombre primero)")}</code>.
          Tienen precedencia sobre tu skill BPMN personal, no sobre el canon del proyecto.</p>
       <textarea class="cfg-instructions-text" rows="8" style="width:100%" ${disabled}></textarea>
       <div class="cfg-row">
@@ -172,11 +179,16 @@ function paneIa(deps: ConfigModalDeps): string {
     </section>`;
 }
 
-function wireIa($: <T extends HTMLElement>(sel: string) => T, deps: ConfigModalDeps): void {
+// Returns a callback the caller invokes whenever the live name changes (Generales pane),
+// so the overlay-path text and the enabled state of the textarea/save button stay in sync
+// with the name actually used for reads/saves — not the name captured when the modal opened.
+function wireIa($: <T extends HTMLElement>(sel: string) => T, deps: ConfigModalDeps, getCurrentName: () => string | null): (name: string) => void {
   const ta = $<HTMLTextAreaElement>(".cfg-instructions-text");
-  void readPersonalInstructions(deps.api, deps.userName).then((t) => { ta.value = t; }).catch(deps.onError);
-  $(".cfg-save-instructions").addEventListener("click", () => {
-    void savePersonalInstructions(deps.api, deps.userName, ta.value).catch(deps.onError);
+  const saveBtn = $<HTMLButtonElement>(".cfg-save-instructions");
+  const overlayCode = $<HTMLElement>(".cfg-overlay-path");
+  void readPersonalInstructions(deps.api, getCurrentName()).then((t) => { ta.value = t; }).catch(deps.onError);
+  saveBtn.addEventListener("click", () => {
+    void savePersonalInstructions(deps.api, getCurrentName(), ta.value).catch(deps.onError);
   });
   const agentsViewer = $<HTMLTextAreaElement>(".cfg-agents-viewer");
   $(".cfg-view-agents").addEventListener("click", () => {
@@ -227,6 +239,14 @@ function wireIa($: <T extends HTMLElement>(sel: string) => T, deps: ConfigModalD
   });
   rows.addEventListener("change", () => { syncFromInputs(); persist(); });
   renderRows();
+
+  const refreshOverlay = (name: string | null): void => {
+    const overlayPath = personalOverlayPath(name);
+    overlayCode.textContent = overlayPath ?? "(configurá tu nombre primero)";
+    ta.disabled = !overlayPath;
+    saveBtn.disabled = !overlayPath;
+  };
+  return refreshOverlay;
 }
 
 // ---- Generales: name, folder, autosave ----
@@ -249,11 +269,15 @@ function paneGenerales(deps: ConfigModalDeps): string {
     </section>`;
 }
 
-function wireGenerales($: <T extends HTMLElement>(sel: string) => T, deps: ConfigModalDeps, close: () => void): void {
+// onNameSet: internal hook (distinct from deps.onNameChange) that updates the modal's live
+// `currentName` closure — so the IA pane's overlay path follows a name change made here,
+// within the same modal session.
+function wireGenerales($: <T extends HTMLElement>(sel: string) => T, deps: ConfigModalDeps, close: () => void, onNameSet: (name: string) => void): void {
   $(".cfg-name-save").addEventListener("click", () => {
     const v = $<HTMLInputElement>(".cfg-name-input").value.trim();
     if (!v) return;
-    setName(v);
+    setName(v); // single write; main.ts's deps.onNameChange must NOT call setName again
+    onNameSet(v);
     deps.onNameChange(v);
   });
   $(".cfg-folder-change").addEventListener("click", () => {

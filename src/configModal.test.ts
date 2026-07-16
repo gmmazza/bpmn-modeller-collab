@@ -3,6 +3,7 @@ import { showConfigModal, type ConfigModalDeps } from "./configModal";
 import { getPresets } from "./terminalPresets";
 import { getName } from "./identity";
 import { getTheme } from "./theme";
+import { readPersonalInstructions } from "./processDocs/personalInstructions";
 
 function fakeApi(initial: Record<string, string> = {}) {
   const store = new Map(Object.entries(initial));
@@ -105,6 +106,35 @@ describe("showConfigModal", () => {
     (overlay.querySelector(".cfg-name-save") as HTMLButtonElement).click();
     expect(onNameChange).toHaveBeenCalledWith("Beatriz");
     expect(getName()).toBe("Beatriz");
+    overlay.remove();
+  });
+
+  it("saves IA instructions to the NEW name's overlay path after changing the name in Generales, within the same modal session", async () => {
+    const api = fakeApi();
+    const overlay = showConfigModal(deps({ api, userName: "Ana" }));
+    // Switch to Generales, change the name — this must update the live currentName used
+    // by the IA pane, not just fire onNameChange for the header.
+    const generalesBtn = overlay.querySelector('.config-nav button[data-section="generales"]') as HTMLButtonElement;
+    generalesBtn.click();
+    (overlay.querySelector(".cfg-name-input") as HTMLInputElement).value = "Beatriz";
+    (overlay.querySelector(".cfg-name-save") as HTMLButtonElement).click();
+
+    // The IA pane's overlay-path display should now reflect "Beatriz", not "Ana".
+    const overlayCode = overlay.querySelector(".cfg-overlay-path") as HTMLElement;
+    expect(overlayCode.textContent).toBe("AGENTS.beatriz.md");
+
+    const iaBtn = overlay.querySelector('.config-nav button[data-section="ia"]') as HTMLButtonElement;
+    iaBtn.click();
+    const ta = overlay.querySelector(".cfg-instructions-text") as HTMLTextAreaElement;
+    expect(ta.disabled).toBe(false);
+    ta.value = "instrucciones para beatriz";
+    (overlay.querySelector(".cfg-save-instructions") as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+
+    const saved = await readPersonalInstructions(api, "Beatriz");
+    expect(saved.trim()).toBe("instrucciones para beatriz");
+    const savedUnderOldName = await readPersonalInstructions(api, "Ana");
+    expect(savedUnderOldName).toBe("");
     overlay.remove();
   });
 

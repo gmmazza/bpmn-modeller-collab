@@ -1076,9 +1076,7 @@ async function bootstrap() {
         <span class="brand">◈ BPMN compartida</span>
         <span class="spacer"></span>
         <span class="hchip" id="folderchip"></span>
-        <div class="menu" id="usermenu">
-          <button class="btn" id="userbtn" type="button"></button>
-        </div>
+        <button class="btn" id="userbtn" type="button"></button>
         <button class="btn icon-only" id="helpbtn" type="button" title="Ayuda">${icon("help")}</button>
         <button class="btn icon-only" id="themebtn" type="button" title="Tema"></button>
       </header>
@@ -1360,7 +1358,7 @@ async function bootstrap() {
       showConfigModal({
         api,
         userName: getName(),
-        onNameChange: (n) => { setName(n); me = { name: n, email: n }; renderUserBtn(); },
+        onNameChange: (n) => { me = { name: n, email: n }; renderUserBtn(); }, // setName already done in configModal.ts
         folderLabel,
         onChangeFolder: changeFolder, // the modal closes itself first (reload re-renders the DOM)
         onThemeChange: () => { renderThemeBtn(); },
@@ -1389,7 +1387,10 @@ async function bootstrap() {
         getPresets,
         getLastPresetId,
         setLastPresetId,
-        launch: (cmd) => openExternalTerminal(cmd),
+        // refreshQuickLaunch (hoisted `function` below) keeps ▶'s title in sync with
+        // whichever preset was just launched from this menu; .finally preserves the
+        // promise's rejection so the menu's own .catch(onError) still fires.
+        launch: (cmd) => openExternalTerminal(cmd).finally(() => refreshQuickLaunch()),
         onManagePresets: () => { pop!.remove(); openConfigModal("ia"); },
         onError,
       }));
