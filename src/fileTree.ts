@@ -134,6 +134,9 @@ export interface FileTreeState {
   // matching get an "abierto" marker (see openChip above). Optional so existing
   // callers/tests that don't care don't need to thread an empty set.
   openPaths?: Set<string>;
+  // Master file paths whose nested subprocess group is COLLAPSED (absent = expanded by
+  // default — A.6). Only meaningful for file nodes that carry subprocess children.
+  collapsedMasters?: Set<string>;
 }
 
 function renderNodes(
@@ -173,6 +176,15 @@ function renderNodes(
       }
     } else {
       if (node.path === state.selectedId) row.classList.add("selected");
+      const hasSubs = node.children.length > 0;
+      const collapsed = state.collapsedMasters?.has(node.path) ?? false;
+      if (hasSubs) {
+        const tog = document.createElement("span");
+        tog.className = "ft-toggle";
+        tog.textContent = collapsed ? "▸" : "▾";
+        tog.addEventListener("click", (e) => { e.stopPropagation(); h.onToggle(node.path); });
+        row.append(tog);
+      }
       const name = document.createElement("span");
       name.className = "ft-name";
       name.textContent = "📄 " + node.name;
@@ -190,8 +202,17 @@ function renderNodes(
       row.append(name, menu);
       row.addEventListener("contextmenu", (e) => { e.preventDefault(); h.onMenu({ path: node.path, kind: "file" }, (e.target as HTMLElement).getBoundingClientRect()); });
       container.appendChild(row);
+      if (hasSubs && !collapsed) {
+        renderNodes(container, node.children, depth + 1, state, h);
+      }
     }
   }
+}
+
+// Test seam: render a pre-built (possibly nested) TreeNode list at depth 0. Production
+// code uses renderFileTree; tests use this to exercise renderNodes' nesting directly.
+export function renderNodesInto(el: HTMLElement, nodes: TreeNode[], state: FileTreeState, handlers: FileTreeHandlers): void {
+  renderNodes(el, nodes, 0, state, handlers);
 }
 
 export function renderFileTree(

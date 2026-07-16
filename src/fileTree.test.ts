@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildTree, renderFileTree, visibleEntries } from "./fileTree";
+import { buildTree, renderFileTree, renderNodesInto, visibleEntries } from "./fileTree";
 import type { TreeEntry } from "./types";
 
 describe("renderFileTree", () => {
@@ -83,6 +83,19 @@ describe("renderFileTree", () => {
     expect(tree.querySelector('[data-path="Ventas/B2B.bpmn"]')).not.toBeNull();
     expect(outer.querySelector(".files-resizer")).not.toBeNull();
     expect(outer.children.length).toBe(2); // still exactly .files-tree + .files-resizer
+  });
+  it("renders a master file's children indented with a toggle; collapse hides them", () => {
+    const el = document.createElement("div");
+    const rep = { name: "Rep", path: "f/Rep.bpmn", kind: "file" as const,
+      children: [{ name: "Diag", path: "f/Diag.bpmn", kind: "file" as const, children: [] }] };
+    const handlers = { onOpen() {}, onMenu() {}, onToggle() {}, onNewFile() {}, onNewFolder() {} };
+    const base = { selectedId: null, me: { name: "x", email: "x" }, expanded: new Set<string>() };
+    renderNodesInto(el, [rep], { ...base, collapsedMasters: new Set() }, handlers);
+    expect(el.querySelector('[data-path="f/Rep.bpmn"] .ft-toggle')).toBeTruthy(); // master has a toggle
+    expect(el.querySelector('[data-path="f/Diag.bpmn"]')).toBeTruthy();           // child rendered
+    el.innerHTML = "";
+    renderNodesInto(el, [rep], { ...base, collapsedMasters: new Set(["f/Rep.bpmn"]) }, handlers);
+    expect(el.querySelector('[data-path="f/Diag.bpmn"]')).toBeFalsy();            // collapsed hides child
   });
 });
 
