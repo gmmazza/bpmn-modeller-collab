@@ -7,6 +7,6 @@ main { display: flex; }
 #canvas { flex: 1; }
 .viz-version { font-size: 13px; margin-top: 8px; }
 .viz-version button { margin: 0 6px; }
-.viz-version #bpmnjs-status { color: #6b7280; }
+.viz-version .cfg-bpmnjs-status { color: #6b7280; }
 .appupdate-bar { background: #dbeafe; color: #1e3a8a; padding: 6px 10px; font-size: 13px; }
 .appupdate-bar button { margin-left: 8px; }

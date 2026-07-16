@@ -493,10 +493,16 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 }
 .idea-element-pop { min-width: 240px; max-width: 340px; max-height: 60vh; overflow: auto; }
 
+/* Fuentes panel */
+.fuente-error { padding: 8px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.fuente-error p { margin: 0; color: var(--accent); }
+
 /* Datos y herramientas panel */
 .dato-badge { background: var(--accent); color: var(--accent-contrast); border-radius: 999px; padding: 2px 8px; font-size: 13px; line-height: 1.2; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.35); border: 2px solid var(--accent-contrast); }
 .dato-badge:hover { filter: brightness(1.1); }
 .dato-empty { padding: 8px; opacity: .8; }
+.dato-error { padding: 8px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.dato-error p { margin: 0; color: var(--accent); }
 .dato-title { margin: 4px 0; }
 .dato-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; }
 .dato-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -592,6 +598,24 @@ body.col-resizing { cursor: col-resize; user-select: none; }
 .ia-group { display: inline-flex; align-items: center; gap: 4px; }
 /* .btn's display:inline-flex beats the UA [hidden] rule; force it off explicitly. */
 #ai-quicklaunch[hidden] { display: none; }
-.preset-row { display: flex; gap: 6px; margin: 4px 0; }
-.preset-row input { flex: 1; min-width: 0; }
 .idea-pop-add input { flex: 1; }
+
+/* Operational IA menu (.menu-pop content built by src/aiMenu.ts) — .menu-pop already
+   covers buttons (block, full-width); the select needs the same layout explicitly. */
+.ai-menu { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+.ai-menu select.btn { display: block; width: 100%; }
+.ai-menu-hint.muted { color: var(--muted); font-size: 12px; margin: 2px 4px; }
+
+/* Configuraciones modal — sectioned settings window (nav + panes) */
+.config-card { max-width: min(760px, 92vw); width: 100%; max-height: 86vh; display: flex; flex-direction: column; text-align: left; }
+.config-body { display: flex; gap: 18px; flex: 1; min-height: 0; }
+.config-nav { display: flex; flex-direction: column; gap: 2px; flex: none; width: 170px; border-right: 1px solid var(--border); padding-right: 14px; }
+.config-nav button { text-align: left; background: transparent; border: none; color: var(--text); padding: 8px 10px; border-radius: var(--radius); cursor: pointer; font-size: 13.5px; font-family: inherit; }
+.config-nav button:hover { background: var(--hover); }
+.config-nav button.active { background: var(--accent); color: var(--accent-contrast); }
+.config-panes { flex: 1; min-width: 0; overflow: auto; padding-right: 4px; }
+.config-pane[hidden] { display: none !important; }
+.config-pane h3 { margin: 0 0 8px; font-size: 15px; }
+.config-pane h3:not(:first-child) { margin-top: 22px; }
+.cfg-preset-row { display: flex; gap: 6px; margin: 4px 0; }
+.cfg-preset-row input { flex: 1; min-width: 0; }

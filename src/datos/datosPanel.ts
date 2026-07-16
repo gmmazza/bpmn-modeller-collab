@@ -1,5 +1,5 @@
 import type { DatosClient } from "./datosClient";
-import { emptyElementoDatos, type DatosEntry, type DatosCategory, type ElementoDatos } from "./datosModel";
+import type { DatosEntry, DatosCategory, ElementoDatos } from "./datosModel";
 
 const CATEGORY_LABEL: Record<DatosCategory, string> = {
   formularios: "Formularios",
@@ -169,7 +169,23 @@ export async function renderDatosPanel(host: HTMLElement, deps: DatosPanelDeps):
     datos = await deps.client.list(elementId);
   } catch (e) {
     deps.onError(e);
-    datos = emptyElementoDatos();
+    // The user could have re-selected a different element while `list` was in flight, or a
+    // newer render of the SAME element could have started (see the generation guard above).
+    if (host.dataset.datosGen !== gen) return; // a newer render superseded this one
+    if (host.dataset.elementId !== elementId) return;
+    const errorEl = document.createElement("div");
+    errorEl.className = "dato-error";
+    const msg = document.createElement("p");
+    msg.textContent = "No se pudieron leer los datos.";
+    errorEl.appendChild(msg);
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.className = "btn";
+    retry.textContent = "Reintentar";
+    retry.addEventListener("click", refresh);
+    errorEl.appendChild(retry);
+    host.appendChild(errorEl);
+    return; // do NOT fall through to the empty category sections — this is an error, not an empty state
   }
   // The user could have re-selected a different element while `list` was in flight, or a
   // newer render of the SAME element could have started (see the generation guard above).

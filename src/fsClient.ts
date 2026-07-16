@@ -333,8 +333,9 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
         const out: { name: string; kind: "file" | "directory" }[] = [];
         for await (const [name, h] of (d as any).entries()) out.push({ name, kind: (h as any).kind });
         return out;
-      } catch {
-        return [];
+      } catch (e) {
+        if ((e as { name?: string })?.name === "NotFoundError") return []; // dir doesn't exist yet — normal
+        throw e; // real enumeration/permission failure — surface it
       }
     },
     // ---- history API (covered by Task 5 tests) ----

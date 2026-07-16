@@ -17,7 +17,8 @@ function idNum(id: string): number { const m = id.match(/-(\d+)$/); return m ? N
 
 export function createIdeasClient(api: IdeasFsApi) {
   async function listIds(dir: string): Promise<string[]> {
-    const entries = await api.listDir(dir);
+    // tolerate any listDir failure here (missing dir or read error) — non-critical listing
+    const entries = await api.listDir(dir).catch(() => []);
     return entries.filter((e) => e.kind === "file" && e.name.endsWith(".md")).map((e) => e.name.replace(/\.md$/, ""));
   }
   async function nextId(dir: string, prefix: string): Promise<string> {

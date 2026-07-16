@@ -322,3 +322,20 @@ describe("movePath", () => {
     expect(Array.from((await fs_test.readBinary("d.fuentes/procesado/a.bin"))!)).toEqual([1, 2, 3, 4]);
   });
 });
+
+describe("listDir error discrimination", () => {
+  it("returns [] when the target directory does not exist (NotFoundError)", async () => {
+    expect(await fs.listDir("does-not-exist")).toEqual([]);
+  });
+
+  it("rethrows on a real enumeration failure (not a missing-dir NotFoundError)", async () => {
+    // Create the dir first so getDirectoryHandle succeeds, then make its
+    // entries() blow up with a generic error — simulating a real read/permission
+    // failure distinct from "the directory doesn't exist yet".
+    const sub = await dir.getDirectoryHandle("sub", { create: true });
+    (sub as any).entries = async function* () {
+      throw new Error("disk read error");
+    };
+    await expect(fs.listDir("sub")).rejects.toThrow("disk read error");
+  });
+});

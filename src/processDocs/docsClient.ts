@@ -36,7 +36,8 @@ export function createDocsClient(api: DocsFsApi) {
       return api.writePath(ideasPath(diagramId), md);
     },
     async listDocumentedIds(diagramId: string): Promise<string[]> {
-      const entries = await api.listDir(docsDir(diagramId));
+      // tolerate any listDir failure here (missing dir or read error) — non-critical listing
+      const entries = await api.listDir(docsDir(diagramId)).catch(() => []);
       return entries
         .filter((e) => e.kind === "file" && e.name.endsWith(".md") && !e.name.startsWith("_"))
         .map((e) => e.name.replace(/\.md$/, ""));
@@ -48,7 +49,8 @@ export function createDocsClient(api: DocsFsApi) {
       return api.readBinary(`${assetsDir(diagramId)}/${name}`);
     },
     async listAssets(diagramId: string): Promise<string[]> {
-      const entries = await api.listDir(assetsDir(diagramId));
+      // tolerate any listDir failure here (missing dir or read error) — non-critical listing
+      const entries = await api.listDir(assetsDir(diagramId)).catch(() => []);
       return entries.filter((e) => e.kind === "file").map((e) => e.name);
     },
   };
