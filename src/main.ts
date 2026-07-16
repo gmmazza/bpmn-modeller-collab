@@ -1097,11 +1097,6 @@ async function bootstrap() {
         </div>
         <span class="divider"></span>
         <div class="tgroup" data-prio="1">
-          <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
-          <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
-          <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
-          <button class="btn icon-only" id="tab-fuentes" type="button" title="Fuentes">${icon("paperclip")}</button>
-          <button class="btn icon-only" id="tab-datos" type="button" title="Datos y herramientas">${icon("database")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Configuraciones">${icon("settings")}</button>
           </div>
@@ -1152,18 +1147,22 @@ async function bootstrap() {
       </main>`;
 
     inspector = createInspector(document.getElementById("inspector")!, [
-      { id: "capas", label: "Capas" },
-      { id: "propiedades", label: "Propiedades" },
-      { id: "historial", label: "Historial" },
-      { id: "documentacion", label: "Documentación" },
-      { id: "fuentes", label: "Fuentes" },
-      { id: "datos", label: "Datos y herramientas" },
-      { id: "ideas", label: "Ideas" },
+      { id: "capas", label: "Capas", icon: "layers" },
+      { id: "propiedades", label: "Propiedades", icon: "properties" },
+      { id: "historial", label: "Historial", icon: "clock" },
+      { id: "documentacion", label: "Documentación", icon: "fileText" },
+      { id: "fuentes", label: "Fuentes", icon: "paperclip" },
+      { id: "datos", label: "Datos y herramientas", icon: "database" },
+      { id: "ideas", label: "Ideas", icon: "bulb" },
     ], (tabId) => {
       // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
       const on = tabId === "ideas";
       void ideaMode?.setEnabled(on);
       if (on) void ideasCtl?.refresh();
+      // Lazy per-pane refresh that the removed toolbar jump-buttons used to trigger.
+      if (tabId === "capas") renderLayers();
+      if (tabId === "documentacion") void docsController?.refresh();
+      if (tabId === "fuentes") void renderFuentes();
       if (tabId === "datos") void renderDatos();
     });
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
@@ -1477,16 +1476,6 @@ async function bootstrap() {
       $("toggle-inspector").title = vis ? "Ocultar panel lateral" : "Mostrar panel lateral";
       setColl("inspector", !vis);
     };
-    const openInspector = (tab: string): void => {
-      inspector.setTab(tab);
-      if (tab === "capas") renderLayers();
-      reflectInspectorToggle();
-    };
-    $("tab-capas").addEventListener("click", () => openInspector("capas"));
-    $("tab-props").addEventListener("click", () => openInspector("propiedades"));
-    $("tab-docs").addEventListener("click", () => { inspector.setTab("documentacion"); void docsController?.refresh(); reflectInspectorToggle(); });
-    $("tab-fuentes").addEventListener("click", () => { inspector.setTab("fuentes"); void renderFuentes(); reflectInspectorToggle(); });
-    $("tab-datos").addEventListener("click", () => { inspector.setTab("datos"); void renderDatos(); reflectInspectorToggle(); });
     $("toggle-inspector").addEventListener("click", () => {
       if (inspector.isVisible()) inspector.hide();
       else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); void renderDatos(); }

@@ -44,19 +44,16 @@ async function openApp(page: Page, files: Record<string, string>): Promise<void>
   await expect(page.locator("#save")).toBeVisible(); // toolbar mounted
 }
 
-// The inspector tab buttons live in a reflow-protected toolbar group; at this
-// viewport (and especially in master mode) they can sit in the "⋯" overflow.
-async function openFuentes(page: Page): Promise<void> {
-  if (!(await page.locator("#tab-fuentes").isVisible())) await page.locator("#more").click();
-  await page.locator("#tab-fuentes").click();
+// Clicks a rail icon by its data-tab id (e.g. "fuentes", "datos"). The rail is
+// always-visible activity-bar UI, not part of the reflow-protected toolbar
+// group — unlike the old toolbar jump-buttons it replaced, it never gets
+// pushed into "⋯" overflow.
+async function openInspectorTab(page: Page, tabId: string): Promise<void> {
+  await page.locator(`.inspector-tab[data-tab="${tabId}"]`).click();
 }
 
-// Generic version of the above for other data-prio toolbar groups (e.g. #tab-datos)
-// that can likewise get pushed into "⋯" overflow depending on viewport/mode.
-async function openInspectorTab(page: Page, tabId: string): Promise<void> {
-  const tab = page.locator(`#${tabId}`);
-  if (!(await tab.isVisible())) await page.locator("#more").click();
-  await tab.click();
+async function openFuentes(page: Page): Promise<void> {
+  await openInspectorTab(page, "fuentes");
 }
 
 // A third, unrelated plain diagram (its own process/start-event ids) for the panel-resize,
@@ -125,11 +122,15 @@ test("drilling into a stage re-points Fuentes at the stage's own sources", async
   await openFuentes(page);
   await expect(page.locator('[data-name="mapasrc.pdf"]')).toBeVisible();
 
-  // Drill into the linked stage — the focused file becomes the stage.
+  // Drill into the linked stage — the focused file becomes the stage. Fuentes stays
+  // the active AND visible rail tab across the drill (drilling doesn't touch the
+  // inspector), so openFile's own `void renderFuentes()` call re-points the already-
+  // open pane on its own — no extra tab click needed (clicking the rail icon again
+  // while it's already active+visible would just collapse it, per the rail's
+  // toggle-to-collapse behavior).
   await page.locator("#master-canvas .subproc-badge.subproc-resolved").click();
   await expect(page.locator('#canvas [data-element-id="StartEvent_Etapa1"]')).toBeVisible();
 
-  await openFuentes(page);
   await expect(page.locator('[data-name="etapasrc.pdf"]')).toBeVisible();
   await expect(page.locator('[data-name="mapasrc.pdf"]')).toHaveCount(0);
 });
@@ -205,7 +206,7 @@ test("data/tool is free text with workspace suggestions", async ({ page }) => {
   await openApp(page, { "plano.bpmn": PLAIN_BPMN });
   await page.getByText("📄 plano.bpmn").click();
   await page.locator('#canvas [data-element-id="StartEvent_Plano"]').click();
-  await openInspectorTab(page, "tab-datos");
+  await openInspectorTab(page, "datos");
 
   const toolInput = page.locator('section[data-category="formularios"] .dato-add-tool');
   await expect(toolInput).toHaveAttribute("list", /dato-tools-formularios/);
@@ -262,12 +263,38 @@ test("Fuentes tab-click racing the master-focus path does not duplicate the Pend
   await openFuentes(page);
   await expect(page.locator(".fuente-dropzone")).toBeVisible();
 
-  // Fire the tab-click's renderFuentes() again, then immediately (no settle-wait) open the
-  // master — its own master-focus renderFuentes() call can land while the first is mid-flight.
-  await page.locator("#tab-fuentes").click();
+  // Fire a second, unawaited renderFuentes() on the SAME already-open Fuentes pane.
+  // The rail icon itself can't do this anymore — re-clicking an already-active,
+  // already-visible tab now collapses it instead of refiring (Task 4's toggle
+  // behavior) — but collapsing then reopening the inspector hits the same
+  // renderFuentes() call the old always-refire toolbar button used to (its reopen
+  // path calls renderFuentes() directly, independent of the tab-change onChange).
+  // Then immediately (no settle-wait) open the master — its own master-focus
+  // renderFuentes() call can land while the first is mid-flight.
+  await page.locator("#toggle-inspector").click(); // collapse
+  await page.locator("#toggle-inspector").click(); // reopen -> refires renderFuentes()
   await page.getByText("📄 mapa.bpmn").click();
 
   await expect(page.locator("#master-canvas .djs-container")).toBeVisible();
   await expect(page.locator('[data-estado="pendiente"]')).toHaveCount(1);
   await expect(page.locator('[data-name="mapasrc.pdf"]')).toBeVisible();
+});
+
+// Task 4: the 5 toolbar panel-jump buttons (#tab-capas/#tab-props/#tab-docs/
+// #tab-fuentes/#tab-datos) were removed — their job now belongs entirely to the
+// always-visible inspector rail.
+test("the inspector rail is always visible; clicking an icon opens its pane; the 5 toolbar jump-buttons are gone", async ({ page }) => {
+  await openApp(page, { "plano.bpmn": PLAIN_BPMN });
+  await page.getByText("📄 plano.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  await expect(page.locator("#tab-capas")).toHaveCount(0);
+  await expect(page.locator("#tab-fuentes")).toHaveCount(0);
+  const rail = page.locator(".inspector-rail");
+  await expect(rail).toBeVisible();
+  await page.locator('.inspector-tab[data-tab="fuentes"]').click();
+  await expect(page.locator('.inspector-pane[data-pane="fuentes"]')).toBeVisible();
+  // Rail persists when the panes collapse (click the active icon again).
+  await page.locator('.inspector-tab[data-tab="fuentes"]').click();
+  await expect(rail).toBeVisible();
 });
