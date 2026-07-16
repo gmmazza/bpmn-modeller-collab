@@ -4,6 +4,50 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.6.0] — 2026-07-16
+
+Gran salto de **gestión de conocimiento de procesos**: mapas en capas
+(maestros + subprocesos), documentos fuente, datos y herramientas por elemento,
+un lanzador de agentes de IA y una configuración unificada.
+
+### Agregado
+- **Mapas maestros y subprocesos.** Una **Call Activity** vincula un elemento a
+  otro `.bpmn`; un mapa con vínculos es un **maestro** (badge 🗺). **Doble-clic**
+  abre el subproceso **abajo, en un split editable y redimensionable**. En el
+  árbol, los subprocesos aparecen **indentados bajo su maestro** (colapsables), y
+  uno compartido por varios maestros se muestra **bajo cada uno**. Perfil BPMN
+  propio y **contrato de subprocesos** con eventos "viene de / va a".
+- **Fuentes.** Documentos de respaldo (PDFs, planillas, capturas, enlaces) por
+  proceso o etapa, con estados **pendiente / procesada**, en el *sidecar*
+  `<diagrama>.fuentes/` y su pestaña en el panel.
+- **Datos y herramientas.** Registro de qué **datos** y qué **herramientas /
+  sistemas** usa cada elemento (texto libre con sugerencias de la carpeta),
+  **badges** en el canvas y *sidecar* `<diagrama>.datos.json`.
+- **Agentes de IA (lanzador de escritorio).** Menú **IA (✨)** para lanzar
+  agentes (p. ej. Claude Code) en una **terminal externa** con **presets**
+  editables; instrucciones personales y visor de `AGENTS.md` en Configuraciones.
+- **Ventana Configuraciones** por secciones — Visualización, IA, Generales,
+  Versión y actualizaciones — que unifica nombre, carpeta, tema, autoguardado,
+  ajustes de IA y el chequeo de versión.
+
+### Cambiado
+- **Modo maestro editable en el lugar**: el mapa se edita directo (sin botón
+  aparte), el drill es por **doble-clic**, y el split maestro/subproceso es
+  **redimensionable**. Cuando no hay subproceso abierto, el mapa ocupa **toda la
+  pantalla** y la guía es un *pill* flotante.
+- **Panel lateral (inspector) rediseñado** como **riel de iconos** vertical
+  siempre visible (estilo *activity bar*): un clic abre/colapsa cada panel. Los
+  accesos que estaban en la barra superior se movieron al riel.
+- **Paneles redimensionables** (árbol de archivos y panel lateral) y árbol de
+  archivos con la relación maestro→subproceso reflejada.
+
+### Corregido
+- **Fuentes**: dejaba de renderizar a veces y se **duplicaba** al abrir la
+  pestaña y luego el maestro (token de generación por host + discriminación de
+  `NotFoundError` en `fsClient.listDir`).
+- Varias regresiones de UX (entre ellas el **resize del panel lateral** tras el
+  rediseño del inspector) detectadas y corregidas en revisión.
+
 ## [0.5.1] — 2026-07-07
 
 Endurecimiento y **puesta a punto de la auto-actualización** introducida en 0.5.0: quedó

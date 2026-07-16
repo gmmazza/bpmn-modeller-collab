@@ -26,6 +26,16 @@ propiedades, selector de color, minimapa, grilla, **validación en vivo**
 (bpmnlint), **simulación de tokens**, modo de dibujo *sketchy* (a mano alzada) y
 mapa de calor. Exportá a **SVG** o **PNG**.
 
+### Mapas maestros y subprocesos
+Modelá procesos en capas: una **Call Activity** vincula un elemento a **otro
+`.bpmn`** (su subproceso). Un mapa con vínculos es un **maestro** (badge 🗺).
+**Doble-clic** en un elemento vinculado abre su subproceso **abajo, en un split
+editable y redimensionable**, sin salir del maestro; cuando no hay ningún
+subproceso abierto, el mapa ocupa **toda la pantalla**. En el árbol de archivos
+los subprocesos aparecen **indentados bajo su maestro** (colapsables), y uno
+compartido por varios maestros se muestra **bajo cada uno**. Incluye un perfil
+BPMN propio y un **contrato de subprocesos** con eventos "viene de / va a".
+
 ### Guardado local y publicación (Borrador → Publicar)
 Editar **nunca requiere pedir permiso ni bloquear**. Cada cambio se guarda en un
 **borrador privado en tu máquina** (autoguardado con interruptor on/off + botón
@@ -56,6 +66,17 @@ HTML** autocontenido.
 
 ![Editor de documentación de un paso, con Markdown y wikilinks](docs/screenshots/06-documentacion.png)
 
+### Fuentes (documentos de respaldo)
+Anexá los **documentos fuente** de un proceso o de una etapa (PDFs, planillas,
+capturas, enlaces…) en un *sidecar* `<diagrama>.fuentes/`, con estados
+**pendiente / procesada**. Quedan a mano en la pestaña **Fuentes** del panel, sin
+tocar el `.bpmn`.
+
+### Datos y herramientas
+Registrá qué **datos** y qué **herramientas o sistemas** usa cada elemento del
+proceso (texto libre con sugerencias de la propia carpeta), con **badges** sobre
+el canvas y un ancla estándar. Se guarda en el *sidecar* `<diagrama>.datos.json`.
+
 ### Ideas y mejoras (con colaboración de IA)
 Capturá **ideas** ancladas a cada elemento, en hilos con descripción, comentarios
 y **estados** (pendiente / haciendo / pausado / hecho / rechazado). Badges 💡
@@ -66,6 +87,14 @@ Code sobre la misma carpeta) pueden leer y proponer cambios; se firman como auto
 colaboración basada en archivos.
 
 ![Panel de Ideas con ideas ancladas y el badge 💡 en el diagrama](docs/screenshots/07-ideas.png)
+
+### Agentes de IA (lanzador de escritorio)
+Además de la colaboración por archivos, la app de escritorio trae un menú
+**IA (✨)** para **lanzar agentes** (p. ej. Claude Code) en una **terminal
+externa** sobre la carpeta del proyecto, con **presets** editables. Las
+**instrucciones personales** para la IA y el visor del **`AGENTS.md`** generado
+viven en **Configuraciones → IA**. Sigue sin haber API de LLM embebida: la app
+solo abre la terminal con el comando del agente.
 
 ### Capas de color (sin tocar el `.bpmn`)
 Pintá los elementos por **categoría** (p. ej. madurez de automatización, actores)
@@ -96,7 +125,11 @@ capas como **plantillas** reutilizables.
   (incluye restaurar y copiar del historial).
 - **Barra responsive**: en ventanas chicas colapsa a iconos y pliega lo
   secundario en un menú **"⋯ Más"** (nunca salta a dos líneas).
-- **Paneles laterales colapsables**, **tema claro / oscuro**, y **manual de uso**
+- **Panel lateral con riel de iconos** siempre visible (Capas, Propiedades,
+  Historial, Documentación, Fuentes, Datos, Ideas) que se abre y colapsa con un
+  clic, y **panel de archivos** redimensionable.
+- **Configuraciones** unificadas por secciones (Visualización, IA, Generales,
+  Versión y actualizaciones), **tema claro / oscuro**, y **manual de uso**
   integrado en **Ayuda**.
 
 ![La barra en una ventana angosta: iconos + menú "⋯"](docs/screenshots/10-responsive.png)
@@ -194,8 +227,8 @@ comprimí la carpeta resultante en un `.zip`.
 - **Local:** `npm run update:bpmn` sube bpmn-js + el ecosistema bpmn-io a la
   última versión y corre tests/typecheck/build como compuerta. Si falla, revisá
   con `git diff` y revertí con `git checkout -- package.json package-lock.json`.
-- **En la app:** ⚙ → "Buscar actualización" muestra la versión de bpmn-js y si
-  hay una nueva.
+- **En la app:** **Configuraciones → Versión y actualizaciones** muestra la
+  versión de bpmn-js y si hay una nueva.
 - **CI:** el repo trae `renovate.json` (auto-merge de patch/minor del ecosistema
   bpmn-io tras CI verde + cooldown; los major llegan como PR) y
   `.github/workflows/ci.yml`.
@@ -204,9 +237,11 @@ comprimí la carpeta resultante en un `.zip`.
 
 - Los cambios por versión se registran en **[CHANGELOG.md](CHANGELOG.md)**.
 - Cada versión se publica como **GitHub Release** con el `.zip` portable adjunto.
-- La app trae un **chequeo de actualización in-app**: compara su versión con el
-  último Release (`APP_UPDATE_FEED_URL` en `electron/main.cjs`) y muestra un
-  banner "Versión X disponible — Descargar". Requiere que el repositorio sea
+- La app trae un **chequeo de actualización in-app** (**Configuraciones →
+  Versión y actualizaciones**): compara su versión con el último Release
+  (`APP_UPDATE_FEED_URL` en `electron/main.cjs`) y muestra un banner "Versión X
+  disponible — Descargar", con **actualización en el lugar** en el portable de
+  Windows. Requiere que el repositorio sea
   **público** (se consulta sin autenticación); mientras es privado el chequeo es
   un no-op silencioso.
 
