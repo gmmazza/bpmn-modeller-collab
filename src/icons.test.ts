@@ -16,4 +16,9 @@ describe("icon", () => {
       expect(svg.length).toBeGreaterThan(20);
     }
   });
+
+  it("renders the new clock and bulb icons as svg", () => {
+    expect(icon("clock")).toContain("<svg");
+    expect(icon("bulb")).toContain("<svg");
+  });
 });

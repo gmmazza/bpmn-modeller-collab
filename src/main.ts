@@ -98,6 +98,7 @@ import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageO
 import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
 import { renderOutcomePopover } from "./subprocesos/outcomePopover";
 import { typeBadgeFor } from "./subprocesos/typeBadges";
+import { buildMasterSubs } from "./subprocesos/masterSubsIndex";
 
 const EMPTY_BPMN = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
@@ -194,6 +195,11 @@ async function bootstrap() {
   // file's XML on each refresh. Best-effort — never blocks rendering the tree.
   const mastersCache = new Set<string>();
   const masterFileVersions = new Map<string, string>(); // path -> version already checked
+  // A.6: master -> same-folder subprocess files, rebuilt alongside mastersCache (only
+  // re-parsing version-changed masters). Feeds nestSubprocesses in renderTree.
+  const masterSubs = new Map<string, string[]>();               // masterPath -> sub file paths
+  const masterLinksCache = new Map<string, { version: string; called: string[] }>(); // per-master calledElements
+  const collapsedMasters = new Set<string>();                    // master paths whose sub-group is collapsed
   async function refreshMastersCache(files: TreeEntry[]): Promise<void> {
     // Mutates the shared `mastersCache` Set per-key (mirrors processRegistry.ts's
     // `sync`) instead of snapshot-then-swap: refreshFileList() has many call sites
@@ -207,6 +213,7 @@ async function bootstrap() {
       if (!seen.has(path)) {
         masterFileVersions.delete(path);
         mastersCache.delete(path);
+        masterLinksCache.delete(path);
       }
     }
     for (const f of bpmn) {
@@ -214,9 +221,36 @@ async function bootstrap() {
       if (masterFileVersions.get(f.path) === version) continue; // unchanged, keep cached verdict
       masterFileVersions.set(f.path, version);
       const xml = await api.readPath(f.path).catch(() => null);
-      if (xml && (await xmlIsMaster(xml))) mastersCache.add(f.path);
-      else mastersCache.delete(f.path);
+      if (xml && (await xmlIsMaster(xml))) {
+        mastersCache.add(f.path);
+        // Cache this master's calledElements for the subprocess index (best-effort).
+        try {
+          const called = callLinksFromEls(await parseCallLinks(xml)).map((l) => l.calledElement);
+          masterLinksCache.set(f.path, { version, called });
+        } catch { masterLinksCache.set(f.path, { version, called: [] }); }
+      } else {
+        mastersCache.delete(f.path);
+        masterLinksCache.delete(f.path);
+      }
     }
+    // getFolderIndex() (main.ts:544) is async + memoized (invalidated to null in
+    // refreshFileList); resolve it once, then rebuild the index synchronously.
+    const idx = await getFolderIndex().catch(() => [] as DiagramInfo[]);
+    rebuildMasterSubs(idx);
+  }
+
+  function rebuildMasterSubs(idx: DiagramInfo[]): void {
+    // resolve a calledElement to a file: registry first (processId), then folderIndex
+    // baseName fallback (parity with the drill-down's resolveCalledProcess).
+    const resolve = (called: string): string | null =>
+      registry.resolve(called)?.file ?? resolveCalledProcess(called, idx);
+    const next = buildMasterSubs(
+      [...mastersCache],
+      (m) => masterLinksCache.get(m)?.called ?? [],
+      resolve,
+    );
+    masterSubs.clear();
+    for (const [k, v] of next) masterSubs.set(k, v);
   }
 
   function closeLinkPopover(): void {
@@ -696,18 +730,22 @@ async function bootstrap() {
     void refreshDatosBadges().catch(onError);
   }
 
-  // Drag the inspector's left edge to resize its width (persisted). Width drives
-  // both the panel and its collapsed offset via the --inspector-width CSS var.
+  // Drag the inspector's left edge to resize its width (persisted). The
+  // --inspector-width CSS var sizes only .inspector-panes (the rail is fixed
+  // width), so read/write that var — not the #inspector rect, which also
+  // includes the rail and would drift the value on every drag.
   function setupInspectorResize(): void {
     const insp = document.getElementById("inspector");
     if (!insp || insp.querySelector(".inspector-resizer")) return;
-    const MIN = 220, MAX = 760;
+    const MIN = 220, MAX = 760, DEFAULT = 300;
     const saved = Number(localStorage.getItem("inspectorWidth"));
     if (saved >= MIN && saved <= MAX) insp.style.setProperty("--inspector-width", `${saved}px`);
     const resizer = document.createElement("div");
     resizer.className = "inspector-resizer";
     resizer.title = "Arrastrá para ajustar el ancho";
     insp.appendChild(resizer);
+    const currentWidth = (): number =>
+      parseFloat(getComputedStyle(insp).getPropertyValue("--inspector-width")) || DEFAULT;
     let startX = 0, startW = 0, dragging = false;
     const onMove = (e: MouseEvent): void => {
       if (!dragging) return;
@@ -720,12 +758,12 @@ async function bootstrap() {
       document.body.classList.remove("col-resizing");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      try { localStorage.setItem("inspectorWidth", String(Math.round(insp.getBoundingClientRect().width))); } catch { /* ignore */ }
+      try { localStorage.setItem("inspectorWidth", String(Math.round(currentWidth()))); } catch { /* ignore */ }
     };
     resizer.addEventListener("mousedown", (e) => {
       dragging = true;
       startX = e.clientX;
-      startW = insp.getBoundingClientRect().width;
+      startW = currentWidth();
       document.body.classList.add("col-resizing");
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
@@ -1097,11 +1135,6 @@ async function bootstrap() {
         </div>
         <span class="divider"></span>
         <div class="tgroup" data-prio="1">
-          <button class="btn icon-only" id="tab-capas" type="button" title="Capas">${icon("layers")}</button>
-          <button class="btn icon-only" id="tab-props" type="button" title="Propiedades">${icon("properties")}</button>
-          <button class="btn icon-only" id="tab-docs" type="button" title="Documentación">${icon("fileText")}</button>
-          <button class="btn icon-only" id="tab-fuentes" type="button" title="Fuentes">${icon("paperclip")}</button>
-          <button class="btn icon-only" id="tab-datos" type="button" title="Datos y herramientas">${icon("database")}</button>
           <div class="menu" id="settingsmenu">
             <button class="btn icon-only" id="settings" type="button" title="Configuraciones">${icon("settings")}</button>
           </div>
@@ -1144,7 +1177,7 @@ async function bootstrap() {
           <section id="master-canvas" hidden></section>
           <div id="master-split-resizer" class="master-split-resizer" hidden></div>
           <section id="canvas"></section>
-          <div id="stage-hint" hidden>Elegí una etapa en el mapa</div>
+          <div id="stage-hint" hidden>Doble-clic en una etapa para abrirla</div>
           <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
           <section id="canvas2" hidden></section>
         </section>
@@ -1152,18 +1185,22 @@ async function bootstrap() {
       </main>`;
 
     inspector = createInspector(document.getElementById("inspector")!, [
-      { id: "capas", label: "Capas" },
-      { id: "propiedades", label: "Propiedades" },
-      { id: "historial", label: "Historial" },
-      { id: "documentacion", label: "Documentación" },
-      { id: "fuentes", label: "Fuentes" },
-      { id: "datos", label: "Datos y herramientas" },
-      { id: "ideas", label: "Ideas" },
+      { id: "capas", label: "Capas", icon: "layers" },
+      { id: "propiedades", label: "Propiedades", icon: "properties" },
+      { id: "historial", label: "Historial", icon: "clock" },
+      { id: "documentacion", label: "Documentación", icon: "fileText" },
+      { id: "fuentes", label: "Fuentes", icon: "paperclip" },
+      { id: "datos", label: "Datos y herramientas", icon: "database" },
+      { id: "ideas", label: "Ideas", icon: "bulb" },
     ], (tabId) => {
       // Selecting the Ideas tab IS "idea mode": badges + selection-focus on; off elsewhere.
       const on = tabId === "ideas";
       void ideaMode?.setEnabled(on);
       if (on) void ideasCtl?.refresh();
+      // Lazy per-pane refresh that the removed toolbar jump-buttons used to trigger.
+      if (tabId === "capas") renderLayers();
+      if (tabId === "documentacion") void docsController?.refresh();
+      if (tabId === "fuentes") void renderFuentes();
       if (tabId === "datos") void renderDatos();
     });
     // Reuse existing render targets so mountModeler/renderLayers/loadHistory are unchanged.
@@ -1477,16 +1514,6 @@ async function bootstrap() {
       $("toggle-inspector").title = vis ? "Ocultar panel lateral" : "Mostrar panel lateral";
       setColl("inspector", !vis);
     };
-    const openInspector = (tab: string): void => {
-      inspector.setTab(tab);
-      if (tab === "capas") renderLayers();
-      reflectInspectorToggle();
-    };
-    $("tab-capas").addEventListener("click", () => openInspector("capas"));
-    $("tab-props").addEventListener("click", () => openInspector("propiedades"));
-    $("tab-docs").addEventListener("click", () => { inspector.setTab("documentacion"); void docsController?.refresh(); reflectInspectorToggle(); });
-    $("tab-fuentes").addEventListener("click", () => { inspector.setTab("fuentes"); void renderFuentes(); reflectInspectorToggle(); });
-    $("tab-datos").addEventListener("click", () => { inspector.setTab("datos"); void renderDatos(); reflectInspectorToggle(); });
     $("toggle-inspector").addEventListener("click", () => {
       if (inspector.isVisible()) inspector.hide();
       else { inspector.setTab(inspector.activeTab() ?? "capas"); renderLayers(); void renderFuentes(); void renderDatos(); }
@@ -1863,14 +1890,20 @@ async function bootstrap() {
     renderFileTree(
       document.querySelector<HTMLElement>("#files .files-tree")!,
       clean,
-      { expanded, selectedId, me, masters: mastersCache, openPaths: openPathsNow() },
+      { expanded, selectedId, me, masters: mastersCache, openPaths: openPathsNow(), collapsedMasters },
       {
         onOpen: (id) => void openFile(id).catch(onError),
-        onToggle: (path) => { if (expanded.has(path)) expanded.delete(path); else expanded.add(path); void refreshFileList().catch(onError); },
+        onToggle: (path) => {
+          if (mastersCache.has(path)) {
+            if (collapsedMasters.has(path)) collapsedMasters.delete(path); else collapsedMasters.add(path);
+          } else if (expanded.has(path)) { expanded.delete(path); } else { expanded.add(path); }
+          void refreshFileList().catch(onError);
+        },
         onNewFile: (parent) => void newDiagramIn(parent).catch(onError),
         onNewFolder: (parent) => void newFolderIn(parent).catch(onError),
         onMenu: (target, anchor) => openItemMenu(target, anchor),
       },
+      masterSubs,
     );
   }
 
@@ -2082,8 +2115,8 @@ async function bootstrap() {
     renderTree(lastTree); // the drilled stage is no longer open — drop its "abierto" marker
   }
 
-  // Toggle the "Elegí una etapa en el mapa" placeholder that stands in for the bottom
-  // editor while a master is open but no stage has been picked yet.
+  // Toggle the "Doble-clic en una etapa para abrirla" floating hint pill that overlays
+  // the master map while a master is open but no stage has been picked yet.
   function showStageHint(show: boolean): void {
     const hint = document.getElementById("stage-hint");
     if (hint) (hint as HTMLElement).hidden = !show;

@@ -29,7 +29,7 @@ test("Datos y herramientas: add form + store, see the badge, anchor it in the di
   // Select the Task on the canvas.
   await page.locator('[data-element-id="Task_1"]').click();
 
-  await page.locator("#tab-datos").click();
+  await page.locator('.inspector-tab[data-tab="datos"]').click();
   await expect(page.locator('[data-pane="datos"]')).not.toHaveAttribute("hidden", "");
 
   // Add a JotForm form. The tool field is free text (Task 7 dropped the enum <select> for an

@@ -21,7 +21,7 @@ test("fuentes tab lists pendientes/procesadas and processes a file", async ({ pa
   await page.getByText("📄 d.bpmn").click();
   await expect(page.locator("#canvas .djs-container")).toBeVisible(); // diagram opened
 
-  await page.locator("#tab-fuentes").click();
+  await page.locator('.inspector-tab[data-tab="fuentes"]').click();
   await expect(page.locator('[data-estado="pendiente"] [data-name="a.docx"]')).toBeVisible();
   await expect(page.locator('[data-estado="procesada"] [data-name="old.pdf"]')).toBeVisible();
 

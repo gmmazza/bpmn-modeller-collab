@@ -1,13 +1,17 @@
+import { icon, type IconName } from "./icons";
+
 export interface InspectorTab {
   id: string;
-  label: string;
+  label: string;   // tooltip + accessible name
+  icon: IconName;  // rail glyph
 }
 
 export function createInspector(container: HTMLElement, tabs: InspectorTab[], onChange?: (id: string) => void) {
   container.innerHTML = "";
   container.classList.add("inspector");
-  const tabbar = document.createElement("div");
-  tabbar.className = "inspector-tabs";
+  // Vertical icon rail (always visible) + the pane area (collapses independently).
+  const rail = document.createElement("div");
+  rail.className = "inspector-rail";
   const panesWrap = document.createElement("div");
   panesWrap.className = "inspector-panes";
 
@@ -31,23 +35,25 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[], on
   function setTabVisible(id: string, visible: boolean): void {
     if (buttons[id]) buttons[id].hidden = !visible;
   }
-  // Visibility is a slide (a `.collapsed` class animated via CSS margin) rather
-  // than display:none, so the panel slides out/in and the canvas reclaims space.
-  function show(): void {
-    container.classList.remove("collapsed");
-  }
-  function hide(): void {
-    container.classList.add("collapsed");
-  }
+  // Collapse is now on the PANES only — the rail stays visible (activity-bar style).
+  function show(): void { container.classList.remove("collapsed"); }
+  function hide(): void { container.classList.add("collapsed"); }
+  function isVisible(): boolean { return !container.classList.contains("collapsed"); }
 
   for (const t of tabs) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "inspector-tab";
-    b.textContent = t.label;
+    b.innerHTML = icon(t.icon);
+    b.title = t.label;
+    b.setAttribute("aria-label", t.label);
     b.dataset.tab = t.id;
-    b.addEventListener("click", () => setTab(t.id));
-    tabbar.appendChild(b);
+    // Clicking the active tab while panes are open collapses them; otherwise open+switch.
+    b.addEventListener("click", () => {
+      if (active === t.id && isVisible()) hide();
+      else setTab(t.id);
+    });
+    rail.appendChild(b);
     buttons[t.id] = b;
 
     const p = document.createElement("div");
@@ -58,7 +64,7 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[], on
     panes[t.id] = p;
   }
 
-  container.appendChild(tabbar);
+  container.appendChild(rail);
   container.appendChild(panesWrap);
   if (tabs.length) setTab(tabs[0].id);
 
@@ -69,7 +75,7 @@ export function createInspector(container: HTMLElement, tabs: InspectorTab[], on
     paneEl: (id: string): HTMLElement => panes[id],
     show,
     hide,
-    isVisible: (): boolean => !container.classList.contains("collapsed"),
+    isVisible,
   };
 }
 
