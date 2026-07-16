@@ -1,9 +1,11 @@
-// E2E for the unified "IA" toolbar entry point + its Electron-only quick-launch (▶) (Task 9).
-//   - Web build (no window.termapi): the quick-launch button stays hidden; the "IA" modal opens
-//     with only the instructions section.
+// E2E for the unified "IA" toolbar entry point + its Electron-only quick-launch (▶).
+//   - Web build (no window.termapi): the quick-launch button stays hidden; the operational IA
+//     menu (#ai-config -> .menu-pop, built by buildAiMenu) shows only "Administrar presets" —
+//     no preset select / Lanzar / open-terminal controls.
 //   - Electron-like build (termapi mocked) + a seeded preset: the quick-launch button is visible
 //     and its title reflects the last-used preset; clicking it calls openExternal with the
-//     preset's command; the "IA" modal also renders the launcher section.
+//     preset's command; the operational IA menu also renders the preset select + launch controls,
+//     and choosing a preset then clicking "Lanzar" calls openExternal with that preset's command.
 // Runs against the WEB dev build with the in-memory File System Access mock.
 import { test, expect, type Page } from "@playwright/test";
 import { installFsMock } from "./fsMock";
@@ -21,7 +23,7 @@ async function openApp(page: Page): Promise<void> {
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
 }
 
-test("web build (no termapi): quick-launch stays hidden; modal shows only instructions", async ({ page }) => {
+test("web build (no termapi): quick-launch stays hidden; the IA menu shows only 'Administrar presets'", async ({ page }) => {
   await openApp(page);
   const hidden = await page.evaluate(() => {
     const q = document.getElementById("ai-quicklaunch");
@@ -30,12 +32,18 @@ test("web build (no termapi): quick-launch stays hidden; modal shows only instru
   expect(hidden, "quick-launch must remain hidden without window.termapi").toBe(true);
 
   await page.locator("#ai-config").click();
-  await expect(page.locator(".ai-section-instructions")).toBeVisible();
-  await expect(page.locator(".ai-section-launcher")).toHaveCount(0);
-  await page.locator(".ai-close").click();
+  const menu = page.locator(".ia-group .menu-pop");
+  await expect(menu).toBeVisible();
+  // hasTermApi() is false on web — launch controls are absent entirely (not just hidden).
+  await expect(menu.locator(".ai-menu-preset")).toHaveCount(0);
+  await expect(menu.locator(".ai-menu-launch")).toHaveCount(0);
+  await expect(menu.locator(".ai-menu-terminal")).toHaveCount(0);
+  await expect(menu.getByRole("button", { name: "Administrar presets" })).toBeVisible();
+  await page.locator("#ai-config").click(); // toggle closed (same idiom as #userbtn)
+  await expect(menu).toHaveCount(0);
 });
 
-test("with termapi mocked + a preset: quick-launch visible, launches the last-used preset, modal shows launcher section", async ({ page }) => {
+test("with termapi mocked + a preset: quick-launch visible and launches it, the IA menu also lists and launches the preset", async ({ page }) => {
   // Inject a fake termapi + seed a preset BEFORE the app boots.
   await page.addInitScript(() => {
     (window as unknown as { __calls: unknown[] }).__calls = [];
@@ -66,9 +74,13 @@ test("with termapi mocked + a preset: quick-launch visible, launches the last-us
   const calls = await page.evaluate(() => (window as unknown as { __calls: unknown[] }).__calls);
   expect(calls, "quick-launch sends the last-used preset's command").toEqual(["claude"]);
 
-  // The "IA" modal renders the launcher section with the seeded preset.
+  // The operational IA menu (#ai-config -> .menu-pop) lists the seeded preset and, when
+  // "Lanzar" is clicked, sends its command too.
   await page.locator("#ai-config").click();
-  await expect(page.locator(".ai-section-launcher")).toBeVisible();
-  await expect(page.locator(".ai-preset-select option")).toHaveText(["Claude Code"]);
-  await page.locator(".ai-close").click();
+  const menu = page.locator(".ia-group .menu-pop");
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(".ai-menu-preset option")).toHaveText(["Claude Code"]);
+  await menu.locator(".ai-menu-launch").click();
+  const calls2 = await page.evaluate(() => (window as unknown as { __calls: unknown[] }).__calls);
+  expect(calls2, "the menu's Lanzar sends the selected preset's command too").toEqual(["claude", "claude"]);
 });

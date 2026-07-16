@@ -198,7 +198,7 @@ test("data/tool is free text with workspace suggestions", async ({ page }) => {
   await expect(page.locator('[data-category="formularios"][data-entry-id] .dato-tool-tag')).toContainText("Google Forms");
 });
 
-test("the IA modal opens with instructions; the launcher section and quick-launch are absent/hidden on web", async ({ page }) => {
+test("the operational IA menu opens with only 'Administrar presets' on web; launch controls and quick-launch are absent/hidden", async ({ page }) => {
   await openApp(page, { "plano.bpmn": PLAIN_BPMN });
   // The IA wiring (ai-config click handler, quick-launch refresh) runs AFTER `await
   // mountModeler()` inside startApp; #save is part of startApp's synchronous initial
@@ -207,13 +207,50 @@ test("the IA modal opens with instructions; the launcher section and quick-launc
   // before we click #ai-config.
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
   await page.locator("#ai-config").click();
-  await expect(page.locator(".ai-section-instructions")).toBeVisible();
+  const menu = page.locator(".ia-group .menu-pop");
+  await expect(menu).toBeVisible();
   // hasTermApi() is false in the web e2e (no window.termapi) — web-degrade contract:
-  // the launcher section is not rendered at all, and the ▶ quick-launch stays hidden.
-  await expect(page.locator(".ai-section-launcher")).toHaveCount(0);
+  // the preset select / Lanzar / open-terminal controls aren't rendered at all; only the
+  // "Administrar presets" deep-link (-> Configuraciones -> IA) is present.
+  await expect(menu.locator(".ai-menu-preset")).toHaveCount(0);
+  await expect(menu.locator(".ai-menu-launch")).toHaveCount(0);
+  await expect(menu.locator(".ai-menu-terminal")).toHaveCount(0);
+  await expect(menu.getByRole("button", { name: "Administrar presets" })).toBeVisible();
   // #ai-quicklaunch is display:none when hidden on web. Its `hidden` attribute alone lost
   // the cascade to `.btn { display: inline-flex }` (an author rule); app.css carries an
   // explicit `#ai-quicklaunch[hidden] { display: none; }` override — like the other
   // [hidden]-toggled elements that collide with an author display rule — so it is truly hidden.
   await expect(page.locator("#ai-quicklaunch")).toBeHidden();
+});
+
+// Task 11 (deferred from the Fuentes render-fix): the real-world duplication trigger per the
+// generation-token fix's commit message — "two overlapping renders (the Fuentes tab-click plus
+// the master-focus path) both survived the last clear and stacked the list twice". Reproduce by
+// opening a stage (priming docsFileId + an already-rendered, visible Fuentes pane), clicking the
+// Fuentes tab again, and — without waiting for that render to settle — opening the master, whose
+// own master-focus path (focusMasterPane -> loadDocsSidecarsForFocus -> renderFuentes) fires a
+// second overlapping render on the SAME host. Guards the per-host generation token in
+// renderFuentesPanel (src/fuentes/fuentesPanel.ts); before that fix this produced TWO
+// [data-estado="pendiente"] sections instead of one.
+test("Fuentes tab-click racing the master-focus path does not duplicate the Pendientes section", async ({ page }) => {
+  await openApp(page, {
+    "mapa.bpmn": MAPA_BPMN,
+    "mapa.fuentes/mapasrc.pdf": "contenido",
+    "etapa1.bpmn": ETAPA1_BPMN,
+  });
+
+  // Prime docsFileId + an already-visible, already-rendered Fuentes pane on a plain stage file.
+  await page.getByText("📄 etapa1.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+  await openFuentes(page);
+  await expect(page.locator(".fuente-dropzone")).toBeVisible();
+
+  // Fire the tab-click's renderFuentes() again, then immediately (no settle-wait) open the
+  // master — its own master-focus renderFuentes() call can land while the first is mid-flight.
+  await page.locator("#tab-fuentes").click();
+  await page.getByText("📄 mapa.bpmn").click();
+
+  await expect(page.locator("#master-canvas .djs-container")).toBeVisible();
+  await expect(page.locator('[data-estado="pendiente"]')).toHaveCount(1);
+  await expect(page.locator('[data-name="mapasrc.pdf"]')).toBeVisible();
 });

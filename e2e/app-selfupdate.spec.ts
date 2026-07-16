@@ -1,4 +1,5 @@
-// E2E for the in-Ajustes app self-update UI (Electron-only; window.appUpdate mocked here).
+// E2E for the app self-update UI, now living in the Configuraciones modal's "Versión y
+// actualizaciones" pane (Electron-only; window.appUpdate mocked here).
 // Covers: current version shown, "update available" → install button calls downloadAndInstall
 // with the .zip asset + reflects progress, "up to date" state, and the no-asset → "Ver release"
 // fallback. The real download/swap/relaunch is Electron-native and smoke-tested manually.
@@ -31,8 +32,12 @@ async function boot(page: Page, feed: unknown): Promise<void> {
   await page.getByRole("button", { name: "Elegir carpeta" }).click();
   await expect(page.locator("#save")).toBeVisible();
   await expect(page.locator("#canvas .djs-container")).toBeVisible(); // settings handler wired after mountModeler
+  // #settings now opens the Configuraciones modal (default section: Visualización) — navigate
+  // into "Versión y actualizaciones", where the app self-update block (window.appUpdate-gated) lives.
   await page.locator("#settings").click();
-  await expect(page.locator("#vizsettings")).toBeVisible();
+  await expect(page.locator(".config-modal")).toBeVisible();
+  await page.locator('.config-nav button[data-section="version"]').click();
+  await expect(page.locator('.config-pane[data-pane="version"]')).toBeVisible();
 }
 
 test("update available: shows version + install button, calls downloadAndInstall + progress", async ({ page }) => {

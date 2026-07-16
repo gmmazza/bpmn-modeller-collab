@@ -291,15 +291,22 @@ test("a wrapping toolbar (long reserved + draft chip) does not overflow the page
   expect(overflow, "page must not scroll vertically").toBeLessThanOrEqual(0);
 });
 
-test("toolbar dropdowns (Ajustes ⚙, Más ⋯) open UNCLIPPED below the bar", async ({ page }) => {
+test("toolbar dropdowns (IA, Más ⋯) open UNCLIPPED below the bar", async ({ page }) => {
   // Regression: #toolbar had `overflow: hidden` (for reflowToolbar), which clipped the
   // .popover/.menu-pop dropdowns (position:absolute; top:100%, dropping below the ~44px bar).
-  // The Ajustes and Más menus opened (hidden=false) but were invisible. Guard against the
-  // clip returning: elementFromPoint returns the element the USER would actually hit, so a
-  // clipped popover fails even though Playwright's toBeVisible (layout-only) would pass.
+  // These menus opened (hidden=false) but were invisible. Guard against the clip returning:
+  // elementFromPoint returns the element the USER would actually hit, so a clipped popover
+  // fails even though Playwright's toBeVisible (layout-only) would pass.
+  //
+  // #settings (the gear) used to open an anchored "Ajustes" popover — the original target of
+  // this regression — but it now opens the Configuraciones `.config-modal`, a full-page overlay
+  // appended to <body> that isn't subject to #toolbar's overflow at all, so it's no longer a
+  // relevant probe for THIS clipping bug. The IA button (#ai-config) is the toolbar's remaining
+  // anchored `.menu-pop` dropdown (built by buildAiMenu, same positioning idiom as the old
+  // Ajustes popover), so it now stands in as the guard.
   await page.setViewportSize({ width: 900, height: 700 });
   await openApp(page);
-  // The toolbar handlers (incl. #settings/#more) are wired AFTER `await mountModeler()` in
+  // The toolbar handlers (incl. #ai-config/#more) are wired AFTER `await mountModeler()` in
   // startApp, so wait for the modeler before clicking — else the handler isn't attached yet.
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
 
@@ -307,19 +314,21 @@ test("toolbar dropdowns (Ajustes ⚙, Más ⋯) open UNCLIPPED below the bar", a
   const overflowY = await page.locator("#toolbar").evaluate((el) => getComputedStyle(el).overflowY);
   expect(overflowY, "toolbar overflow-y must not clip its dropdowns").toBe("visible");
 
-  // Ajustes (⚙) → the settings popover content is actually painted, not clipped.
-  await page.locator("#settings").click();
-  const settings = await page.evaluate(() => {
-    const cb = document.getElementById("set-sketchy");
-    const viz = document.getElementById("vizsettings");
-    if (!cb || !viz) return { painted: false, belowBar: false };
-    const r = cb.getBoundingClientRect();
+  // IA (⚙) → the operational IA menu's content is actually painted, not clipped.
+  await page.locator("#ai-config").click();
+  const iaMenu = await page.evaluate(() => {
+    const group = document.getElementById("ai-config")!.closest(".ia-group") as HTMLElement;
+    const pop = group.querySelector(".menu-pop") as HTMLElement | null;
+    const btn = pop?.querySelector("button") as HTMLElement | null;
+    if (!pop || !btn) return { painted: false, belowBar: false };
+    const r = btn.getBoundingClientRect();
     const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     const tb = document.getElementById("toolbar")!.getBoundingClientRect();
-    return { painted: !!(hit && viz.contains(hit)), belowBar: r.top >= tb.bottom };
+    return { painted: !!(hit && pop.contains(hit)), belowBar: r.top >= tb.bottom };
   });
-  expect(settings.painted, "settings popover content must be painted (not clipped)").toBe(true);
-  expect(settings.belowBar, "popover drops below the toolbar").toBe(true);
+  expect(iaMenu.painted, "IA popover content must be painted (not clipped)").toBe(true);
+  expect(iaMenu.belowBar, "popover drops below the toolbar").toBe(true);
+  await page.locator("#ai-config").click(); // toggle closed before the "Más" probe below
 
   // Más (⋯) → when reflow has moved groups into it, its content is painted too.
   if (await page.locator("#more").isVisible()) {
