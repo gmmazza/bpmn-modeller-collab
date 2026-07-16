@@ -1113,7 +1113,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="manual" type="button" title="Manual del proceso">${icon("book")}<span style="font-size:11px">Manual</span></button>
         </div>
         <div class="tgroup ia-group menu">
-          <button class="btn icon-only" id="ai-config" type="button" title="IA">${icon("settings")}<span style="font-size:11px">IA</span></button>
+          <button class="btn icon-only" id="ai-config" type="button" title="IA">${icon("sparkles")}<span style="font-size:11px">IA</span></button>
           <button class="btn icon-only" id="ai-quicklaunch" type="button" title="Lanzar el último preset" hidden>▶</button>
         </div>
         <span class="spacer"></span>
@@ -1378,10 +1378,27 @@ async function bootstrap() {
     // CRUD + personal instructions + the AGENTS.md viewer live. Toggle idiom mirrors #userbtn's.
     document.getElementById("ai-config")?.addEventListener("click", () => {
       const group = document.getElementById("ai-config")!.closest(".ia-group") as HTMLElement;
-      let pop = group.querySelector(".menu-pop");
-      if (pop) { pop.remove(); return; }
-      pop = document.createElement("div");
+      const existing = group.querySelector(".menu-pop");
+      if (existing) { existing.remove(); return; } // toggle closed
+      const pop = document.createElement("div");
       pop.className = "menu-pop";
+      // Dismiss on outside click or Escape (deferred attach so the opening click
+      // doesn't immediately close it — mirrors ideaElementPopover.ts's idiom).
+      function closePop(): void {
+        document.removeEventListener("mousedown", onOutside, true);
+        document.removeEventListener("keydown", onKey, true);
+        pop.remove();
+      }
+      function onOutside(e: MouseEvent): void {
+        if (!group.contains(e.target as Node)) closePop();
+      }
+      function onKey(e: KeyboardEvent): void {
+        if (e.key === "Escape") closePop();
+      }
+      setTimeout(() => {
+        document.addEventListener("mousedown", onOutside, true);
+        document.addEventListener("keydown", onKey, true);
+      }, 0);
       pop.appendChild(buildAiMenu({
         hasLauncher: hasTermApi(),
         getPresets,
@@ -1391,7 +1408,7 @@ async function bootstrap() {
         // whichever preset was just launched from this menu; .finally preserves the
         // promise's rejection so the menu's own .catch(onError) still fires.
         launch: (cmd) => openExternalTerminal(cmd).finally(() => refreshQuickLaunch()),
-        onManagePresets: () => { pop!.remove(); openConfigModal("ia"); },
+        onManagePresets: () => { closePop(); openConfigModal("ia"); },
         onError,
       }));
       group.appendChild(pop);
