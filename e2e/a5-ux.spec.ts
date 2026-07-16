@@ -202,6 +202,40 @@ test("left panel resizes and the open file is highlighted in the tree", async ({
   expect(w1).toBeGreaterThan(w0);
 });
 
+// Regression guard: --inspector-width sizes only .inspector-panes (the rail is a
+// fixed-width sibling), so setupInspectorResize must read/write that CSS var, not
+// the #inspector rect (which also includes the rail and drifted the persisted
+// width by ~44px per drag — see src/main.ts's setupInspectorResize).
+test("inspector panel resizes without an initial jump", async ({ page }) => {
+  await openApp(page, { "plano.bpmn": PLAIN_BPMN });
+  await page.getByText("📄 plano.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+  // The inspector starts collapsed (.inspector-panes is display:none); open a
+  // tab so the panes render and have a real width to measure.
+  await openInspectorTab(page, "fuentes");
+  await expect(page.locator('.inspector-pane[data-pane="fuentes"]')).toBeVisible();
+
+  const panes = page.locator(".inspector-panes");
+  const w0 = (await panes.boundingBox())!.width;
+  const handle = page.locator(".inspector-resizer");
+  const hb = (await handle.boundingBox())!;
+  const startX = hb.x + hb.width / 2, startY = hb.y + hb.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  // Grabbing the resizer with no movement must not itself change the width
+  // (the historical bug jumped by +44px, the rail width, at the very first move).
+  const wNoMove = (await panes.boundingBox())!.width;
+  expect(wNoMove).toBe(w0);
+
+  // The resizer sits on the panel's LEFT edge; moving left grows the width.
+  const delta = 80;
+  await page.mouse.move(startX - delta, startY);
+  await page.waitForTimeout(50);
+  await page.mouse.up();
+  const w1 = (await panes.boundingBox())!.width;
+  expect(Math.abs(w1 - (w0 + delta))).toBeLessThan(2);
+});
+
 test("data/tool is free text with workspace suggestions", async ({ page }) => {
   await openApp(page, { "plano.bpmn": PLAIN_BPMN });
   await page.getByText("📄 plano.bpmn").click();

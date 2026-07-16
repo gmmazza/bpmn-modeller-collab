@@ -730,18 +730,22 @@ async function bootstrap() {
     void refreshDatosBadges().catch(onError);
   }
 
-  // Drag the inspector's left edge to resize its width (persisted). Width drives
-  // both the panel and its collapsed offset via the --inspector-width CSS var.
+  // Drag the inspector's left edge to resize its width (persisted). The
+  // --inspector-width CSS var sizes only .inspector-panes (the rail is fixed
+  // width), so read/write that var — not the #inspector rect, which also
+  // includes the rail and would drift the value on every drag.
   function setupInspectorResize(): void {
     const insp = document.getElementById("inspector");
     if (!insp || insp.querySelector(".inspector-resizer")) return;
-    const MIN = 220, MAX = 760;
+    const MIN = 220, MAX = 760, DEFAULT = 300;
     const saved = Number(localStorage.getItem("inspectorWidth"));
     if (saved >= MIN && saved <= MAX) insp.style.setProperty("--inspector-width", `${saved}px`);
     const resizer = document.createElement("div");
     resizer.className = "inspector-resizer";
     resizer.title = "Arrastrá para ajustar el ancho";
     insp.appendChild(resizer);
+    const currentWidth = (): number =>
+      parseFloat(getComputedStyle(insp).getPropertyValue("--inspector-width")) || DEFAULT;
     let startX = 0, startW = 0, dragging = false;
     const onMove = (e: MouseEvent): void => {
       if (!dragging) return;
@@ -754,12 +758,12 @@ async function bootstrap() {
       document.body.classList.remove("col-resizing");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
-      try { localStorage.setItem("inspectorWidth", String(Math.round(insp.getBoundingClientRect().width))); } catch { /* ignore */ }
+      try { localStorage.setItem("inspectorWidth", String(Math.round(currentWidth()))); } catch { /* ignore */ }
     };
     resizer.addEventListener("mousedown", (e) => {
       dragging = true;
       startX = e.clientX;
-      startW = insp.getBoundingClientRect().width;
+      startW = currentWidth();
       document.body.classList.add("col-resizing");
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
