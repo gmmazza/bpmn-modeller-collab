@@ -105,6 +105,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
   position: absolute; top: 1px; right: 1px; font-size: 8px; font-weight: 700;
   line-height: 1; color: var(--accent); pointer-events: none;
 }
+/* the "opciones de organización" caret reads as a tight split-button next to β */
+#autolayout-elk-menu { display: inline-flex; align-items: center; }
+#autolayout-elk-caret { padding-left: 1px; padding-right: 1px; }
+#autolayout-elk-caret svg { width: 12px; height: 12px; }
+#autolayout-elk-pop button { white-space: nowrap; }
 #toolbar .divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 6px; }
 #toolbar .spacer { flex: 1; }
 /* logical section labels (Local / Compartido) */

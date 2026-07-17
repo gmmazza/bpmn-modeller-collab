@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { layoutDiagramElk } from "./layoutElk";
-import { UnsupportedLayoutError } from "./autoLayout";
 
 // Start → Task → Gateway → (Task2 | End), no DI: elk must build a clean layout from scratch.
 const PROC = `<?xml version="1.0" encoding="UTF-8"?>
@@ -54,8 +53,25 @@ describe("layoutDiagramElk", () => {
     expect(/bpmnElement="f3"[\s\S]*?<bpmndi:BPMNLabel>/.test(out)).toBe(true);
   });
 
-  it("refuses collaborations (pools) in beta scope", async () => {
-    await expect(layoutDiagramElk(POOLS)).rejects.toBeInstanceOf(UnsupportedLayoutError);
+  it("lays out collaborations as swimlanes (a shape per participant, stacked)", async () => {
+    const out = await layoutDiagramElk(POOLS);
+    // Both pools get a shape...
+    expect(/bpmnElement="P1"[^>]*>\s*<dc:Bounds/.test(out)).toBe(true);
+    expect(/bpmnElement="P2"[^>]*>\s*<dc:Bounds/.test(out)).toBe(true);
+    // ...and P2 is stacked below P1.
+    const y = (id: string) => Number(new RegExp(`bpmnElement="${id}"[^>]*>\\s*<dc:Bounds x="[\\-\\d.]+" y="([\\-\\d.]+)"`).exec(out)![1]);
+    expect(y("P2")).toBeGreaterThan(y("P1"));
+  });
+
+  it("applies the selected variant (vertical stacks the flow top-to-bottom)", async () => {
+    const outH = await layoutDiagramElk(PROC, "horizontal");
+    const outV = await layoutDiagramElk(PROC, "vertical");
+    const span = (xml: string) => {
+      const ys = [...xml.matchAll(/<dc:Bounds x="[\-\d.]+" y="([\-\d.]+)"/g)].map((m) => Number(m[1]));
+      return Math.max(...ys) - Math.min(...ys);
+    };
+    // Vertical flow spreads further on the Y axis than horizontal flow does.
+    expect(span(outV)).toBeGreaterThan(span(outH));
   });
 
   // Regression: a flow OUT of a boundary event used to crash elk ("Referenced shape does

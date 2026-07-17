@@ -131,15 +131,35 @@ test("the elk beta button re-lays a plain diagram left-to-right", async ({ page 
   expect(task).toBeLessThan(end);
 });
 
-test("the elk beta button refuses pools (beta scope) without destroying them", async ({ page }) => {
+test("the elk beta button lays out pools as swimlanes (both pools kept)", async ({ page }) => {
   await openApp(page, { "pools.bpmn": POOLS_BPMN });
   await page.getByText("📄 pools.bpmn").click();
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
 
   await page.locator("#autolayout-elk").click();
-  await expect(page.locator(".toast")).toContainText("beta todavía no");
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_A"]')).toBeVisible();
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_B"]')).toBeVisible();
+  await expect(page.locator(".toast")).toContainText("reorganizado (beta)");
+  // Both pools survive and are stacked (P_B below P_A).
+  const py = async (id: string) => (await page.locator(`#canvas .djs-element[data-element-id="${id}"]`).boundingBox())!.y;
+  expect(await py("Part_B")).toBeGreaterThan(await py("Part_A"));
+});
+
+test("the organization-options menu picks a variant, remembers it, and runs it", async ({ page }) => {
+  await openApp(page, { "messy.bpmn": MESSY_BPMN });
+  await page.getByText("📄 messy.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  await page.locator("#autolayout-elk-caret").click();
+  const pop = page.locator("#autolayout-elk-pop");
+  await expect(pop).toBeVisible();
+  await expect(pop.getByRole("button", { name: /Flujo horizontal/ })).toContainText("✓"); // default marked
+  await pop.getByRole("button", { name: /Flujo vertical/ }).click();
+  await expect(page.locator(".toast")).toContainText("reorganizado (beta)"); // ran immediately
+
+  // Persisted: reopening the menu shows Vertical as the active (checked) variant.
+  const saved = await page.evaluate(() => localStorage.getItem("bpmn.autolayout.elkVariant"));
+  expect(saved).toBe("vertical");
+  await page.locator("#autolayout-elk-caret").click();
+  await expect(pop.getByRole("button", { name: /Flujo vertical/ })).toContainText("✓");
 });
 
 test("Auto-organizar is enabled on the master map and re-lays it (with Ctrl+Z revert)", async ({ page }) => {

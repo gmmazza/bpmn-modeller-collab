@@ -15,7 +15,7 @@ import "./app.css";
 import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
 import { layoutDiagram, UnsupportedLayoutError } from "./autoLayout";
-import { layoutDiagramElk } from "./layoutElk";
+import { layoutDiagramElk, ELK_VARIANTS, DEFAULT_ELK_VARIANT } from "./layoutElk";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
@@ -1128,7 +1128,11 @@ async function bootstrap() {
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
           <button class="btn icon-only" id="autolayout" type="button" title="Auto-organizar el diagrama">${icon("autoLayout")}</button>
-          <button class="btn icon-only" id="autolayout-elk" type="button" title="Auto-organizar — alta calidad (beta)">${icon("autoLayout")}<span class="beta-tag">β</span></button>
+          <span class="menu" id="autolayout-elk-menu">
+            <button class="btn icon-only" id="autolayout-elk" type="button" title="Auto-organizar — alta calidad (beta)">${icon("autoLayout")}<span class="beta-tag">β</span></button>
+            <button class="btn icon-only" id="autolayout-elk-caret" type="button" title="Opciones de organización" aria-haspopup="true">${icon("chevron")}</button>
+            <div class="menu-pop" id="autolayout-elk-pop" hidden></div>
+          </span>
         </div>
         <span class="divider"></span>
         <div class="tgroup" id="localgroup">
@@ -1652,6 +1656,32 @@ async function bootstrap() {
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
     $("autolayout").addEventListener("click", () => void doAutoLayout("auto").catch(onError));
     $("autolayout-elk").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
+    // "Opciones de organización" dropdown: pick a variant → remember it + run it now.
+    const elkPop = document.getElementById("autolayout-elk-pop") as HTMLElement | null;
+    function renderElkPop(): void {
+      if (!elkPop) return;
+      const active = getElkVariant();
+      elkPop.innerHTML = "";
+      for (const v of ELK_VARIANTS) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.textContent = (v.id === active ? "✓ " : "") + v.label;
+        b.addEventListener("click", () => {
+          setElkVariant(v.id);
+          elkPop.hidden = true;
+          void doAutoLayout("elk").catch(onError);
+        });
+        elkPop.appendChild(b);
+      }
+    }
+    $("autolayout-elk-caret").addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!elkPop) return;
+      if (elkPop.hidden) { renderElkPop(); elkPop.hidden = false; } else { elkPop.hidden = true; }
+    });
+    document.addEventListener("click", (e) => {
+      if (elkPop && !elkPop.hidden && !document.getElementById("autolayout-elk-menu")?.contains(e.target as Node)) elkPop.hidden = true;
+    });
     $("save").addEventListener("click", guard(async () => {
       if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
       if (state.kind === "editing") await publish(state.fileId);
@@ -1881,8 +1911,10 @@ async function bootstrap() {
     const canLayout = editable || masterActive;
     const autolayout = document.getElementById("autolayout") as HTMLButtonElement | null;
     const autolayoutElk = document.getElementById("autolayout-elk") as HTMLButtonElement | null;
+    const autolayoutCaret = document.getElementById("autolayout-elk-caret") as HTMLButtonElement | null;
     if (autolayout) autolayout.disabled = !canLayout;
     if (autolayoutElk) autolayoutElk.disabled = !canLayout;
+    if (autolayoutCaret) autolayoutCaret.disabled = !canLayout;
     // Local group: autosave toggle state, manual-save availability, saved status.
     const auto = document.getElementById("autosave-toggle") as HTMLButtonElement | null;
     if (auto) {
@@ -2085,8 +2117,16 @@ async function bootstrap() {
   // native command stack, so — like a history-restore — we make it a coarse-undo snapshot:
   // Ctrl+Z / the Deshacer button revert the whole re-layout.
   type LayoutEngine = "auto" | "elk";
+  // The elk "beta" button remembers the last-picked organization variant (localStorage).
+  const ELK_VARIANT_KEY = "bpmn.autolayout.elkVariant";
+  const getElkVariant = (): string => {
+    try { return localStorage.getItem(ELK_VARIANT_KEY) || DEFAULT_ELK_VARIANT; } catch { return DEFAULT_ELK_VARIANT; }
+  };
+  const setElkVariant = (id: string): void => {
+    try { localStorage.setItem(ELK_VARIANT_KEY, id); } catch { /* private mode */ }
+  };
   const runLayout = (engine: LayoutEngine, xml: string): Promise<string> =>
-    engine === "elk" ? layoutDiagramElk(xml) : layoutDiagram(xml);
+    engine === "elk" ? layoutDiagramElk(xml, getElkVariant()) : layoutDiagram(xml);
   function toastLayoutError(e: unknown, engine: LayoutEngine): void {
     if (e instanceof UnsupportedLayoutError) {
       showToast(engine === "elk"
