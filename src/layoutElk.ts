@@ -125,15 +125,6 @@ function oldDiFromDefs(defs: any): { shapeById: Map<string, any>; boundsById: Ma
   return { shapeById, boundsById };
 }
 
-/** A simple orthogonal (Z-shaped) route between two shapes, exiting/entering horizontally. */
-function routeOrtho(s: Bounds, t: Bounds): Pt[] {
-  const sx = s.x + s.width, sy = s.y + s.height / 2;
-  const tx = t.x, ty = t.y + t.height / 2;
-  if (Math.abs(sy - ty) < 2) return [{ x: sx, y: sy }, { x: tx, y: ty }];
-  const midX = (sx + tx) / 2;
-  return [{ x: sx, y: sy }, { x: midX, y: sy }, { x: midX, y: ty }, { x: tx, y: ty }];
-}
-
 /**
  * Lay out one process's flow nodes with elk and emit its DI plane elements, translated by
  * (offsetX, offsetY). When the process declares lanes, node rows are remapped into stacked
@@ -173,23 +164,35 @@ async function renderProcess(
     elkNodes.push({ id: fe.id, width: size.width, height: size.height, _fe: fe });
   }
 
-  // A fully-disconnected node (no edges) would be dumped at layer 0 — the start of the flow.
-  // Keep it near where the author put it (and in its lane) instead of moving it to the start.
+  // Lanes: seed each node's y by its lane so elk (with INTERACTIVE node placement) keeps the
+  // lanes as horizontal bands AND routes the edges itself — the same clean orthogonal routing
+  // it gives a plain diagram (no home-grown router, no post-hoc y-remap).
+  const lanes: any[] = process.laneSets?.[0]?.lanes ?? process.laneSet?.[0]?.lanes ?? [];
+  const laneOf = new Map<string, number>();
+  lanes.forEach((lane, i) => (lane.flowNodeRef ?? []).forEach((ref: any) => ref?.id && laneOf.set(ref.id, i)));
+  const hasLanes = lanes.length > 0;
+  const LANE_SEED = 200; // per-lane y hint; elk compacts but preserves the lane order
+
+  // A fully-disconnected node (no edges) would be dumped at layer 0 — the flow start. Keep it
+  // where the author put it (and in its lane) instead of moving it.
   const connectedIds = new Set<string>();
   for (const e of elkEdges) { connectedIds.add(e.sources[0]); connectedIds.add(e.targets[0]); }
   const isDisconnected = (id: string) => !connectedIds.has(id) && sizeById.has(id);
 
   const laid = await elk.layout({
     id: "root",
-    layoutOptions: variant.layoutOptions,
+    layoutOptions: hasLanes
+      ? { ...variant.layoutOptions, "elk.direction": "RIGHT", "elk.layered.nodePlacement.strategy": "INTERACTIVE" }
+      : variant.layoutOptions,
     children: elkNodes.filter((n) => !isDisconnected(n.id)).map((n) => {
+      const child: any = { id: n.id, width: n.width, height: n.height };
+      if (hasLanes) child.y = (laneOf.get(n.id) ?? 0) * LANE_SEED;
       const bs = boundaryByHost.get(n.id);
-      if (!bs?.length) return { id: n.id, width: n.width, height: n.height };
-      return {
-        id: n.id, width: n.width, height: n.height,
-        layoutOptions: { "elk.portConstraints": "FIXED_SIDE" },
-        ports: bs.map((b: any) => ({ id: b.id, width: 30, height: 30, layoutOptions: { "elk.port.side": variant.portSide } })),
-      };
+      if (bs?.length) {
+        child.layoutOptions = { "elk.portConstraints": "FIXED_SIDE" };
+        child.ports = bs.map((b: any) => ({ id: b.id, width: 30, height: 30, layoutOptions: { "elk.port.side": hasLanes ? "SOUTH" : variant.portSide } }));
+      }
+      return child;
     }),
     edges: elkEdges.map((e) => ({ id: e.id, sources: e.sources, targets: e.targets, labels: e.labels })),
   });
@@ -197,45 +200,26 @@ async function renderProcess(
   const laidNode = new Map<string, any>((laid.children ?? []).map((c: any) => [c.id, c]));
   const laidEdge = new Map<string, any>((laid.edges ?? []).map((e: any) => [e.id, e]));
 
-  // Lanes → repack each lane into a COMPACT band: keep elk's x-order (layering), discard
-  // its y (which scatters a lane's nodes across the whole height), and stack nodes into
-  // rows only when they'd overlap horizontally. `nodeNewY` is the node's absolute y within
-  // the process; when unset the elk y stands (no lanes).
-  const lanes: any[] = process.laneSets?.[0]?.lanes ?? process.laneSet?.[0]?.lanes ?? [];
-  const laneOf = new Map<string, number>();
-  lanes.forEach((lane, i) => (lane.flowNodeRef ?? []).forEach((ref: any) => ref?.id && laneOf.set(ref.id, i)));
-  const ROW_H = 110;
-  const nodeNewY = new Map<string, number>();
+  // Lane bands from elk's output y (each lane's member extent), then snap adjacent bands so
+  // they meet edge-to-edge — contiguous swimlanes with no gaps or overlaps.
   const laneBands: Array<{ lane: any; y: number; height: number }> = [];
-  if (lanes.length) {
-    let top = 0;
+  if (hasLanes) {
     for (let i = 0; i < lanes.length; i++) {
-      const members = elkNodes
-        .filter((n) => laneOf.get(n.id) === i)
-        .map((n) => ({ n, c: laidNode.get(n.id) }))
-        .filter((m) => m.c)
-        .sort((a, b) => a.c.x - b.c.x);
-      // Greedy row assignment: a node shares a row unless it overlaps the row's last node in x.
-      const rowRight: number[] = [];
-      const rowOf = new Map<string, number>();
-      for (const { n, c } of members) {
-        let r = 0;
-        while (r < rowRight.length && rowRight[r] > c.x - 24) r++;
-        if (r === rowRight.length) rowRight.push(0);
-        rowRight[r] = c.x + n.width;
-        rowOf.set(n.id, r);
-      }
-      const rows = Math.max(1, rowRight.length);
-      const height = 2 * LANE_PAD + (rows - 1) * ROW_H + 90;
-      laneBands.push({ lane: lanes[i], y: top, height });
-      for (const { n } of members) {
-        nodeNewY.set(n.id, top + LANE_PAD + (rowOf.get(n.id) ?? 0) * ROW_H);
-      }
-      top += height;
+      const cs = elkNodes.filter((n) => laneOf.get(n.id) === i).map((n) => laidNode.get(n.id)).filter(Boolean);
+      const prev = laneBands[i - 1];
+      const top = cs.length ? Math.min(...cs.map((c: any) => c.y)) - LANE_PAD : (prev ? prev.y + prev.height : 0);
+      const bot = cs.length ? Math.max(...cs.map((c: any) => c.y + c.height)) + LANE_PAD : top + 60;
+      laneBands.push({ lane: lanes[i], y: top, height: bot - top });
+    }
+    for (let i = 0; i < laneBands.length - 1; i++) {
+      const mid = (laneBands[i].y + laneBands[i].height + laneBands[i + 1].y) / 2;
+      const nextBot = laneBands[i + 1].y + laneBands[i + 1].height;
+      laneBands[i].height = mid - laneBands[i].y;
+      laneBands[i + 1].y = mid;
+      laneBands[i + 1].height = nextBot - mid;
     }
   }
-  const nodeTop = (id: string, elkY: number) => nodeNewY.get(id) ?? elkY;
-  const contentX = offsetX + (lanes.length ? LANE_HEADER : 0);
+  const contentX = offsetX + (hasLanes ? LANE_HEADER : 0);
 
   const bounds = (x: number, y: number, w: number, h: number) =>
     moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
@@ -248,12 +232,12 @@ async function renderProcess(
     if (isDisconnected(n.id)) {
       const ob = sizeById.get(n.id)!; // keep the loose box at its original spot (in its lane)
       const li = laneOf.get(n.id);
-      const y = lanes.length && li != null && laneBands[li] ? laneBands[li].y + LANE_PAD : ob.y;
+      const y = hasLanes && li != null && laneBands[li] ? laneBands[li].y + LANE_PAD : ob.y;
       b = { x: ob.x + contentX, y: y + offsetY, width: n.width, height: n.height };
     } else {
       const c = laidNode.get(n.id);
       if (!c) continue;
-      b = { x: c.x + contentX, y: nodeTop(n.id, c.y) + offsetY, width: n.width, height: n.height };
+      b = { x: c.x + contentX, y: c.y + offsetY, width: n.width, height: n.height };
     }
     nodeBounds.set(n.id, b);
     // Reuse the old shape (keeps colors/attrs) — just re-bound it; else create fresh.
@@ -273,9 +257,8 @@ async function renderProcess(
     const port = host?.ports?.find((p: any) => p.id === bid);
     if (!host || !port) continue;
     const size = sizeById.get(bid) ?? { width: 36, height: 36 };
-    const hostTop = nodeTop(hid, host.y);
     const cx = host.x + port.x + (port.width ?? 0) / 2 + contentX;
-    const cy = hostTop + port.y + (port.height ?? 0) / 2 + offsetY;
+    const cy = host.y + port.y + (port.height ?? 0) / 2 + offsetY;
     const b: Bounds = { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height };
     boundaryBounds.set(bid, b);
     nodeBounds.set(bid, b);
@@ -289,26 +272,19 @@ async function renderProcess(
     planeElement.push(shape);
   }
 
-  const remap = lanes.length > 0; // nodes moved off elk's routes → re-route orthogonally
   for (const e of elkEdges) {
     const le = laidEdge.get(e.id);
+    const section = le?.sections?.[0];
     let pts: Pt[];
-    if (remap) {
+    if (section) {
+      pts = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((p: Pt) => ({ x: p.x + contentX, y: p.y + offsetY }));
+    } else {
       const s = nodeBounds.get(e.sources[0]), t = nodeBounds.get(e.targets[0]);
       if (!s || !t) continue;
-      pts = routeOrtho(s, t);
-    } else {
-      const section = le?.sections?.[0];
-      if (section) {
-        pts = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((p: Pt) => ({ x: p.x + contentX, y: p.y + offsetY }));
-      } else {
-        const s = nodeBounds.get(e.sources[0]), t = nodeBounds.get(e.targets[0]);
-        if (!s || !t) continue;
-        pts = [{ x: s.x + s.width / 2, y: s.y + s.height / 2 }, { x: t.x + t.width / 2, y: t.y + t.height / 2 }];
-      }
+      pts = [{ x: s.x + s.width / 2, y: s.y + s.height / 2 }, { x: t.x + t.width / 2, y: t.y + t.height / 2 }];
     }
     const bc = boundaryBounds.get(e.sources[0]);
-    if (bc && !remap) pts[0] = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
+    if (bc) pts[0] = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
     const edge = shapeById.get(e.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${e.id}_di`, bpmnElement: e._fe });
     edge.waypoint = pts.map((p) => moddle.create("dc:Point", { x: Math.round(p.x), y: Math.round(p.y) }));
     if (e._fe.name) {
@@ -316,9 +292,7 @@ async function renderProcess(
       const srcType = e._fe.sourceRef?.$type;
       const nearSource = GATEWAY_TYPES.has(srcType) || srcType === "bpmn:BoundaryEvent";
       const ll = le?.labels?.[0];
-      const pos = nearSource || !ll || remap
-        ? labelNearSource(pts[0], pts[1], lw, 14)
-        : { x: ll.x + contentX, y: ll.y + offsetY };
+      const pos = nearSource || !ll ? labelNearSource(pts[0], pts[1], lw, 14) : { x: ll.x + contentX, y: ll.y + offsetY };
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
     planeElement.push(edge);
@@ -341,7 +315,7 @@ async function renderProcess(
  */
 function emitGroups(
   artifacts: any[] | undefined, oldBoundsById: Map<string, Bounds>, newBoundsById: Map<string, Bounds>,
-  shapeById: Map<string, any>, moddle: any,
+  shapeById: Map<string, any>, moddle: any, columnExtent?: { top: number; bottom: number },
 ): any[] {
   const out: any[] = [];
   // Old + new vertical extents, to detect "phase column" groups (ones that spanned most of
@@ -369,8 +343,10 @@ function emitGroups(
     const minX = Math.min(...members.map((m) => m.x)) - 20;
     const maxX = Math.max(...members.map((m) => m.x + m.width)) + 20;
     const isColumn = ob.height >= 0.6 * oldContentH; // spanned most lanes → keep it full-height
-    const minY = isColumn ? newTop - 34 : Math.min(...members.map((m) => m.y)) - 34;
-    const maxY = isColumn ? newBot + 20 : Math.max(...members.map((m) => m.y + m.height)) + 20;
+    // A phase column is clamped to the pool's extent (columnExtent) when given, so it never
+    // spills above/below the swimlane; otherwise it spans the diagram's node extent.
+    const minY = isColumn ? (columnExtent ? columnExtent.top : newTop - 34) : Math.min(...members.map((m) => m.y)) - 34;
+    const maxY = isColumn ? (columnExtent ? columnExtent.bottom : newBot + 20) : Math.max(...members.map((m) => m.y + m.height)) + 20;
     shape.bounds = moddle.create("dc:Bounds", { x: Math.round(minX), y: Math.round(minY), width: Math.round(maxX - minX), height: Math.round(maxY - minY) });
     if (shape.label?.bounds) { shape.label.bounds.x = Math.round(minX + 8); shape.label.bounds.y = Math.round(minY + 4); }
     out.push(shape);
@@ -425,6 +401,7 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
   const POOL_GAP = 60;
   let poolY = 0;
   let poolW = 600;
+  let poolsBottom = 0;
 
   // First pass: lay each participant's process out to learn pool widths (use the widest).
   const rendered: Array<{ part: any; res: Awaited<ReturnType<typeof renderProcess>> | null }> = [];
@@ -455,15 +432,17 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
     }
     planeElement.push(poolShape(part, 0, poolY, poolW, poolH)); // pool (participant) shape
     planeElement.push(...finalPlane);
+    poolsBottom = poolY + poolH;
     poolY += poolH + POOL_GAP;
   }
 
-  // Phase groups: infer membership from the old DI, recompute over the new positions.
+  // Phase groups: infer membership from the old DI, recompute over the new positions, and
+  // clamp full-height columns to the pool extent so they don't spill out of the swimlane.
   const groupArtifacts = [
     ...(collaboration.artifacts ?? []),
     ...participants.flatMap((p) => p.processRef?.artifacts ?? []),
   ];
-  planeElement.push(...emitGroups(groupArtifacts, boundsById, allNodeBounds, shapeById, moddle));
+  planeElement.push(...emitGroups(groupArtifacts, boundsById, allNodeBounds, shapeById, moddle, { top: 0, bottom: poolsBottom }));
 
   // Message flows between pools → orthogonal routes between the anchored elements.
   for (const mf of collaboration.messageFlows ?? []) {
