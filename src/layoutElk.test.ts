@@ -74,6 +74,29 @@ describe("layoutDiagramElk", () => {
     expect(span(outV)).toBeGreaterThan(span(outH));
   });
 
+  // Regression: elk regenerates the DI, which used to drop DI-only styling (colors) and
+  // artifacts (group/phase boxes). Colors are reused off the old shape; groups are rebuilt.
+  it("preserves shape colors and rebuilds group boxes through the re-layout", async () => {
+    const colored = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:bioc="http://bpmn.io/schema/bpmn/biocolor/1.0" xmlns:color="http://www.omg.org/spec/BPMN/non-normative/color/1.0" id="Dc" targetNamespace="x">
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:startEvent id="S"><bpmn:outgoing>f</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:task id="T" name="Coloreada"><bpmn:incoming>f</bpmn:incoming></bpmn:task>
+    <bpmn:sequenceFlow id="f" sourceRef="S" targetRef="T"/>
+    <bpmn:group id="G" categoryValueRef="cv"/>
+  </bpmn:process>
+  <bpmn:category id="cat"><bpmn:categoryValue id="cv" value="Fase 1"/></bpmn:category>
+  <bpmndi:BPMNDiagram id="di"><bpmndi:BPMNPlane id="pl" bpmnElement="P">
+    <bpmndi:BPMNShape id="S_di" bpmnElement="S"><dc:Bounds x="10" y="100" width="36" height="36"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="T_di" bpmnElement="T" bioc:stroke="#7B241C" bioc:fill="#C0392B" color:background-color="#C0392B"><dc:Bounds x="120" y="90" width="100" height="80"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="G_di" bpmnElement="G"><dc:Bounds x="100" y="60" width="150" height="140"/></bpmndi:BPMNShape>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+    const out = await layoutDiagramElk(colored);
+    expect(out).toContain('bioc:fill="#C0392B"');   // task color survived
+    expect(/bpmnElement="G"[^>]*>\s*<dc:Bounds/.test(out)).toBe(true); // group box rebuilt
+  });
+
   // Regression: a flow OUT of a boundary event used to crash elk ("Referenced shape does
   // not exist") because the boundary node was excluded from the graph but its edge wasn't.
   it("lays out boundary events and their flows without crashing", async () => {
