@@ -272,6 +272,7 @@ async function renderProcess(
     planeElement.push(shape);
   }
 
+  const gwSeen = new Map<string, number>();
   for (const e of elkEdges) {
     const le = laidEdge.get(e.id);
     const sB = nodeBounds.get(e.sources[0]), tB = nodeBounds.get(e.targets[0]);
@@ -302,9 +303,10 @@ async function renderProcess(
     if (e._fe.name) {
       const lw = labelWidth(e._fe.name);
       const srcType = e._fe.sourceRef?.$type;
-      const nearSource = GATEWAY_TYPES.has(srcType) || srcType === "bpmn:BoundaryEvent";
       const ll = le?.labels?.[0];
-      const pos = nearSource || !ll ? labelNearSource(pts[0], pts[1], lw, 14) : { x: ll.x + contentX, y: ll.y + offsetY };
+      const pos = GATEWAY_TYPES.has(srcType)
+        ? branchLabelPos(gwSeen, e._fe.sourceRef.id, pts, 14)
+        : srcType === "bpmn:BoundaryEvent" || !ll ? labelNearSource(pts[0], pts[1], lw, 14) : { x: ll.x + contentX, y: ll.y + offsetY };
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
     planeElement.push(edge);
@@ -318,6 +320,19 @@ async function renderProcess(
   }
   if (lanes.length) maxY = Math.max(maxY, laneBands[laneBands.length - 1].y + laneBands[laneBands.length - 1].height);
   return { planeElement, width: maxX + 20, height: maxY + 20, nodeBounds, laneBands };
+}
+
+/**
+ * Position a gateway's branch label ("Sí"/"No") near the gateway but STAGGERED so the
+ * branches don't overprint each other (they all exit the gateway at the same point). Labels
+ * on down-going branches sit below the exit, up/straight ones above, each stacked by index.
+ */
+function branchLabelPos(gwSeen: Map<string, number>, gid: string, pts: Pt[], lh: number): Pt {
+  const goesDown = (pts[pts.length - 1].y - pts[0].y) > 4;
+  const key = gid + (goesDown ? ":d" : ":u");
+  const k = gwSeen.get(key) ?? 0;
+  gwSeen.set(key, k + 1);
+  return { x: pts[0].x + 6, y: goesDown ? pts[0].y + 4 + k * (lh + 3) : pts[0].y - lh - 4 - k * (lh + 3) };
 }
 
 /** Orthogonal route that stays in the source lane, dropping to the target's lane late. */
@@ -438,6 +453,7 @@ function renderMatrix(
     planeElement.push(shape);
   }
 
+  const gwSeen = new Map<string, number>();
   for (const fe of edges) {
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
     if (!s || !t) continue;
@@ -446,7 +462,9 @@ function renderMatrix(
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
     if (fe.name) {
       const lw = labelWidth(fe.name);
-      const pos = labelNearSource(pts[0], pts[1], lw, 14);
+      const pos = GATEWAY_TYPES.has(fe.sourceRef?.$type)
+        ? branchLabelPos(gwSeen, fe.sourceRef.id, pts, 14)
+        : labelNearSource(pts[0], pts[1], lw, 14);
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
     planeElement.push(edge);
