@@ -453,11 +453,43 @@ function renderMatrix(
     planeElement.push(shape);
   }
 
+  // Each node's cell (phase column, lane row), so edges can route through the empty gutters
+  // between columns and the empty pad above each lane band — never crossing another node.
+  const nodeCell = new Map<string, { p: number; l: number }>();
+  for (const n of nodes) nodeCell.set(n.id, { p: n.p, l: n.l });
+  for (const [bid, hid] of boundaryHost) { const c = nodeCell.get(hid); if (c) nodeCell.set(bid, c); }
+  const gutterRight = (p: number) => contentX + colX[p] + colW[p] + COL_GAP / 2; // empty channel right of column p
+  const gutterLeft = (p: number) => contentX + colX[p] - COL_GAP / 2;
+  const laneTopPad = (l: number) => offsetY + laneY[l] + 6; // empty strip above the lane's centred nodes
+  function routeCell(s: Bounds, t: Bounds, sid: string, tid: string): Pt[] {
+    const sx = s.x + s.width, sy = s.y + s.height / 2, tx = t.x, ty = t.y + t.height / 2;
+    const sc = nodeCell.get(sid), tc = nodeCell.get(tid);
+    if (!sc || !tc) return routeMatrix(s, t);
+    // Verticals run in a column gutter; a cross-column horizontal runs in a lane's top pad.
+    // (Not a full obstacle-avoiding router — a few crossings remain on the densest diagrams.)
+    if (Math.abs(sy - ty) < 4) { // same row → straight
+      if (tx > sx) return [{ x: sx, y: sy }, { x: tx, y: ty }];
+      const outX = sx + COL_GAP / 2, chY = laneTopPad(sc.l);
+      return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: chY }, { x: t.x + t.width + 8, y: chY }, { x: t.x + t.width + 8, y: ty }, { x: t.x + t.width, y: ty }];
+    }
+    if (tx > sx) { // forward, changing lane
+      if (tc.p - sc.p <= 1) { // adjacent (or same) column → single vertical in the gutter
+        const gx = tc.p > sc.p ? gutterLeft(tc.p) : gutterRight(sc.p);
+        return [{ x: sx, y: sy }, { x: gx, y: sy }, { x: gx, y: ty }, { x: tx, y: ty }];
+      }
+      const gx1 = gutterRight(sc.p), gx2 = gutterLeft(tc.p), chY = laneTopPad(tc.l);
+      return [{ x: sx, y: sy }, { x: gx1, y: sy }, { x: gx1, y: chY }, { x: gx2, y: chY }, { x: gx2, y: ty }, { x: tx, y: ty }];
+    }
+    // back-edge: out right of source, along the target lane pad, back into the target's right
+    const outX = sx + COL_GAP / 2, chY = laneTopPad(tc.l);
+    return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: chY }, { x: t.x + t.width + 8, y: chY }, { x: t.x + t.width + 8, y: ty }, { x: t.x + t.width, y: ty }];
+  }
+
   const gwSeen = new Map<string, number>();
   for (const fe of edges) {
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
     if (!s || !t) continue;
-    const pts = routeMatrix(s, t);
+    const pts = routeCell(s, t, fe.sourceRef.id, fe.targetRef.id);
     const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
     if (fe.name) {

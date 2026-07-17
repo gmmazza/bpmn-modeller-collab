@@ -61,6 +61,29 @@ describe("layoutDiagramElk on the real Novotec matrix fixture", () => {
     for (let i = 0; i < groups.length - 1; i++) expect(groups[i].x + groups[i].width, "group X overlap").toBeLessThanOrEqual(groups[i + 1].x + 1);
   });
 
+  it("keeps edge-through-node crossings low (channel routing; not a full obstacle router)", () => {
+    // Ideal is 0, but a fully node-avoiding orthogonal router is a much larger piece; the
+    // channel router keeps this well under the naive drop-late router (which was 14). This
+    // bound (a) guards the real quality and (b) fails loudly on a routing regression.
+    const nodes = shapes.filter((s) => !NON_FLOW.has(s.bpmnElement.$type)).map((s) => ({ id: s.bpmnElement.id, ...s.bounds }));
+    const hits = (a: any, b: any, r: any) => {
+      const p = 3, rx0 = r.x + p, ry0 = r.y + p, rx1 = r.x + r.width - p, ry1 = r.y + r.height - p;
+      if (Math.abs(a.y - b.y) < 1) return a.y > ry0 && a.y < ry1 && Math.min(a.x, b.x) < rx1 && Math.max(a.x, b.x) > rx0;
+      if (Math.abs(a.x - b.x) < 1) return a.x > rx0 && a.x < rx1 && Math.min(a.y, b.y) < ry1 && Math.max(a.y, b.y) > ry0;
+      return false;
+    };
+    let crossing = 0;
+    for (const e of edges) {
+      const wp = e.waypoint ?? [];
+      const sid = e.bpmnElement.sourceRef?.id, tid = e.bpmnElement.targetRef?.id;
+      let crosses = false;
+      for (let i = 0; i < wp.length - 1 && !crosses; i++)
+        for (const n of nodes) { if (n.id !== sid && n.id !== tid && hits(wp[i], wp[i + 1], n)) { crosses = true; break; } }
+      if (crosses) crossing++;
+    }
+    expect(crossing).toBeLessThanOrEqual(10);
+  });
+
   it("staggers gateway branch labels so they don't overprint each other", () => {
     const byGw = new Map<string, any[]>();
     for (const e of edges) {
