@@ -320,6 +320,145 @@ async function renderProcess(
   return { planeElement, width: maxX + 20, height: maxY + 20, nodeBounds, laneBands };
 }
 
+/** Orthogonal route that stays in the source lane, dropping to the target's lane late. */
+function routeMatrix(s: Bounds, t: Bounds): Pt[] {
+  const sx = s.x + s.width, sy = s.y + s.height / 2;
+  const tx = t.x, ty = t.y + t.height / 2;
+  if (Math.abs(sy - ty) < 4) return [{ x: sx, y: sy }, { x: tx, y: ty }]; // same lane → straight
+  if (tx > sx + 10) { // forward: horizontal in the source lane until just before the target
+    const dropX = Math.max(sx + 20, tx - 25);
+    return [{ x: sx, y: sy }, { x: dropX, y: sy }, { x: dropX, y: ty }, { x: tx, y: ty }];
+  }
+  // back-edge: exit right, drop to the target row, run back and enter from the target's right.
+  const outX = sx + 25;
+  return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: ty }, { x: t.x + t.width, y: ty }];
+}
+
+/**
+ * MATRIX layout for lane + group (phase) diagrams. elk can't preserve a 2-D matrix (it lays
+ * out by flow dependency), so we place each node in its cell — column = its phase (the group
+ * box it sat in, ordered by x), row = its lane — re-spacing columns and lane bands, and route
+ * edges orthogonally (drop-late across lanes). Preserves the author's matrix: phase columns
+ * never overlap, lanes never overlap, and edges stay in their lane until the last moment.
+ */
+function renderMatrix(
+  process: any, groups: any[], moddle: any, boundsById: Map<string, Bounds>, shapeById: Map<string, any>,
+  offsetX: number, offsetY: number,
+): { planeElement: any[]; width: number; height: number; nodeBounds: Map<string, Bounds>; laneBands: Array<{ lane: any; y: number; height: number }>; phaseColumns: Array<{ group: any; x: number; width: number }> } {
+  const CELL_GAP = 30, COL_GAP = 60, PAD = 22;
+  const bounds = (x: number, y: number, w: number, h: number) =>
+    moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
+
+  const lanes: any[] = process.laneSets?.[0]?.lanes ?? process.laneSet?.[0]?.lanes ?? [];
+  const laneOf = new Map<string, number>();
+  lanes.forEach((lane, i) => (lane.flowNodeRef ?? []).forEach((r: any) => r?.id && laneOf.set(r.id, i)));
+  const L = Math.max(lanes.length, 1);
+
+  // Phases = group boxes ordered by their old x. A node's phase is the group whose OLD box
+  // held it (else the nearest by x-center).
+  const phaseGroups = groups.map((g) => ({ g, b: shapeById.get(g.id)?.bounds })).filter((x) => x.b).sort((a, b) => a.b.x - b.b.x);
+  const P = phaseGroups.length;
+  const phaseOf = (id: string): number => {
+    const ob = boundsById.get(id);
+    if (!ob || !P) return 0;
+    const cx = ob.x + ob.width / 2;
+    for (let p = 0; p < P; p++) { const b = phaseGroups[p].b; if (cx >= b.x && cx <= b.x + b.width) return p; }
+    let best = 0, bd = Infinity;
+    for (let p = 0; p < P; p++) { const b = phaseGroups[p].b; const d = Math.abs(cx - (b.x + b.width / 2)); if (d < bd) { bd = d; best = p; } }
+    return best;
+  };
+
+  const boundaryHost = new Map<string, string>(), boundaryFe = new Map<string, any>();
+  const nodes: Array<{ id: string; fe: any; w: number; h: number; p: number; l: number }> = [];
+  const edges: any[] = [];
+  for (const fe of process.flowElements ?? []) {
+    const t = fe.$type;
+    if (EDGE_TYPES.has(t)) { if (fe.sourceRef?.id && fe.targetRef?.id) edges.push(fe); continue; }
+    if (t === "bpmn:BoundaryEvent" && fe.attachedToRef?.id) { boundaryHost.set(fe.id, fe.attachedToRef.id); boundaryFe.set(fe.id, fe); continue; }
+    const size = boundsById.get(fe.id) ?? defaultSize(t);
+    nodes.push({ id: fe.id, fe, w: size.width, h: size.height, p: phaseOf(fe.id), l: laneOf.get(fe.id) ?? 0 });
+  }
+
+  // cells[p][l] = nodes, ordered left-to-right by their old x.
+  const cellKey = (p: number, l: number) => `${p}:${l}`;
+  const cells = new Map<string, typeof nodes>();
+  for (const n of nodes) { const k = cellKey(n.p, n.l); if (!cells.has(k)) cells.set(k, []); cells.get(k)!.push(n); }
+  for (const arr of cells.values()) arr.sort((a, b) => (boundsById.get(a.id)?.x ?? 0) - (boundsById.get(b.id)?.x ?? 0));
+
+  const cellWidth = (arr: typeof nodes) => arr.reduce((s, n) => s + n.w, 0) + Math.max(0, arr.length - 1) * CELL_GAP;
+  const colW = new Array(P || 1).fill(80);
+  const laneH = new Array(L).fill(90);
+  for (let p = 0; p < (P || 1); p++) for (let l = 0; l < L; l++) {
+    const arr = cells.get(cellKey(p, l)) ?? [];
+    if (!arr.length) continue;
+    colW[p] = Math.max(colW[p], cellWidth(arr));
+    for (const n of arr) laneH[l] = Math.max(laneH[l], n.h + 2 * PAD);
+  }
+  const colX = new Array(P || 1); { let x = 0; for (let p = 0; p < (P || 1); p++) { colX[p] = x; x += colW[p] + COL_GAP; } }
+  const laneY = new Array(L); { let y = 0; for (let l = 0; l < L; l++) { laneY[l] = y; y += laneH[l]; } }
+  const contentX = offsetX + LANE_HEADER;
+
+  const nodeBounds = new Map<string, Bounds>();
+  const planeElement: any[] = [];
+  const emitShape = (id: string, fe: any, b: Bounds, externalLabel: boolean) => {
+    const shape = shapeById.get(id) ?? moddle.create("bpmndi:BPMNShape", { id: `${id}_di`, bpmnElement: fe });
+    shape.bounds = bounds(b.x, b.y, b.width, b.height);
+    if (externalLabel && fe?.name) {
+      const lw = labelWidth(fe.name);
+      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 6, lw, 14) });
+    }
+    planeElement.push(shape);
+  };
+
+  for (let p = 0; p < (P || 1); p++) for (let l = 0; l < L; l++) {
+    const arr = cells.get(cellKey(p, l)) ?? [];
+    if (!arr.length) continue;
+    let x = contentX + colX[p] + (colW[p] - cellWidth(arr)) / 2; // center the cell in its column
+    for (const n of arr) {
+      const b: Bounds = { x, y: offsetY + laneY[l] + (laneH[l] - n.h) / 2, width: n.w, height: n.h };
+      nodeBounds.set(n.id, b);
+      emitShape(n.id, n.fe, b, EXTERNAL_LABEL_TYPES.has(n.fe.$type));
+      x += n.w + CELL_GAP;
+    }
+  }
+
+  // Boundary events on their host's bottom edge.
+  const hostSeen = new Map<string, number>();
+  for (const [bid, hid] of boundaryHost) {
+    const hb = nodeBounds.get(hid);
+    const size = boundsById.get(bid) ?? { width: 36, height: 36 };
+    if (!hb) continue;
+    const seen = hostSeen.get(hid) ?? 0; hostSeen.set(hid, seen + 1);
+    const b: Bounds = { x: hb.x + hb.width * (0.3 + 0.35 * seen) - size.width / 2, y: hb.y + hb.height - size.height / 2, width: size.width, height: size.height };
+    nodeBounds.set(bid, b);
+    const fe = boundaryFe.get(bid);
+    const shape = shapeById.get(bid) ?? moddle.create("bpmndi:BPMNShape", { id: `${bid}_di`, bpmnElement: fe });
+    shape.bounds = bounds(b.x, b.y, b.width, b.height);
+    if (fe?.name) { const lw = labelWidth(fe.name); shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4, lw, 14) }); }
+    planeElement.push(shape);
+  }
+
+  for (const fe of edges) {
+    const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
+    if (!s || !t) continue;
+    const pts = routeMatrix(s, t);
+    const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
+    edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
+    if (fe.name) {
+      const lw = labelWidth(fe.name);
+      const pos = labelNearSource(pts[0], pts[1], lw, 14);
+      edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
+    }
+    planeElement.push(edge);
+  }
+
+  const laneBands = lanes.map((lane, l) => ({ lane, y: laneY[l], height: laneH[l] }));
+  const phaseColumns = phaseGroups.map((pg, p) => ({ group: pg.g, x: contentX + colX[p] - COL_GAP / 2, width: colW[p] + COL_GAP }));
+  const totalW = LANE_HEADER + ((P || 1) ? colX[(P || 1) - 1] + colW[(P || 1) - 1] : 0);
+  const totalH = L ? laneY[L - 1] + laneH[L - 1] : 0;
+  return { planeElement, width: totalW + 20, height: totalH + 20, nodeBounds, laneBands, phaseColumns };
+}
+
 /**
  * Rebuild group (phase) boxes. A bpmn:Group has no member list, so we infer membership from
  * the OLD DI (which elements sat inside its old box) and recompute the box as the bounding
@@ -415,31 +554,53 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
   let poolW = 600;
   let poolsBottom = 0;
 
+  // Matrix mode: a diagram with lane + group (phase) structure is a 2-D matrix elk can't
+  // preserve, so it's laid out cell-by-cell (column = phase, row = lane) instead.
+  const groups = [
+    ...(collaboration.artifacts ?? []).filter((a: any) => a.$type === "bpmn:Group"),
+    ...participants.flatMap((p) => (p.processRef?.artifacts ?? []).filter((a: any) => a.$type === "bpmn:Group")),
+  ];
+  const matrixMode = groups.length > 0;
+  const renderOne = (proc: any, ox: number, oy: number): Promise<any> =>
+    matrixMode
+      ? Promise.resolve(renderMatrix(proc, groups, moddle, boundsById, shapeById, ox, oy))
+      : renderProcess(proc, moddle, elk, variant, boundsById, shapeById, ox, oy);
+  const groupColumnShape = (group: any, x: number, y: number, w: number, h: number) => {
+    const s = shapeById.get(group.id) ?? moddle.create("bpmndi:BPMNShape", { id: `${group.id}_di`, bpmnElement: group });
+    s.bounds = bounds(x, y, w, h);
+    if (s.label?.bounds) { s.label.bounds.x = Math.round(x + 8); s.label.bounds.y = Math.round(y + 4); }
+    return s;
+  };
+
   // First pass: lay each participant's process out to learn pool widths (use the widest).
-  const rendered: Array<{ part: any; res: Awaited<ReturnType<typeof renderProcess>> | null }> = [];
+  const rendered: Array<{ part: any; res: any }> = [];
   for (const part of participants) {
     const proc = part.processRef;
     if (!proc || !(proc.flowElements?.length)) { rendered.push({ part, res: null }); continue; }
-    const res = await renderProcess(proc, moddle, elk, variant, boundsById, shapeById, 0, 0);
+    const res = await renderOne(proc, 0, 0);
     rendered.push({ part, res });
     poolW = Math.max(poolW, POOL_HEADER + res.width + 20);
   }
 
   // Second pass: place pools stacked, re-render each at its final offset.
+  const groupCols: any[] = []; // matrix-mode phase columns to draw as clean, contained boxes
   for (const { part, res } of rendered) {
     const proc = part.processRef;
     const hasLanes = (res?.laneBands.length ?? 0) > 0;
-    const contentLeft = POOL_HEADER; // lane header (if any) is added inside renderProcess
+    const contentLeft = POOL_HEADER; // lane header (if any) is added inside the renderer
     const poolH = res ? res.height + 2 * LANE_PAD : 120;
     // Re-render at final position so all coordinates (and message-flow anchors) are absolute.
     let finalPlane: any[] = [];
     if (proc && res) {
-      const placed = await renderProcess(proc, moddle, elk, variant, boundsById, shapeById, contentLeft, poolY + (hasLanes ? 0 : LANE_PAD));
+      const placed = await renderOne(proc, contentLeft, poolY + (hasLanes ? 0 : LANE_PAD));
       finalPlane = placed.planeElement;
       for (const [id, b] of placed.nodeBounds) allNodeBounds.set(id, b);
-      // Lane shapes span the pool width (right of the pool header).
       for (const band of placed.laneBands) {
         planeElement.push(poolShape(band.lane, POOL_HEADER, poolY + band.y, poolW - POOL_HEADER, band.height));
+      }
+      // Phase columns span the pool height, clean and non-overlapping (matrix mode).
+      for (const col of placed.phaseColumns ?? []) {
+        groupCols.push(groupColumnShape(col.group, col.x, poolY, col.width, poolH));
       }
     }
     planeElement.push(poolShape(part, 0, poolY, poolW, poolH)); // pool (participant) shape
@@ -448,13 +609,17 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
     poolY += poolH + POOL_GAP;
   }
 
-  // Phase groups: infer membership from the old DI, recompute over the new positions, and
-  // clamp full-height columns to the pool extent so they don't spill out of the swimlane.
-  const groupArtifacts = [
-    ...(collaboration.artifacts ?? []),
-    ...participants.flatMap((p) => p.processRef?.artifacts ?? []),
-  ];
-  planeElement.push(...emitGroups(groupArtifacts, boundsById, allNodeBounds, shapeById, moddle, { top: 0, bottom: poolsBottom }));
+  // Phase groups. Matrix mode already produced clean full-height columns; otherwise infer
+  // membership from the old DI and clamp full-height columns to the pool extent.
+  if (matrixMode) {
+    planeElement.push(...groupCols);
+  } else {
+    const groupArtifacts = [
+      ...(collaboration.artifacts ?? []),
+      ...participants.flatMap((p) => p.processRef?.artifacts ?? []),
+    ];
+    planeElement.push(...emitGroups(groupArtifacts, boundsById, allNodeBounds, shapeById, moddle, { top: 0, bottom: poolsBottom }));
+  }
 
   // Message flows between pools → orthogonal routes between the anchored elements.
   for (const mf of collaboration.messageFlows ?? []) {

@@ -64,6 +64,56 @@ describe("layoutDiagramElk", () => {
     expect(/bpmnElement="f3"[\s\S]*?<bpmndi:BPMNLabel>/.test(out)).toBe(true);
   });
 
+  it("lays out a lane+group matrix with non-overlapping phase columns and lane bands", async () => {
+    // Participant with 2 lanes and 2 phase groups (old DI puts phase A left, phase B right).
+    const MATRIX = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Dm" targetNamespace="x">
+  <bpmn:collaboration id="C"><bpmn:participant id="Part" processRef="P"/></bpmn:collaboration>
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:laneSet id="ls">
+      <bpmn:lane id="L1"><bpmn:flowNodeRef>n1</bpmn:flowNodeRef><bpmn:flowNodeRef>n3</bpmn:flowNodeRef></bpmn:lane>
+      <bpmn:lane id="L2"><bpmn:flowNodeRef>n2</bpmn:flowNodeRef><bpmn:flowNodeRef>n4</bpmn:flowNodeRef></bpmn:lane>
+    </bpmn:laneSet>
+    <bpmn:task id="n1" name="A1"><bpmn:outgoing>f1</bpmn:outgoing></bpmn:task>
+    <bpmn:task id="n2" name="A2"><bpmn:incoming>f1</bpmn:incoming><bpmn:outgoing>f2</bpmn:outgoing></bpmn:task>
+    <bpmn:task id="n3" name="B1"><bpmn:incoming>f2</bpmn:incoming><bpmn:outgoing>f3</bpmn:outgoing></bpmn:task>
+    <bpmn:task id="n4" name="B2"><bpmn:incoming>f3</bpmn:incoming></bpmn:task>
+    <bpmn:sequenceFlow id="f1" sourceRef="n1" targetRef="n2"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="n2" targetRef="n3"/>
+    <bpmn:sequenceFlow id="f3" sourceRef="n3" targetRef="n4"/>
+    <bpmn:group id="gA" categoryValueRef="cvA"/>
+    <bpmn:group id="gB" categoryValueRef="cvB"/>
+  </bpmn:process>
+  <bpmn:category id="cat"><bpmn:categoryValue id="cvA" value="Fase A"/><bpmn:categoryValue id="cvB" value="Fase B"/></bpmn:category>
+  <bpmndi:BPMNDiagram id="di"><bpmndi:BPMNPlane id="pl" bpmnElement="C">
+    <bpmndi:BPMNShape id="Part_di" bpmnElement="Part" isHorizontal="true"><dc:Bounds x="0" y="0" width="700" height="300"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="L1_di" bpmnElement="L1" isHorizontal="true"><dc:Bounds x="30" y="0" width="670" height="150"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="L2_di" bpmnElement="L2" isHorizontal="true"><dc:Bounds x="30" y="150" width="670" height="150"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="n1_di" bpmnElement="n1"><dc:Bounds x="120" y="40" width="100" height="80"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="n2_di" bpmnElement="n2"><dc:Bounds x="120" y="190" width="100" height="80"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="n3_di" bpmnElement="n3"><dc:Bounds x="420" y="40" width="100" height="80"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="n4_di" bpmnElement="n4"><dc:Bounds x="420" y="190" width="100" height="80"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="gA_di" bpmnElement="gA"><dc:Bounds x="90" y="10" width="260" height="280"/></bpmndi:BPMNShape>
+    <bpmndi:BPMNShape id="gB_di" bpmnElement="gB"><dc:Bounds x="390" y="10" width="260" height="280"/></bpmndi:BPMNShape>
+  </bpmndi:BPMNPlane></bpmndi:BPMNDiagram>
+</bpmn:definitions>`;
+    const out = await layoutDiagramElk(MATRIX);
+    const box = (id: string) => {
+      const m = new RegExp(`bpmnElement="${id}"[^>]*>\\s*<dc:Bounds x="([\\-\\d.]+)" y="([\\-\\d.]+)" width="([\\d.]+)" height="([\\d.]+)"`).exec(out)!;
+      return { x: +m[1], y: +m[2], w: +m[3], h: +m[4] };
+    };
+    // Phase columns don't overlap in X (gA entirely left of gB).
+    const gA = box("gA"), gB = box("gB");
+    expect(gA.x + gA.w).toBeLessThanOrEqual(gB.x + 1);
+    // Lane bands don't overlap in Y (L1 entirely above L2).
+    const l1 = box("L1"), l2 = box("L2");
+    expect(l1.y + l1.h).toBeLessThanOrEqual(l2.y + 1);
+    // A same-lane node stayed in its lane band (n1 within L1's y-range).
+    const n1 = box("n1");
+    expect(n1.y).toBeGreaterThanOrEqual(l1.y - 1);
+    expect(n1.y + n1.h).toBeLessThanOrEqual(l1.y + l1.h + 1);
+  });
+
   it("lays out collaborations as swimlanes (a shape per participant, stacked)", async () => {
     const out = await layoutDiagramElk(POOLS);
     // Both pools get a shape...
