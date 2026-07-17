@@ -57,4 +57,25 @@ describe("layoutDiagramElk", () => {
   it("refuses collaborations (pools) in beta scope", async () => {
     await expect(layoutDiagramElk(POOLS)).rejects.toBeInstanceOf(UnsupportedLayoutError);
   });
+
+  // Regression: a flow OUT of a boundary event used to crash elk ("Referenced shape does
+  // not exist") because the boundary node was excluded from the graph but its edge wasn't.
+  it("lays out boundary events and their flows without crashing", async () => {
+    const withBoundary = `<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" id="D3" targetNamespace="x">
+  <bpmn:process id="P" isExecutable="false">
+    <bpmn:startEvent id="S"><bpmn:outgoing>f0</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:task id="T" name="Hacer"><bpmn:incoming>f0</bpmn:incoming><bpmn:outgoing>f1</bpmn:outgoing></bpmn:task>
+    <bpmn:boundaryEvent id="B" name="Error" attachedToRef="T"><bpmn:outgoing>f2</bpmn:outgoing><bpmn:errorEventDefinition id="ed"/></bpmn:boundaryEvent>
+    <bpmn:endEvent id="E1"><bpmn:incoming>f1</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="E2"><bpmn:incoming>f2</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f0" sourceRef="S" targetRef="T"/>
+    <bpmn:sequenceFlow id="f1" sourceRef="T" targetRef="E1"/>
+    <bpmn:sequenceFlow id="f2" sourceRef="B" targetRef="E2"/>
+  </bpmn:process>
+</bpmn:definitions>`;
+    const out = await layoutDiagramElk(withBoundary);
+    expect(/bpmnElement="B"[^>]*>\s*<dc:Bounds/.test(out)).toBe(true); // boundary got a shape
+    expect(/bpmnElement="f2"/.test(out)).toBe(true); // its outgoing flow got routed
+  });
 });

@@ -67,6 +67,25 @@ export function fitBox(name: string, curW: number, curH: number): { width: numbe
   return { width, height };
 }
 
+const branchLabelWidth = (text: string): number => Math.min(120, Math.max(20, text.length * 6.5));
+
+/**
+ * Top-left bounds for a branch label placed near the SOURCE end of an edge (so a
+ * gateway's "Sí"/"No" reads right at the gateway instead of mid-connector). Nudged off
+ * the line: above for horizontal-ish first segments, to the side for vertical-ish ones.
+ */
+export function labelNearSource(
+  a: { x: number; y: number }, b: { x: number; y: number }, w: number, h: number,
+): { x: number; y: number } {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const along = Math.min(len * 0.5, 24); // ~24px from the source, or midway on a short segment
+  const px = a.x + (dx / len) * along;
+  const py = a.y + (dy / len) * along;
+  if (Math.abs(dx) >= Math.abs(dy)) return { x: px - w / 2, y: py - h - 3 };
+  return { x: px + 6, y: py - h / 2 };
+}
+
 /** Reposition a shape's bounds to a new size while keeping its center fixed. */
 function recenter(bounds: { x: number; y: number; width: number; height: number }, w: number, h: number): void {
   const cx = bounds.x + bounds.width / 2;
@@ -123,14 +142,19 @@ export async function tidyLayout(laidXml: string, originalXml?: string): Promise
         const flow = pe.bpmnElement;
         const source = flow?.sourceRef;
         const wp = pe.waypoint;
-        if (source && GATEWAY_TYPES.has(source.$type) && flow.name && pe.label?.bounds && wp && wp.length >= 2) {
-          // Sit the label on the first ~30% of the flow's first segment, just above the
-          // line — close to the gateway so the branch condition reads at a glance.
-          const a = wp[0], b = wp[1];
-          const cx = a.x + (b.x - a.x) * 0.3;
-          const cy = a.y + (b.y - a.y) * 0.3;
-          pe.label.bounds.x = cx - pe.label.bounds.width / 2;
-          pe.label.bounds.y = cy - pe.label.bounds.height - 4;
+        if (source && GATEWAY_TYPES.has(source.$type) && flow.name && wp && wp.length >= 2) {
+          // Sit the branch condition right at the gateway. bpmn-auto-layout often emits NO
+          // label DI for the flow (bpmn-js then defaults it to mid-connector) — so create
+          // one when missing, else just move the existing one.
+          const w = pe.label?.bounds?.width ?? branchLabelWidth(flow.name);
+          const h = pe.label?.bounds?.height ?? 14;
+          const { x, y } = labelNearSource(wp[0], wp[1], w, h);
+          if (pe.label?.bounds) {
+            pe.label.bounds.x = x;
+            pe.label.bounds.y = y;
+          } else {
+            pe.label = moddle.create("bpmndi:BPMNLabel", { bounds: moddle.create("dc:Bounds", { x, y, width: w, height: h }) });
+          }
         }
       }
     }
