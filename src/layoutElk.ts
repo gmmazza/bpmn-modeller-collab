@@ -274,14 +274,26 @@ async function renderProcess(
 
   for (const e of elkEdges) {
     const le = laidEdge.get(e.id);
-    const section = le?.sections?.[0];
+    const sB = nodeBounds.get(e.sources[0]), tB = nodeBounds.get(e.targets[0]);
+    const sLane = laneOf.get(e.sources[0]), tLane = laneOf.get(e.targets[0]);
+    // Cross-lane FORWARD edge in a swimlane: keep the line straight in the source lane and
+    // only drop to the target's lane at the last moment (user preference) — instead of elk's
+    // route which changes lane early. Same-lane / back-edges / no-lane keep elk's routing.
+    const dropLate = hasLanes && sB && tB && sLane != null && tLane != null && sLane !== tLane && tB.x > sB.x + sB.width;
     let pts: Pt[];
-    if (section) {
-      pts = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((p: Pt) => ({ x: p.x + contentX, y: p.y + offsetY }));
+    if (dropLate) {
+      const sx = sB!.x + sB!.width, sy = sB!.y + sB!.height / 2;
+      const tx = tB!.x, ty = tB!.y + tB!.height / 2;
+      const dropX = Math.max(sx + 20, tx - 25);
+      pts = [{ x: sx, y: sy }, { x: dropX, y: sy }, { x: dropX, y: ty }, { x: tx, y: ty }];
     } else {
-      const s = nodeBounds.get(e.sources[0]), t = nodeBounds.get(e.targets[0]);
-      if (!s || !t) continue;
-      pts = [{ x: s.x + s.width / 2, y: s.y + s.height / 2 }, { x: t.x + t.width / 2, y: t.y + t.height / 2 }];
+      const section = le?.sections?.[0];
+      if (section) {
+        pts = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint].map((p: Pt) => ({ x: p.x + contentX, y: p.y + offsetY }));
+      } else {
+        if (!sB || !tB) continue;
+        pts = [{ x: sB.x + sB.width / 2, y: sB.y + sB.height / 2 }, { x: tB.x + tB.width / 2, y: tB.y + tB.height / 2 }];
+      }
     }
     const bc = boundaryBounds.get(e.sources[0]);
     if (bc) pts[0] = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
