@@ -80,6 +80,8 @@ export async function layoutDiagramElk(xml: string): Promise<string> {
   }
 
   const boundaryHost = new Map<string, string>(); // boundary event id → host id
+  const boundaryFe = new Map<string, any>();      // boundary event id → moddle element
+  const boundaryByHost = new Map<string, any[]>(); // host id → [boundary elements]
   const elkNodes: any[] = [];
   const elkEdges: any[] = [];
 
@@ -92,11 +94,19 @@ export async function layoutDiagramElk(xml: string): Promise<string> {
       elkEdges.push({ id: fe.id, sources: [s], targets: [tgt], labels, _fe: fe });
       continue;
     }
-    // Boundary events are laid out by elk too (so flows touching them resolve — otherwise
-    // elk throws "referenced shape does not exist"), then snapped onto their host below.
-    if (t === "bpmn:BoundaryEvent" && fe.attachedToRef?.id) boundaryHost.set(fe.id, fe.attachedToRef.id);
+    // A boundary event becomes a PORT on its host (not a free layer node) — otherwise elk
+    // spreads it and its outgoing flows across the diagram (verified on the real master).
+    // As a port, it stays pinned to the host border and the layout stays compact.
+    if (t === "bpmn:BoundaryEvent" && fe.attachedToRef?.id) {
+      const hid = fe.attachedToRef.id;
+      boundaryHost.set(fe.id, hid);
+      boundaryFe.set(fe.id, fe);
+      if (!boundaryByHost.has(hid)) boundaryByHost.set(hid, []);
+      boundaryByHost.get(hid)!.push(fe);
+      continue;
+    }
     const size = sizeById.get(fe.id) ?? defaultSize(t);
-    elkNodes.push({ id: fe.id, width: size.width, height: size.height, _fe: fe, _size: size });
+    elkNodes.push({ id: fe.id, width: size.width, height: size.height, _fe: fe });
   }
 
   const elk = await getElk();
@@ -106,13 +116,26 @@ export async function layoutDiagramElk(xml: string): Promise<string> {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
-      "elk.spacing.nodeNode": "50",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "70",
-      "elk.spacing.edgeNode": "25",
-      "elk.spacing.edgeEdge": "15",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "25",
+      // Compact, order-preserving placement so the result stays close to a hand layout.
+      "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+      "elk.layered.crossingMinimization.semiInteractive": "true",
+      "elk.spacing.nodeNode": "40",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "60",
+      "elk.spacing.edgeNode": "20",
+      "elk.spacing.edgeEdge": "12",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "20",
     },
-    children: elkNodes.map((n) => ({ id: n.id, width: n.width, height: n.height })),
+    children: elkNodes.map((n) => {
+      const bs = boundaryByHost.get(n.id);
+      if (!bs?.length) return { id: n.id, width: n.width, height: n.height };
+      // Boundary events ride the host's SOUTH edge as fixed ports.
+      return {
+        id: n.id, width: n.width, height: n.height,
+        layoutOptions: { "elk.portConstraints": "FIXED_SIDE" },
+        ports: bs.map((b: any) => ({ id: b.id, width: 30, height: 30, layoutOptions: { "elk.port.side": "SOUTH" } })),
+      };
+    }),
     edges: elkEdges.map((e) => ({ id: e.id, sources: e.sources, targets: e.targets, labels: e.labels })),
   });
 
@@ -123,48 +146,56 @@ export async function layoutDiagramElk(xml: string): Promise<string> {
     moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
   const centerOf = (n: any) => ({ x: n.x + n.width / 2, y: n.y + n.height / 2 });
 
-  // Snap each boundary event onto its host's bottom edge (elk placed it as a free node so
-  // the flows would resolve). Overrides the elk position for both the shape and edge ends.
-  const snapped = new Map<string, { x: number; y: number; width: number; height: number }>();
-  const hostSeen = new Map<string, number>();
+  // Boundary event bounds, read off their host's laid-out port positions (host-relative).
+  const boundaryBounds = new Map<string, { x: number; y: number; width: number; height: number }>();
   for (const [bid, hid] of boundaryHost) {
-    const host = laidNode.get(hid), bn = laidNode.get(bid);
-    if (!host || !bn) continue;
-    const seen = hostSeen.get(hid) ?? 0;
-    hostSeen.set(hid, seen + 1);
-    snapped.set(bid, {
-      x: host.x + host.width * (0.3 + 0.4 * seen) - bn.width / 2,
-      y: host.y + host.height - bn.height / 2,
-      width: bn.width, height: bn.height,
-    });
+    const host = laidNode.get(hid);
+    const port = host?.ports?.find((p: any) => p.id === bid);
+    if (!host || !port) continue;
+    const size = sizeById.get(bid) ?? { width: 36, height: 36 };
+    const cx = host.x + port.x + (port.width ?? 0) / 2;
+    const cy = host.y + port.y + (port.height ?? 0) / 2;
+    boundaryBounds.set(bid, { x: cx - size.width / 2, y: cy - size.height / 2, width: size.width, height: size.height });
   }
-  const nodeCenter = (id: string) => {
-    const s = snapped.get(id);
-    return s ? { x: s.x + s.width / 2, y: s.y + s.height / 2 } : (laidNode.get(id) ? centerOf(laidNode.get(id)) : null);
+  const nodeCenter = (id: string): { x: number; y: number } | null => {
+    const b = boundaryBounds.get(id);
+    if (b) return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+    const n = laidNode.get(id);
+    return n ? centerOf(n) : null;
   };
 
   const planeElement: any[] = [];
 
-  // Node shapes (+ external labels below the shape; boundary events use the snapped bounds).
+  // Regular node shapes (+ external labels below the shape).
   for (const n of elkNodes) {
     const c = laidNode.get(n.id);
     if (!c) continue;
-    const s = snapped.get(n.id);
-    const bx = s ? s.x : c.x, by = s ? s.y : c.y;
     const shape = moddle.create("bpmndi:BPMNShape", {
-      id: `${n.id}_di`, bpmnElement: n._fe, bounds: bounds(bx, by, n.width, n.height),
+      id: `${n.id}_di`, bpmnElement: n._fe, bounds: bounds(c.x, c.y, n.width, n.height),
     });
     if (EXTERNAL_LABEL_TYPES.has(n._fe.$type) && n._fe.name) {
       const lw = labelWidth(n._fe.name);
       shape.label = moddle.create("bpmndi:BPMNLabel", {
-        bounds: bounds(bx + n.width / 2 - lw / 2, by + n.height + 6, lw, 14),
+        bounds: bounds(c.x + n.width / 2 - lw / 2, c.y + n.height + 6, lw, 14),
       });
     }
     planeElement.push(shape);
   }
 
-  // Edges: waypoints from elk sections. Branch (gateway-source) labels go near the gateway;
-  // other flow labels keep elk's on-edge position.
+  // Boundary event shapes (on the host border) + their own labels below.
+  for (const [bid, bb] of boundaryBounds) {
+    const fe = boundaryFe.get(bid);
+    const shape = moddle.create("bpmndi:BPMNShape", { id: `${bid}_di`, bpmnElement: fe, bounds: bounds(bb.x, bb.y, bb.width, bb.height) });
+    if (fe?.name) {
+      const lw = labelWidth(fe.name);
+      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(bb.x + bb.width / 2 - lw / 2, bb.y + bb.height + 4, lw, 14) });
+    }
+    planeElement.push(shape);
+  }
+
+  // Edges: waypoints from elk sections. Labels for gateway- and boundary-sourced flows sit
+  // near their source (the branch condition / "redirector" pills) so they don't pile up at
+  // mid-connector; other flow labels keep elk's on-edge position.
   for (const e of elkEdges) {
     const le = laidEdge.get(e.id);
     const section = le?.sections?.[0];
@@ -176,19 +207,19 @@ export async function layoutDiagramElk(xml: string): Promise<string> {
       if (!a || !b) continue;
       pts = [a, b];
     }
-    // A boundary-event source was snapped after routing — pull the edge's start onto it.
-    if (snapped.has(e.sources[0])) pts[0] = nodeCenter(e.sources[0])!;
+    // Boundary-sourced edge: pin its start onto the boundary shape.
+    const bc = boundaryBounds.get(e.sources[0]);
+    if (bc) pts[0] = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
     const edge = moddle.create("bpmndi:BPMNEdge", {
       id: `${e.id}_di`, bpmnElement: e._fe,
       waypoint: pts.map((p) => moddle.create("dc:Point", { x: Math.round(p.x), y: Math.round(p.y) })),
     });
     if (e._fe.name) {
       const lw = labelWidth(e._fe.name);
-      const srcIsGateway = GATEWAY_TYPES.has(e._fe.sourceRef?.$type);
+      const srcType = e._fe.sourceRef?.$type;
+      const nearSource = GATEWAY_TYPES.has(srcType) || srcType === "bpmn:BoundaryEvent";
       const ll = le?.labels?.[0];
-      const pos = srcIsGateway || !ll
-        ? labelNearSource(pts[0], pts[1], lw, 14)
-        : { x: ll.x, y: ll.y };
+      const pos = nearSource || !ll ? labelNearSource(pts[0], pts[1], lw, 14) : { x: ll.x, y: ll.y };
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
     planeElement.push(edge);
