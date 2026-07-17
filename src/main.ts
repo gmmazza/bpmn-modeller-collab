@@ -15,7 +15,7 @@ import "./app.css";
 import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
 import { layoutDiagram, UnsupportedLayoutError } from "./autoLayout";
-import { layoutDiagramElk, ELK_VARIANTS, DEFAULT_ELK_VARIANT } from "./layoutElk";
+import { layoutDiagramElk, layoutSubgraphElk, ELK_VARIANTS, DEFAULT_ELK_VARIANT } from "./layoutElk";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
@@ -1127,11 +1127,10 @@ async function bootstrap() {
           <button class="btn icon-only" id="newfile" type="button" title="Nuevo diagrama">${icon("new")}</button>
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
-          <button class="btn icon-only" id="autolayout" type="button" title="Auto-organizar el diagrama">${icon("autoLayout")}</button>
-          <span class="menu" id="autolayout-elk-menu">
-            <button class="btn icon-only" id="autolayout-elk" type="button" title="Auto-organizar — alta calidad (beta)">${icon("autoLayout")}<span class="beta-tag">β</span></button>
-            <button class="btn icon-only" id="autolayout-elk-caret" type="button" title="Opciones de organización" aria-haspopup="true">${icon("chevron")}</button>
-            <div class="menu-pop" id="autolayout-elk-pop" hidden></div>
+          <span class="menu" id="autolayout-menu">
+            <button class="btn icon-only" id="autolayout" type="button" title="Auto-organizar (alta calidad)">${icon("autoLayout")}</button>
+            <button class="btn icon-only" id="autolayout-caret" type="button" title="Opciones de organización" aria-haspopup="true">${icon("chevron")}</button>
+            <div class="menu-pop" id="autolayout-pop" hidden></div>
           </span>
         </div>
         <span class="divider"></span>
@@ -1654,33 +1653,39 @@ async function bootstrap() {
     })().catch(onError));
     $("undo").addEventListener("click", () => void doUndo().catch(onError));
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
-    $("autolayout").addEventListener("click", () => void doAutoLayout("auto").catch(onError));
-    $("autolayout-elk").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
-    // "Opciones de organización" dropdown: pick a variant → remember it + run it now.
-    const elkPop = document.getElementById("autolayout-elk-pop") as HTMLElement | null;
+    // Primary "Auto-organizar" now runs elk (high quality); bpmn-auto-layout is a backup.
+    $("autolayout").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
+    // "Opciones de organización" dropdown: variants (remembered) + reorganize-selection + backup.
+    const elkPop = document.getElementById("autolayout-pop") as HTMLElement | null;
+    function popItem(label: string, onClick: () => void): HTMLButtonElement {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      b.addEventListener("click", () => { if (elkPop) elkPop.hidden = true; onClick(); });
+      return b;
+    }
     function renderElkPop(): void {
       if (!elkPop) return;
       const active = getElkVariant();
       elkPop.innerHTML = "";
       for (const v of ELK_VARIANTS) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.textContent = (v.id === active ? "✓ " : "") + v.label;
-        b.addEventListener("click", () => {
+        elkPop.appendChild(popItem((v.id === active ? "✓ " : "") + v.label, () => {
           setElkVariant(v.id);
-          elkPop.hidden = true;
           void doAutoLayout("elk").catch(onError);
-        });
-        elkPop.appendChild(b);
+        }));
       }
+      const sep1 = document.createElement("div"); sep1.className = "menu-sep"; elkPop.appendChild(sep1);
+      elkPop.appendChild(popItem("Reorganizar solo la selección", () => void reorganizeSelection().catch(onError)));
+      const sep2 = document.createElement("div"); sep2.className = "menu-sep"; elkPop.appendChild(sep2);
+      elkPop.appendChild(popItem("Modo rápido (backup)", () => void doAutoLayout("auto").catch(onError)));
     }
-    $("autolayout-elk-caret").addEventListener("click", (e) => {
+    $("autolayout-caret").addEventListener("click", (e) => {
       e.stopPropagation();
       if (!elkPop) return;
       if (elkPop.hidden) { renderElkPop(); elkPop.hidden = false; } else { elkPop.hidden = true; }
     });
     document.addEventListener("click", (e) => {
-      if (elkPop && !elkPop.hidden && !document.getElementById("autolayout-elk-menu")?.contains(e.target as Node)) elkPop.hidden = true;
+      if (elkPop && !elkPop.hidden && !document.getElementById("autolayout-menu")?.contains(e.target as Node)) elkPop.hidden = true;
     });
     $("save").addEventListener("click", guard(async () => {
       if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
@@ -1910,10 +1915,8 @@ async function bootstrap() {
     // Auto-organizar works on the stage/plain editor OR the editable master pane.
     const canLayout = editable || masterActive;
     const autolayout = document.getElementById("autolayout") as HTMLButtonElement | null;
-    const autolayoutElk = document.getElementById("autolayout-elk") as HTMLButtonElement | null;
-    const autolayoutCaret = document.getElementById("autolayout-elk-caret") as HTMLButtonElement | null;
+    const autolayoutCaret = document.getElementById("autolayout-caret") as HTMLButtonElement | null;
     if (autolayout) autolayout.disabled = !canLayout;
-    if (autolayoutElk) autolayoutElk.disabled = !canLayout;
     if (autolayoutCaret) autolayoutCaret.disabled = !canLayout;
     // Local group: autosave toggle state, manual-save availability, saved status.
     const auto = document.getElementById("autosave-toggle") as HTMLButtonElement | null;
@@ -2112,12 +2115,12 @@ async function bootstrap() {
     await applyCoarseSnapshot(coarseRedo.pop() as string);
     showToast("Se rehizo la restauración");
   }
-  // Auto-organizar (D): re-lay the current diagram. Two engines — "auto" (bpmn-auto-layout
-  // + quick-wins tidy, stable) and "elk" (elkjs, higher quality, BETA). importXML wipes the
-  // native command stack, so — like a history-restore — we make it a coarse-undo snapshot:
-  // Ctrl+Z / the Deshacer button revert the whole re-layout.
+  // Auto-organizar (D): re-lay the current diagram. Two engines — "elk" (elkjs, the primary,
+  // high quality, handles pools/lanes + preserves colors/groups) and "auto" (bpmn-auto-layout,
+  // a fast backup). importXML wipes the native command stack, so — like a history-restore —
+  // we make it a coarse-undo snapshot: Ctrl+Z / the Deshacer button revert the whole re-layout.
   type LayoutEngine = "auto" | "elk";
-  // The elk "beta" button remembers the last-picked organization variant (localStorage).
+  // The primary (elk) button remembers the last-picked organization variant (localStorage).
   const ELK_VARIANT_KEY = "bpmn.autolayout.elkVariant";
   const getElkVariant = (): string => {
     try { return localStorage.getItem(ELK_VARIANT_KEY) || DEFAULT_ELK_VARIANT; } catch { return DEFAULT_ELK_VARIANT; }
@@ -2129,9 +2132,10 @@ async function bootstrap() {
     engine === "elk" ? layoutDiagramElk(xml, getElkVariant()) : layoutDiagram(xml);
   function toastLayoutError(e: unknown, engine: LayoutEngine): void {
     if (e instanceof UnsupportedLayoutError) {
-      showToast(engine === "elk"
-        ? "El modo beta todavía no reorganiza diagramas con carriles (pools)"
-        : "Auto-organizar no soporta carriles (pools) — probá el botón beta");
+      // Only the "auto" backup refuses pools now; elk handles them.
+      showToast(engine === "auto"
+        ? "El modo rápido no soporta carriles (pools) — usá Auto-organizar (alta calidad)"
+        : "No se pudo reorganizar el diagrama");
     } else {
       showToast("No se pudo reorganizar el diagrama");
     }
@@ -2158,7 +2162,7 @@ async function bootstrap() {
     dispatch({ type: "dirtyChanged", dirty: true });
     updateLocalStatus();
     render();
-    showToast(engine === "elk" ? "Diagrama reorganizado (beta) · Ctrl+Z para deshacer" : "Diagrama reorganizado · Ctrl+Z para deshacer");
+    showToast(engine === "auto" ? "Diagrama reorganizado (modo rápido) · Ctrl+Z para deshacer" : "Diagrama reorganizado · Ctrl+Z para deshacer");
   }
   // Master pane has its own modeler and no coarse stack; keep ONE pre-layout snapshot so the
   // re-layout stays revertible (Ctrl+Z, handled below). Cleared by any later native edit.
@@ -2179,7 +2183,39 @@ async function bootstrap() {
     saveDraft(folderId, currentMasterFile, laidOut);
     scheduleMasterDraftSave();
     render();
-    showToast(engine === "elk" ? "Mapa reorganizado (beta) · Ctrl+Z para deshacer" : "Mapa reorganizado · Ctrl+Z para deshacer");
+    showToast(engine === "auto" ? "Mapa reorganizado (modo rápido) · Ctrl+Z para deshacer" : "Mapa reorganizado · Ctrl+Z para deshacer");
+  }
+
+  // "Reorganizar solo la selección": elk-layout the selected shapes + the edges among them,
+  // then move only those (native + undoable) into the region they occupied — the rest of the
+  // diagram (colors, groups, other nodes) is untouched.
+  async function reorganizeSelection(): Promise<void> {
+    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    let selection: any, registry: any, modeling: any;
+    try {
+      selection = modeler.get("selection").get();
+      registry = modeler.get("elementRegistry");
+      modeling = modeler.get("modeling");
+    } catch { return; }
+    const shapes = (selection ?? []).filter((el: any) => el.width && !el.waypoints && !el.labelTarget && !el.attachedToRef);
+    if (shapes.length < 2) { showToast("Seleccioná al menos 2 elementos para reorganizar"); return; }
+    const ids = new Set(shapes.map((s: any) => s.id));
+    const edges = registry.filter((el: any) => el.waypoints && el.source && el.target && ids.has(el.source.id) && ids.has(el.target.id));
+    const pos = await layoutSubgraphElk(
+      shapes.map((s: any) => ({ id: s.id, width: s.width, height: s.height })),
+      edges.map((e: any) => ({ id: e.id, source: e.source.id, target: e.target.id })),
+      getElkVariant(),
+    );
+    const minX0 = Math.min(...shapes.map((s: any) => s.x));
+    const minY0 = Math.min(...shapes.map((s: any) => s.y));
+    for (const s of shapes) {
+      const p = pos.get(s.id);
+      if (!p) continue;
+      const dx = (minX0 + p.x) - s.x, dy = (minY0 + p.y) - s.y;
+      if (dx || dy) modeling.moveElements([s], { x: Math.round(dx), y: Math.round(dy) });
+    }
+    render();
+    showToast("Selección reorganizada · Ctrl+Z para deshacer");
   }
 
   // The advisory reservation, considering expiry: an expired reservation is free.

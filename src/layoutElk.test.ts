@@ -1,5 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { layoutDiagramElk } from "./layoutElk";
+import { layoutDiagramElk, layoutSubgraphElk } from "./layoutElk";
+
+describe("layoutSubgraphElk", () => {
+  it("lays a selected subgraph left-to-right, returning positions per node", async () => {
+    const pos = await layoutSubgraphElk(
+      [{ id: "a", width: 100, height: 80 }, { id: "b", width: 100, height: 80 }, { id: "c", width: 100, height: 80 }],
+      [{ id: "e1", source: "a", target: "b" }, { id: "e2", source: "b", target: "c" }],
+    );
+    expect(pos.get("a")!.x).toBeLessThan(pos.get("b")!.x);
+    expect(pos.get("b")!.x).toBeLessThan(pos.get("c")!.x);
+  });
+});
 
 // Start → Task → Gateway → (Task2 | End), no DI: elk must build a clean layout from scratch.
 const PROC = `<?xml version="1.0" encoding="UTF-8"?>

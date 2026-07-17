@@ -116,28 +116,13 @@ test("Auto-organizar re-lays a messy diagram left-to-right and Ctrl+Z reverts it
   expect(Math.abs(reverted.start - reverted.end)).toBeLessThan(5); // overlapping again
 });
 
-test("the elk beta button re-lays a plain diagram left-to-right", async ({ page }) => {
-  await openApp(page, { "messy.bpmn": MESSY_BPMN });
-  await page.getByText("📄 messy.bpmn").click();
-  await expect(page.locator("#canvas .djs-container")).toBeVisible();
-
-  await page.locator("#autolayout-elk").click();
-  await expect(page.locator(".toast")).toContainText("beta");
-
-  const start = await elementX(page, "Start_M");
-  const task = await elementX(page, "Task_M");
-  const end = await elementX(page, "End_M");
-  expect(start).toBeLessThan(task);
-  expect(task).toBeLessThan(end);
-});
-
-test("the elk beta button lays out pools as swimlanes (both pools kept)", async ({ page }) => {
+test("the primary Auto-organizar (elk) lays out pools as swimlanes (both pools kept)", async ({ page }) => {
   await openApp(page, { "pools.bpmn": POOLS_BPMN });
   await page.getByText("📄 pools.bpmn").click();
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
 
-  await page.locator("#autolayout-elk").click();
-  await expect(page.locator(".toast")).toContainText("reorganizado (beta)");
+  await page.locator("#autolayout").click();
+  await expect(page.locator(".toast")).toContainText("reorganizado");
   // Both pools survive and are stacked (P_B below P_A).
   const py = async (id: string) => (await page.locator(`#canvas .djs-element[data-element-id="${id}"]`).boundingBox())!.y;
   expect(await py("Part_B")).toBeGreaterThan(await py("Part_A"));
@@ -148,18 +133,51 @@ test("the organization-options menu picks a variant, remembers it, and runs it",
   await page.getByText("📄 messy.bpmn").click();
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
 
-  await page.locator("#autolayout-elk-caret").click();
-  const pop = page.locator("#autolayout-elk-pop");
+  await page.locator("#autolayout-caret").click();
+  const pop = page.locator("#autolayout-pop");
   await expect(pop).toBeVisible();
   await expect(pop.getByRole("button", { name: /Flujo horizontal/ })).toContainText("✓"); // default marked
   await pop.getByRole("button", { name: /Flujo vertical/ }).click();
-  await expect(page.locator(".toast")).toContainText("reorganizado (beta)"); // ran immediately
+  await expect(page.locator(".toast")).toContainText("reorganizado"); // ran immediately
 
   // Persisted: reopening the menu shows Vertical as the active (checked) variant.
   const saved = await page.evaluate(() => localStorage.getItem("bpmn.autolayout.elkVariant"));
   expect(saved).toBe("vertical");
-  await page.locator("#autolayout-elk-caret").click();
+  await page.locator("#autolayout-caret").click();
   await expect(pop.getByRole("button", { name: /Flujo vertical/ })).toContainText("✓");
+});
+
+test("'Modo rápido (backup)' runs bpmn-auto-layout and refuses pools", async ({ page }) => {
+  await openApp(page, { "messy.bpmn": MESSY_BPMN, "pools.bpmn": POOLS_BPMN });
+  await page.getByText("📄 messy.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  await page.locator("#autolayout-caret").click();
+  await page.locator("#autolayout-pop").getByRole("button", { name: /Modo rápido/ }).click();
+  await expect(page.locator(".toast")).toContainText("modo rápido");
+  expect(await elementX(page, "Start_M")).toBeLessThan(await elementX(page, "End_M"));
+
+  // On a pool diagram the backup refuses instead of destroying it.
+  await page.getByText("📄 pools.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+  await page.locator("#autolayout-caret").click();
+  await page.locator("#autolayout-pop").getByRole("button", { name: /Modo rápido/ }).click();
+  await expect(page.locator(".toast").last()).toContainText("no soporta carriles");
+  await expect(page.locator('#canvas .djs-element[data-element-id="Part_A"]')).toBeVisible();
+});
+
+test("'Reorganizar solo la selección' is wired and guards an empty selection", async ({ page }) => {
+  // The happy path (elk-layout the selected subgraph) is unit-tested via layoutSubgraphElk;
+  // clicking individual bpmn-js shapes in the canvas is flaky (the Token Simulation toggle
+  // overlays the top-left). Here we verify the menu item runs reorganizeSelection and its
+  // "need at least 2" guard fires when nothing is selected.
+  await openApp(page, { "messy.bpmn": MESSY_BPMN });
+  await page.getByText("📄 messy.bpmn").click();
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  await page.locator("#autolayout-caret").click();
+  await page.locator("#autolayout-pop").getByRole("button", { name: /solo la selección/ }).click();
+  await expect(page.locator(".toast").last()).toContainText("al menos 2 elementos");
 });
 
 test("Auto-organizar is enabled on the master map and re-lays it (with Ctrl+Z revert)", async ({ page }) => {
@@ -190,18 +208,3 @@ test("Auto-organizar is enabled on the master map and re-lays it (with Ctrl+Z re
   expect(Math.abs((await mx("CA1")) - (await mx("CA2")))).toBeLessThan(5); // overlapping again
 });
 
-test("Auto-organizar refuses a diagram with pools instead of destroying it", async ({ page }) => {
-  await openApp(page, { "pools.bpmn": POOLS_BPMN });
-  await page.getByText("📄 pools.bpmn").click();
-  await expect(page.locator("#canvas .djs-container")).toBeVisible();
-  // Both pools render before.
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_A"]')).toBeVisible();
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_B"]')).toBeVisible();
-
-  await page.locator("#autolayout").click();
-
-  await expect(page.locator(".toast")).toContainText("carriles (pools)");
-  // Both pools are STILL there — the diagram was left untouched.
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_A"]')).toBeVisible();
-  await expect(page.locator('#canvas .djs-element[data-element-id="Part_B"]')).toBeVisible();
-});

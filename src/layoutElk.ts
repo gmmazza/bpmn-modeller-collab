@@ -82,6 +82,29 @@ type Bounds = { x: number; y: number; width: number; height: number };
 type Pt = { x: number; y: number };
 
 /**
+ * Lay out a SUBGRAPH (a selection of nodes + the edges among them) and return each node's
+ * new top-left, relative to (0,0). The caller translates these into place — used by
+ * "reorganizar solo la selección", which moves the selected shapes and leaves the rest.
+ */
+export async function layoutSubgraphElk(
+  nodes: Array<{ id: string; width: number; height: number }>,
+  edges: Array<{ id: string; source: string; target: string }>,
+  variantId?: string,
+): Promise<Map<string, Pt>> {
+  const variant = resolveElkVariant(variantId);
+  const elk = await getElk();
+  const laid = await elk.layout({
+    id: "sel",
+    layoutOptions: variant.layoutOptions,
+    children: nodes.map((n) => ({ id: n.id, width: n.width, height: n.height })),
+    edges: edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+  });
+  const out = new Map<string, Pt>();
+  for (const c of laid.children ?? []) out.set(c.id, { x: c.x, y: c.y });
+  return out;
+}
+
+/**
  * Index the OLD DI by semantic element id: the plane element (shape/edge) so we can REUSE
  * it — preserving colors (fill/stroke) and any other authored DI attributes that a
  * from-scratch regeneration would drop — plus its bounds (doubles as the size source).
@@ -150,10 +173,16 @@ async function renderProcess(
     elkNodes.push({ id: fe.id, width: size.width, height: size.height, _fe: fe });
   }
 
+  // A fully-disconnected node (no edges) would be dumped at layer 0 — the start of the flow.
+  // Keep it near where the author put it (and in its lane) instead of moving it to the start.
+  const connectedIds = new Set<string>();
+  for (const e of elkEdges) { connectedIds.add(e.sources[0]); connectedIds.add(e.targets[0]); }
+  const isDisconnected = (id: string) => !connectedIds.has(id) && sizeById.has(id);
+
   const laid = await elk.layout({
     id: "root",
     layoutOptions: variant.layoutOptions,
-    children: elkNodes.map((n) => {
+    children: elkNodes.filter((n) => !isDisconnected(n.id)).map((n) => {
       const bs = boundaryByHost.get(n.id);
       if (!bs?.length) return { id: n.id, width: n.width, height: n.height };
       return {
@@ -215,9 +244,17 @@ async function renderProcess(
   const planeElement: any[] = [];
 
   for (const n of elkNodes) {
-    const c = laidNode.get(n.id);
-    if (!c) continue;
-    const b: Bounds = { x: c.x + contentX, y: nodeTop(n.id, c.y) + offsetY, width: n.width, height: n.height };
+    let b: Bounds;
+    if (isDisconnected(n.id)) {
+      const ob = sizeById.get(n.id)!; // keep the loose box at its original spot (in its lane)
+      const li = laneOf.get(n.id);
+      const y = lanes.length && li != null && laneBands[li] ? laneBands[li].y + LANE_PAD : ob.y;
+      b = { x: ob.x + contentX, y: y + offsetY, width: n.width, height: n.height };
+    } else {
+      const c = laidNode.get(n.id);
+      if (!c) continue;
+      b = { x: c.x + contentX, y: nodeTop(n.id, c.y) + offsetY, width: n.width, height: n.height };
+    }
     nodeBounds.set(n.id, b);
     // Reuse the old shape (keeps colors/attrs) — just re-bound it; else create fresh.
     const shape = shapeById.get(n.id) ?? moddle.create("bpmndi:BPMNShape", { id: `${n.id}_di`, bpmnElement: n._fe });
@@ -307,6 +344,15 @@ function emitGroups(
   shapeById: Map<string, any>, moddle: any,
 ): any[] {
   const out: any[] = [];
+  // Old + new vertical extents, to detect "phase column" groups (ones that spanned most of
+  // the old height, i.e. all lanes) and span them across the FULL new height — otherwise
+  // their boxes shrink to their members' rows and read as indented/staggered.
+  const oldYs = [...oldBoundsById.values()];
+  const oldContentH = oldYs.length ? Math.max(...oldYs.map((b) => b.y + b.height)) - Math.min(...oldYs.map((b) => b.y)) : 1;
+  const newYs = [...newBoundsById.values()];
+  const newTop = newYs.length ? Math.min(...newYs.map((b) => b.y)) : 0;
+  const newBot = newYs.length ? Math.max(...newYs.map((b) => b.y + b.height)) : 0;
+
   for (const a of artifacts ?? []) {
     if (a.$type !== "bpmn:Group") continue;
     const shape = shapeById.get(a.id);
@@ -321,9 +367,10 @@ function emitGroups(
     }
     if (!members.length) continue;
     const minX = Math.min(...members.map((m) => m.x)) - 20;
-    const minY = Math.min(...members.map((m) => m.y)) - 34;
     const maxX = Math.max(...members.map((m) => m.x + m.width)) + 20;
-    const maxY = Math.max(...members.map((m) => m.y + m.height)) + 20;
+    const isColumn = ob.height >= 0.6 * oldContentH; // spanned most lanes → keep it full-height
+    const minY = isColumn ? newTop - 34 : Math.min(...members.map((m) => m.y)) - 34;
+    const maxY = isColumn ? newBot + 20 : Math.max(...members.map((m) => m.y + m.height)) + 20;
     shape.bounds = moddle.create("dc:Bounds", { x: Math.round(minX), y: Math.round(minY), width: Math.round(maxX - minX), height: Math.round(maxY - minY) });
     if (shape.label?.bounds) { shape.label.bounds.x = Math.round(minX + 8); shape.label.bounds.y = Math.round(minY + 4); }
     out.push(shape);

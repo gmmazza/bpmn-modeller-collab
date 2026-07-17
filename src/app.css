@@ -101,15 +101,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
 #toolbar .tgroup { display: inline-flex; align-items: center; gap: 2px; }
 /* "β" marker on the beta (elkjs) auto-layout button */
 #autolayout-elk { position: relative; }
-#autolayout-elk .beta-tag {
-  position: absolute; top: 1px; right: 1px; font-size: 8px; font-weight: 700;
-  line-height: 1; color: var(--accent); pointer-events: none;
-}
-/* the "opciones de organización" caret reads as a tight split-button next to β */
-#autolayout-elk-menu { display: inline-flex; align-items: center; }
-#autolayout-elk-caret { padding-left: 1px; padding-right: 1px; }
-#autolayout-elk-caret svg { width: 12px; height: 12px; }
-#autolayout-elk-pop button { white-space: nowrap; }
+/* the "opciones de organización" caret reads as a tight split-button next to Auto-organizar */
+#autolayout-menu { display: inline-flex; align-items: center; }
+#autolayout-caret { padding-left: 1px; padding-right: 1px; }
+#autolayout-caret svg { width: 12px; height: 12px; }
+#autolayout-pop button { white-space: nowrap; }
+#autolayout-pop .menu-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 #toolbar .divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 6px; }
 #toolbar .spacer { flex: 1; }
 /* logical section labels (Local / Compartido) */
