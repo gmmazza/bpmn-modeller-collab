@@ -335,20 +335,6 @@ function branchLabelPos(gwSeen: Map<string, number>, gid: string, pts: Pt[], lh:
   return { x: pts[0].x + 6, y: goesDown ? pts[0].y + 4 + k * (lh + 3) : pts[0].y - lh - 4 - k * (lh + 3) };
 }
 
-/** Orthogonal route that stays in the source lane, dropping to the target's lane late. */
-function routeMatrix(s: Bounds, t: Bounds): Pt[] {
-  const sx = s.x + s.width, sy = s.y + s.height / 2;
-  const tx = t.x, ty = t.y + t.height / 2;
-  if (Math.abs(sy - ty) < 4) return [{ x: sx, y: sy }, { x: tx, y: ty }]; // same lane → straight
-  if (tx > sx + 10) { // forward: horizontal in the source lane until just before the target
-    const dropX = Math.max(sx + 20, tx - 25);
-    return [{ x: sx, y: sy }, { x: dropX, y: sy }, { x: dropX, y: ty }, { x: tx, y: ty }];
-  }
-  // back-edge: exit right, drop to the target row, run back and enter from the target's right.
-  const outX = sx + 25;
-  return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: ty }, { x: t.x + t.width, y: ty }];
-}
-
 /**
  * MATRIX layout for lane + group (phase) diagrams. elk can't preserve a 2-D matrix (it lays
  * out by flow dependency), so we place each node in its cell — column = its phase (the group
@@ -360,7 +346,8 @@ function renderMatrix(
   process: any, groups: any[], moddle: any, boundsById: Map<string, Bounds>, shapeById: Map<string, any>,
   offsetX: number, offsetY: number,
 ): { planeElement: any[]; width: number; height: number; nodeBounds: Map<string, Bounds>; laneBands: Array<{ lane: any; y: number; height: number }>; phaseColumns: Array<{ group: any; x: number; width: number }> } {
-  const CELL_GAP = 30, COL_GAP = 60, PAD = 22;
+  const CELL_GAP = 40, COL_GAP = 60, PAD = 24; // COL_GAP is the MIN gutter; it widens per connector below
+  const V_TRACK = 18, H_TRACK = 16; // spacing between parallel vertical / horizontal connector tracks
   const bounds = (x: number, y: number, w: number, h: number) =>
     moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
 
@@ -409,9 +396,42 @@ function renderMatrix(
     colW[p] = Math.max(colW[p], cellWidth(arr));
     for (const n of arr) laneH[l] = Math.max(laneH[l], n.h + 2 * PAD);
   }
-  const colX = new Array(P || 1); { let x = 0; for (let p = 0; p < (P || 1); p++) { colX[p] = x; x += colW[p] + COL_GAP; } }
-  const laneY = new Array(L); { let y = 0; for (let l = 0; l < L; l++) { laneY[l] = y; y += laneH[l]; } }
+  const nodeCell = new Map<string, { p: number; l: number }>();
+  for (const n of nodes) nodeCell.set(n.id, { p: n.p, l: n.l });
+  for (const [bid, hid] of boundaryHost) { const c = nodeCell.get(hid); if (c) nodeCell.set(bid, c); }
+
+  // --- Channel routing plan (the visibility/channel idea elk uses): every vertical connector
+  // gets its own TRACK inside a column gutter — the gutter widens to fit them, so the
+  // connectors act as horizontal spacers — and every cross-column horizontal gets its own
+  // track in a dedicated strip at the top of a lane. Nothing is ever routed through a node.
+  // Gutter g sits left of column g (0..P); a vertical right of col p → gutter p+1, left → gutter p.
+  type Plan = { fe: any; straight: boolean; single: boolean; forward: boolean; g1: number; g2: number; tg1: number; tg2: number; tch: number; chLane: number };
+  const gutterN = new Map<number, number>(); // gutter → tracks allocated
+  const chanN = new Map<number, number>();    // lane → horizontal channel tracks allocated
+  const plans: Plan[] = [];
+  for (const fe of edges) {
+    const sc = nodeCell.get(fe.sourceRef.id), tc = nodeCell.get(fe.targetRef.id);
+    if (!sc || !tc) continue;
+    const forward = tc.p > sc.p;
+    // Same lane and in the same or an adjacent column → straight (siblings / next-step); nothing between them.
+    if (sc.l === tc.l && tc.p >= sc.p && tc.p - sc.p <= 1) { plans.push({ fe, straight: true, single: true, forward, g1: 0, g2: 0, tg1: 0, tg2: 0, tch: 0, chLane: tc.l }); continue; }
+    const g1 = sc.p + 1, g2 = forward ? tc.p : tc.p + 1, single = g1 === g2;
+    const tg1 = gutterN.get(g1) ?? 0; gutterN.set(g1, tg1 + 1);
+    let tg2 = 0, tch = 0;
+    if (!single) { tg2 = gutterN.get(g2) ?? 0; gutterN.set(g2, tg2 + 1); tch = chanN.get(tc.l) ?? 0; chanN.set(tc.l, tch + 1); }
+    plans.push({ fe, straight: false, single, forward, g1, g2, tg1, tg2, tch, chLane: tc.l });
+  }
+  const gutterCount = (g: number) => gutterN.get(g) ?? 0;
+  const gutterW = (g: number) => Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK);
+  const laneExtra = new Array(L).fill(0).map((_, l) => { const c = chanN.get(l) ?? 0; return c ? c * H_TRACK + 10 : 0; });
+
+  const P1 = P || 1;
+  const colX = new Array(P1); { let x = gutterW(0); for (let p = 0; p < P1; p++) { colX[p] = x; x += colW[p] + gutterW(p + 1); } }
+  const laneY = new Array(L); { let y = 0; for (let l = 0; l < L; l++) { laneY[l] = y; y += laneH[l] + laneExtra[l]; } }
   const contentX = offsetX + LANE_HEADER;
+  const gutterMid = (g: number) => (g === 0 ? 0 : colX[g - 1] + colW[g - 1]) + gutterW(g) / 2;
+  const trackX = (g: number, i: number) => contentX + gutterMid(g) + (i - (gutterCount(g) - 1) / 2) * V_TRACK;
+  const channelY = (l: number, i: number) => offsetY + laneY[l] + 6 + i * H_TRACK;
 
   const nodeBounds = new Map<string, Bounds>();
   const planeElement: any[] = [];
@@ -425,12 +445,13 @@ function renderMatrix(
     planeElement.push(shape);
   };
 
-  for (let p = 0; p < (P || 1); p++) for (let l = 0; l < L; l++) {
+  // Nodes sit BELOW their lane's channel strip, centred in the remaining band.
+  for (let p = 0; p < P1; p++) for (let l = 0; l < L; l++) {
     const arr = cells.get(cellKey(p, l)) ?? [];
     if (!arr.length) continue;
-    let x = contentX + colX[p] + (colW[p] - cellWidth(arr)) / 2; // center the cell in its column
+    let x = contentX + colX[p] + (colW[p] - cellWidth(arr)) / 2;
     for (const n of arr) {
-      const b: Bounds = { x, y: offsetY + laneY[l] + (laneH[l] - n.h) / 2, width: n.w, height: n.h };
+      const b: Bounds = { x, y: offsetY + laneY[l] + laneExtra[l] + (laneH[l] - n.h) / 2, width: n.w, height: n.h };
       nodeBounds.set(n.id, b);
       emitShape(n.id, n.fe, b, EXTERNAL_LABEL_TYPES.has(n.fe.$type));
       x += n.w + CELL_GAP;
@@ -453,43 +474,25 @@ function renderMatrix(
     planeElement.push(shape);
   }
 
-  // Each node's cell (phase column, lane row), so edges can route through the empty gutters
-  // between columns and the empty pad above each lane band — never crossing another node.
-  const nodeCell = new Map<string, { p: number; l: number }>();
-  for (const n of nodes) nodeCell.set(n.id, { p: n.p, l: n.l });
-  for (const [bid, hid] of boundaryHost) { const c = nodeCell.get(hid); if (c) nodeCell.set(bid, c); }
-  const gutterRight = (p: number) => contentX + colX[p] + colW[p] + COL_GAP / 2; // empty channel right of column p
-  const gutterLeft = (p: number) => contentX + colX[p] - COL_GAP / 2;
-  const laneTopPad = (l: number) => offsetY + laneY[l] + 6; // empty strip above the lane's centred nodes
-  function routeCell(s: Bounds, t: Bounds, sid: string, tid: string): Pt[] {
-    const sx = s.x + s.width, sy = s.y + s.height / 2, tx = t.x, ty = t.y + t.height / 2;
-    const sc = nodeCell.get(sid), tc = nodeCell.get(tid);
-    if (!sc || !tc) return routeMatrix(s, t);
-    // Verticals run in a column gutter; a cross-column horizontal runs in a lane's top pad.
-    // (Not a full obstacle-avoiding router — a few crossings remain on the densest diagrams.)
-    if (Math.abs(sy - ty) < 4) { // same row → straight
-      if (tx > sx) return [{ x: sx, y: sy }, { x: tx, y: ty }];
-      const outX = sx + COL_GAP / 2, chY = laneTopPad(sc.l);
-      return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: chY }, { x: t.x + t.width + 8, y: chY }, { x: t.x + t.width + 8, y: ty }, { x: t.x + t.width, y: ty }];
-    }
-    if (tx > sx) { // forward, changing lane
-      if (tc.p - sc.p <= 1) { // adjacent (or same) column → single vertical in the gutter
-        const gx = tc.p > sc.p ? gutterLeft(tc.p) : gutterRight(sc.p);
-        return [{ x: sx, y: sy }, { x: gx, y: sy }, { x: gx, y: ty }, { x: tx, y: ty }];
-      }
-      const gx1 = gutterRight(sc.p), gx2 = gutterLeft(tc.p), chY = laneTopPad(tc.l);
-      return [{ x: sx, y: sy }, { x: gx1, y: sy }, { x: gx1, y: chY }, { x: gx2, y: chY }, { x: gx2, y: ty }, { x: tx, y: ty }];
-    }
-    // back-edge: out right of source, along the target lane pad, back into the target's right
-    const outX = sx + COL_GAP / 2, chY = laneTopPad(tc.l);
-    return [{ x: sx, y: sy }, { x: outX, y: sy }, { x: outX, y: chY }, { x: t.x + t.width + 8, y: chY }, { x: t.x + t.width + 8, y: ty }, { x: t.x + t.width, y: ty }];
-  }
-
   const gwSeen = new Map<string, number>();
-  for (const fe of edges) {
+  for (const pl of plans) {
+    const fe = pl.fe;
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
     if (!s || !t) continue;
-    const pts = routeCell(s, t, fe.sourceRef.id, fe.targetRef.id);
+    const sx = s.x + s.width, sy = s.y + s.height / 2, tx = t.x, ty = t.y + t.height / 2;
+    let pts: Pt[];
+    if (pl.straight) {
+      pts = [{ x: sx, y: sy }, { x: tx, y: ty }];
+    } else {
+      const tEnterX = pl.forward ? t.x : t.x + t.width;
+      const gX1 = trackX(pl.g1, pl.tg1);
+      if (pl.single) {
+        pts = [{ x: sx, y: sy }, { x: gX1, y: sy }, { x: gX1, y: ty }, { x: tEnterX, y: ty }];
+      } else {
+        const gX2 = trackX(pl.g2, pl.tg2), chY = channelY(pl.chLane, pl.tch);
+        pts = [{ x: sx, y: sy }, { x: gX1, y: sy }, { x: gX1, y: chY }, { x: gX2, y: chY }, { x: gX2, y: ty }, { x: tEnterX, y: ty }];
+      }
+    }
     const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
     if (fe.name) {
@@ -502,10 +505,10 @@ function renderMatrix(
     planeElement.push(edge);
   }
 
-  const laneBands = lanes.map((lane, l) => ({ lane, y: laneY[l], height: laneH[l] }));
-  const phaseColumns = phaseGroups.map((pg, p) => ({ group: pg.g, x: contentX + colX[p] - COL_GAP / 2, width: colW[p] + COL_GAP }));
-  const totalW = LANE_HEADER + ((P || 1) ? colX[(P || 1) - 1] + colW[(P || 1) - 1] : 0);
-  const totalH = L ? laneY[L - 1] + laneH[L - 1] : 0;
+  const laneBands = lanes.map((lane, l) => ({ lane, y: laneY[l], height: laneH[l] + laneExtra[l] }));
+  const phaseColumns = phaseGroups.map((pg, p) => ({ group: pg.g, x: contentX + colX[p] - gutterW(p) / 2, width: colW[p] + gutterW(p) / 2 + gutterW(p + 1) / 2 }));
+  const totalW = LANE_HEADER + colX[P1 - 1] + colW[P1 - 1] + gutterW(P1);
+  const totalH = L ? laneY[L - 1] + laneH[L - 1] + laneExtra[L - 1] : 0;
   return { planeElement, width: totalW + 20, height: totalH + 20, nodeBounds, laneBands, phaseColumns };
 }
 
