@@ -21,4 +21,8 @@ describe("icon", () => {
     expect(icon("clock")).toContain("<svg");
     expect(icon("bulb")).toContain("<svg");
   });
+
+  it("renders the autoLayout icon as svg", () => {
+    expect(icon("autoLayout")).toContain("<svg");
+  });
 });

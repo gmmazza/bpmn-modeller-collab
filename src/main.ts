@@ -14,6 +14,7 @@ import "./app.css";
 
 import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
+import { layoutDiagram, UnsupportedLayoutError } from "./autoLayout";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
@@ -1125,6 +1126,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="newfile" type="button" title="Nuevo diagrama">${icon("new")}</button>
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
+          <button class="btn icon-only" id="autolayout" type="button" title="Auto-organizar el diagrama">${icon("autoLayout")}</button>
         </div>
         <span class="divider"></span>
         <div class="tgroup" id="localgroup">
@@ -1646,6 +1648,7 @@ async function bootstrap() {
     })().catch(onError));
     $("undo").addEventListener("click", () => void doUndo().catch(onError));
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
+    $("autolayout").addEventListener("click", () => void doAutoLayout().catch(onError));
     $("save").addEventListener("click", guard(async () => {
       if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
       if (state.kind === "editing") await publish(state.fileId);
@@ -1856,6 +1859,8 @@ async function bootstrap() {
     const editable = editing && !previewing && !compareRO;
     if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
     if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
+    const autolayout = document.getElementById("autolayout") as HTMLButtonElement | null;
+    if (autolayout) autolayout.disabled = !editable;
     // Local group: autosave toggle state, manual-save availability, saved status.
     const auto = document.getElementById("autosave-toggle") as HTMLButtonElement | null;
     if (auto) {
@@ -2052,6 +2057,35 @@ async function bootstrap() {
     coarseUndo.push(await editor.getXml());
     await applyCoarseSnapshot(coarseRedo.pop() as string);
     showToast("Se rehizo la restauración");
+  }
+  // Auto-organizar (D-lite): re-lay the current diagram left-to-right via bpmn-auto-layout.
+  // importXML wipes the native command stack, so — like a history-restore — we make it a
+  // coarse-undo snapshot: Ctrl+Z / the Deshacer button revert the whole re-layout.
+  async function doAutoLayout(): Promise<void> {
+    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    const fileId = state.fileId;
+    const current = await editor.getXml();
+    let laidOut: string;
+    try {
+      laidOut = await layoutDiagram(current);
+    } catch (e) {
+      if (e instanceof UnsupportedLayoutError) {
+        showToast("Auto-organizar todavía no soporta diagramas con carriles (pools)");
+      } else {
+        showToast("No se pudo reorganizar el diagrama");
+      }
+      return;
+    }
+    coarseUndo.push(current);
+    coarseRedo.length = 0;
+    await loadIntoEditor(laidOut);
+    editor.setReadOnly(false);
+    saveDraft(folderId, fileId, laidOut);
+    draftPending = false;
+    dispatch({ type: "dirtyChanged", dirty: true });
+    updateLocalStatus();
+    render();
+    showToast("Diagrama reorganizado · Ctrl+Z para deshacer");
   }
 
   // The advisory reservation, considering expiry: an expired reservation is free.

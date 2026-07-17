@@ -29,6 +29,11 @@ declare module "bpmn-js-sketchy" {
   export default module;
 }
 
+// bpmn-auto-layout ships no types; layoutProcess(xml) → relaid-out xml.
+declare module "bpmn-auto-layout" {
+  export function layoutProcess(xml: string): Promise<string>;
+}
+
 declare module "bpmn-js-bpmnlint";
 declare module "bpmnlint";
 declare module "./linting/bpmnlintConfig.js";
