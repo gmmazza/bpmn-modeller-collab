@@ -123,11 +123,19 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
       // the whole draw, matching the pattern in ideaBadges.ts / ideasOverlays.ts.
       try { overlayIds.push(ov.add(s.elementId, { position: { top: -8, right: 8 }, html })); } catch { /* skip */ }
     }
+    // Outcome badges cascade DOWNWARD per host: several boundary events on one call
+    // activity stack tightly on its border, so a fixed just-below position stacked their
+    // "→ destino" pills on top of each other and over the outputs' text. Staggering each
+    // one lower (by its index among the host's boundaries) spreads them into open space.
+    const hostBoundaryIdx = new Map<string, number>();
     for (const b of boundaries) {
       const destName = deps.resolveDestinationName?.(b.outgoingTargetId ?? "") ?? "";
       const html = document.createElement("div");
       html.className = "subproc-outcome-badge";
       html.textContent = outcomeBadgeText(destName);
+      const hostKey = b.callActivityId ?? b.boundaryId;
+      const stackIdx = hostBoundaryIdx.get(hostKey) ?? 0;
+      hostBoundaryIdx.set(hostKey, stackIdx + 1);
       // Drill from the outcome badge into the subprocess whose Call Activity this
       // boundary is attached to (so the reader lands on the process that raises it).
       const link = links.find((l) => l.elementId === b.callActivityId);
@@ -137,7 +145,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
         html.title = "Ir al subproceso de este resultado";
         html.addEventListener("click", (e) => { e.stopPropagation(); void deps.openStage(file).catch(deps.onError); });
       }
-      try { overlayIds.push(overlays().add(b.boundaryId, { position: { bottom: -6, left: 0 }, html })); } catch { /* skip */ }
+      try { overlayIds.push(overlays().add(b.boundaryId, { position: { bottom: -(24 + stackIdx * 18), left: 14 }, html })); } catch { /* skip */ }
     }
   }
 
