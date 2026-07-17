@@ -15,6 +15,8 @@
 //     The caller runs this as a coarse-undo snapshot, so the whole re-layout is
 //     revertible with Ctrl+Z.
 
+import { tidyLayout } from "./layoutTidy";
+
 /** Thrown when the diagram is out of scope for D-lite (currently: has pools). */
 export class UnsupportedLayoutError extends Error {
   constructor(public readonly reason: "pools") {
@@ -43,5 +45,7 @@ export function hasPools(xml: string): boolean {
 export async function layoutDiagram(xml: string): Promise<string> {
   if (hasPools(xml)) throw new UnsupportedLayoutError("pools");
   const { layoutProcess } = await import("bpmn-auto-layout");
-  return await layoutProcess(xml);
+  const laid = await layoutProcess(xml);
+  // Quick-wins: restore the box sizes the layouter flattened + pull gateway labels in.
+  return await tidyLayout(laid, xml);
 }

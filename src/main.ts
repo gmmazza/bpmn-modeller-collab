@@ -15,6 +15,7 @@ import "./app.css";
 import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
 import { layoutDiagram, UnsupportedLayoutError } from "./autoLayout";
+import { layoutDiagramElk } from "./layoutElk";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
@@ -1127,6 +1128,7 @@ async function bootstrap() {
           <button class="btn icon-only" id="undo" type="button" title="Deshacer (Ctrl+Z)">${icon("undo")}</button>
           <button class="btn icon-only" id="redo" type="button" title="Rehacer (Ctrl+Y)">${icon("redo")}</button>
           <button class="btn icon-only" id="autolayout" type="button" title="Auto-organizar el diagrama">${icon("autoLayout")}</button>
+          <button class="btn icon-only" id="autolayout-elk" type="button" title="Auto-organizar — alta calidad (beta)">${icon("autoLayout")}<span class="beta-tag">β</span></button>
         </div>
         <span class="divider"></span>
         <div class="tgroup" id="localgroup">
@@ -1648,7 +1650,8 @@ async function bootstrap() {
     })().catch(onError));
     $("undo").addEventListener("click", () => void doUndo().catch(onError));
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
-    $("autolayout").addEventListener("click", () => void doAutoLayout().catch(onError));
+    $("autolayout").addEventListener("click", () => void doAutoLayout("auto").catch(onError));
+    $("autolayout-elk").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
     $("save").addEventListener("click", guard(async () => {
       if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
       if (state.kind === "editing") await publish(state.fileId);
@@ -1719,6 +1722,21 @@ async function bootstrap() {
       const k = ev.key.toLowerCase();
       const isRedo = k === "y" || (k === "z" && ev.shiftKey);
       const isUndo = k === "z" && !ev.shiftKey;
+      // Master pane: revert the last auto-organize (its own modeler has no coarse stack).
+      if (isUndo && masterPaneFocused && currentMasterFile && !isStageOpen() && masterLayoutUndo != null) {
+        ev.preventDefault(); ev.stopPropagation();
+        const snap = masterLayoutUndo;
+        masterLayoutUndo = null;
+        void (async () => {
+          await masterHandle!.load(snap);
+          masterPaneFocused = true;
+          saveDraft(folderId, currentMasterFile!, snap);
+          scheduleMasterDraftSave();
+          render();
+          showToast("Se deshizo la reorganización del mapa");
+        })().catch(onError);
+        return;
+      }
       if (isUndo && !canNativeUndo() && coarseUndo.length) {
         ev.preventDefault(); ev.stopPropagation(); void doUndo().catch(onError);
       } else if (isRedo && !canNativeRedo() && coarseRedo.length) {
@@ -1859,8 +1877,12 @@ async function bootstrap() {
     const editable = editing && !previewing && !compareRO;
     if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
     if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
+    // Auto-organizar works on the stage/plain editor OR the editable master pane.
+    const canLayout = editable || masterActive;
     const autolayout = document.getElementById("autolayout") as HTMLButtonElement | null;
-    if (autolayout) autolayout.disabled = !editable;
+    const autolayoutElk = document.getElementById("autolayout-elk") as HTMLButtonElement | null;
+    if (autolayout) autolayout.disabled = !canLayout;
+    if (autolayoutElk) autolayoutElk.disabled = !canLayout;
     // Local group: autosave toggle state, manual-save availability, saved status.
     const auto = document.getElementById("autosave-toggle") as HTMLButtonElement | null;
     if (auto) {
@@ -2058,22 +2080,33 @@ async function bootstrap() {
     await applyCoarseSnapshot(coarseRedo.pop() as string);
     showToast("Se rehizo la restauración");
   }
-  // Auto-organizar (D-lite): re-lay the current diagram left-to-right via bpmn-auto-layout.
-  // importXML wipes the native command stack, so — like a history-restore — we make it a
-  // coarse-undo snapshot: Ctrl+Z / the Deshacer button revert the whole re-layout.
-  async function doAutoLayout(): Promise<void> {
+  // Auto-organizar (D): re-lay the current diagram. Two engines — "auto" (bpmn-auto-layout
+  // + quick-wins tidy, stable) and "elk" (elkjs, higher quality, BETA). importXML wipes the
+  // native command stack, so — like a history-restore — we make it a coarse-undo snapshot:
+  // Ctrl+Z / the Deshacer button revert the whole re-layout.
+  type LayoutEngine = "auto" | "elk";
+  const runLayout = (engine: LayoutEngine, xml: string): Promise<string> =>
+    engine === "elk" ? layoutDiagramElk(xml) : layoutDiagram(xml);
+  function toastLayoutError(e: unknown, engine: LayoutEngine): void {
+    if (e instanceof UnsupportedLayoutError) {
+      showToast(engine === "elk"
+        ? "El modo beta todavía no reorganiza diagramas con carriles (pools)"
+        : "Auto-organizar no soporta carriles (pools) — probá el botón beta");
+    } else {
+      showToast("No se pudo reorganizar el diagrama");
+    }
+  }
+  async function doAutoLayout(engine: LayoutEngine): Promise<void> {
+    // The editable master pane is a separate modeler — route there when it's the active one.
+    if (masterPaneFocused && currentMasterFile && !isStageOpen()) { await doAutoLayoutMaster(engine); return; }
     if (state.kind !== "editing" || previewingRid !== null || comparing) return;
     const fileId = state.fileId;
     const current = await editor.getXml();
     let laidOut: string;
     try {
-      laidOut = await layoutDiagram(current);
+      laidOut = await runLayout(engine, current);
     } catch (e) {
-      if (e instanceof UnsupportedLayoutError) {
-        showToast("Auto-organizar todavía no soporta diagramas con carriles (pools)");
-      } else {
-        showToast("No se pudo reorganizar el diagrama");
-      }
+      toastLayoutError(e, engine);
       return;
     }
     coarseUndo.push(current);
@@ -2085,7 +2118,28 @@ async function bootstrap() {
     dispatch({ type: "dirtyChanged", dirty: true });
     updateLocalStatus();
     render();
-    showToast("Diagrama reorganizado · Ctrl+Z para deshacer");
+    showToast(engine === "elk" ? "Diagrama reorganizado (beta) · Ctrl+Z para deshacer" : "Diagrama reorganizado · Ctrl+Z para deshacer");
+  }
+  // Master pane has its own modeler and no coarse stack; keep ONE pre-layout snapshot so the
+  // re-layout stays revertible (Ctrl+Z, handled below). Cleared by any later native edit.
+  let masterLayoutUndo: string | null = null;
+  async function doAutoLayoutMaster(engine: LayoutEngine): Promise<void> {
+    if (!masterHandle || !currentMasterFile) return;
+    const current = await masterHandle.getXml();
+    let laidOut: string;
+    try {
+      laidOut = await runLayout(engine, current);
+    } catch (e) {
+      toastLayoutError(e, engine);
+      return;
+    }
+    await masterHandle.load(laidOut);
+    masterLayoutUndo = current;
+    masterPaneFocused = true;
+    saveDraft(folderId, currentMasterFile, laidOut);
+    scheduleMasterDraftSave();
+    render();
+    showToast(engine === "elk" ? "Mapa reorganizado (beta) · Ctrl+Z para deshacer" : "Mapa reorganizado · Ctrl+Z para deshacer");
   }
 
   // The advisory reservation, considering expiry: an expired reservation is free.
@@ -2184,7 +2238,7 @@ async function bootstrap() {
       masterHandle = await mountMasterPane(mc, {
         registry, openStage, onError, onElementClick: onMasterElementClick,
         onDrill: (info) => { const entry = registry.resolve(info.calledElement); if (entry) void openStage(entry.file).catch(onError); },
-        onDirty: () => { masterPaneFocused = true; scheduleMasterDraftSave(); render(); },
+        onDirty: () => { masterPaneFocused = true; masterLayoutUndo = null; scheduleMasterDraftSave(); render(); },
         onFocus: () => { focusMasterPane(); },
         resolveDestinationName: (id) => masterNodeNames.get(id) ?? "",
       });

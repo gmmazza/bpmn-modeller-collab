@@ -45,6 +45,7 @@
     "diagram-js-grid": "^2.0.1",
     "diagram-js-minimap": "^5.3.0",
     "dompurify": "^3.4.11",
+    "elkjs": "^0.9.3",
     "heatmap-ts": "^0.0.5",
     "markdown-it": "^14.2.0"
   },

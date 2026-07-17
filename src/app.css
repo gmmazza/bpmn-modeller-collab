@@ -99,6 +99,12 @@ body { margin: 0; background: var(--bg); color: var(--text); font-family: "Segoe
   overflow: visible;
 }
 #toolbar .tgroup { display: inline-flex; align-items: center; gap: 2px; }
+/* "β" marker on the beta (elkjs) auto-layout button */
+#autolayout-elk { position: relative; }
+#autolayout-elk .beta-tag {
+  position: absolute; top: 1px; right: 1px; font-size: 8px; font-weight: 700;
+  line-height: 1; color: var(--accent); pointer-events: none;
+}
 #toolbar .divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 6px; }
 #toolbar .spacer { flex: 1; }
 /* logical section labels (Local / Compartido) */
