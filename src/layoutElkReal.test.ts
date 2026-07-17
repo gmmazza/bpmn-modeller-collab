@@ -61,12 +61,11 @@ describe("layoutDiagramElk on the real Novotec matrix fixture", () => {
     for (let i = 0; i < groups.length - 1; i++) expect(groups[i].x + groups[i].width, "group X overlap").toBeLessThanOrEqual(groups[i + 1].x + 1);
   });
 
-  it("keeps edge-through-node crossings bounded (channel routing; not yet a full visibility router)", () => {
-    // Ideal is 0. The channel router (verticals in widened column gutters as parallel tracks,
-    // horizontals in per-lane strips) decompresses the diagram and spaces the connectors, but
-    // still crosses a node when a source has a sibling in the same cell — that last mile needs
-    // a real visibility-graph router (planned). This bound tracks the current honest state and
-    // fails loudly on a gross routing regression; it is NOT the goal (0 is).
+  it("keeps edge-through-node crossings near zero (top-exit channel routing)", () => {
+    // Edges leave/enter nodes from the TOP into empty lane strips and drop through empty column
+    // gutters, so they almost never cross a node (2 on this real fixture, vs 14 for the naive
+    // router). Horizontal flow is preserved (siblings stay side by side). This tight bound
+    // fails loudly on a routing regression.
     const nodes = shapes.filter((s) => !NON_FLOW.has(s.bpmnElement.$type)).map((s) => ({ id: s.bpmnElement.id, ...s.bounds }));
     const hits = (a: any, b: any, r: any) => {
       const p = 3, rx0 = r.x + p, ry0 = r.y + p, rx1 = r.x + r.width - p, ry1 = r.y + r.height - p;
@@ -83,7 +82,7 @@ describe("layoutDiagramElk on the real Novotec matrix fixture", () => {
         for (const n of nodes) { if (n.id !== sid && n.id !== tid && hits(wp[i], wp[i + 1], n)) { crosses = true; break; } }
       if (crosses) crossing++;
     }
-    expect(crossing).toBeLessThanOrEqual(16);
+    expect(crossing).toBeLessThanOrEqual(4); // 2 on this fixture; small headroom, still catches gross regressions
   });
 
   it("staggers gateway branch labels so they don't overprint each other", () => {

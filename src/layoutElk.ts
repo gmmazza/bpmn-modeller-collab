@@ -304,8 +304,8 @@ async function renderProcess(
       const lw = labelWidth(e._fe.name);
       const srcType = e._fe.sourceRef?.$type;
       const ll = le?.labels?.[0];
-      const pos = GATEWAY_TYPES.has(srcType)
-        ? branchLabelPos(gwSeen, e._fe.sourceRef.id, pts, 14)
+      const pos = GATEWAY_TYPES.has(srcType) && sB
+        ? branchLabelPos(gwSeen, e._fe.sourceRef.id, sB, 14)
         : srcType === "bpmn:BoundaryEvent" || !ll ? labelNearSource(pts[0], pts[1], lw, 14) : { x: ll.x + contentX, y: ll.y + offsetY };
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
@@ -327,12 +327,12 @@ async function renderProcess(
  * branches don't overprint each other (they all exit the gateway at the same point). Labels
  * on down-going branches sit below the exit, up/straight ones above, each stacked by index.
  */
-function branchLabelPos(gwSeen: Map<string, number>, gid: string, pts: Pt[], lh: number): Pt {
-  const goesDown = (pts[pts.length - 1].y - pts[0].y) > 4;
-  const key = gid + (goesDown ? ":d" : ":u");
-  const k = gwSeen.get(key) ?? 0;
-  gwSeen.set(key, k + 1);
-  return { x: pts[0].x + 6, y: goesDown ? pts[0].y + 4 + k * (lh + 3) : pts[0].y - lh - 4 - k * (lh + 3) };
+function branchLabelPos(gwSeen: Map<string, number>, gid: string, s: Bounds, lh: number): Pt {
+  const k = gwSeen.get(gid) ?? 0;
+  gwSeen.set(gid, k + 1);
+  // Stack the gateway's branch labels down its right side, one per branch — consistent and
+  // separated regardless of how each branch is routed.
+  return { x: s.x + s.width + 4, y: s.y + s.height / 2 - lh / 2 + k * (lh + 4) };
 }
 
 /**
@@ -346,7 +346,7 @@ function renderMatrix(
   process: any, groups: any[], moddle: any, boundsById: Map<string, Bounds>, shapeById: Map<string, any>,
   offsetX: number, offsetY: number,
 ): { planeElement: any[]; width: number; height: number; nodeBounds: Map<string, Bounds>; laneBands: Array<{ lane: any; y: number; height: number }>; phaseColumns: Array<{ group: any; x: number; width: number }> } {
-  const CELL_GAP = 40, COL_GAP = 60, PAD = 24; // COL_GAP is the MIN gutter; it widens per connector below
+  const COL_GAP = 90, PAD = 24; // COL_GAP is the MIN gutter; it widens per connector below
   const V_TRACK = 18, H_TRACK = 16; // spacing between parallel vertical / horizontal connector tracks
   const bounds = (x: number, y: number, w: number, h: number) =>
     moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
@@ -387,6 +387,9 @@ function renderMatrix(
   for (const n of nodes) { const k = cellKey(n.p, n.l); if (!cells.has(k)) cells.set(k, []); cells.get(k)!.push(n); }
   for (const arr of cells.values()) arr.sort((a, b) => (boundsById.get(a.id)?.x ?? 0) - (boundsById.get(b.id)?.x ?? 0));
 
+  // Cell members are laid out side by side (horizontal flow, as authored). Edges never cross
+  // a sibling because they leave/enter a node from the TOP into the lane's channel strip.
+  const CELL_GAP = 40;
   const cellWidth = (arr: typeof nodes) => arr.reduce((s, n) => s + n.w, 0) + Math.max(0, arr.length - 1) * CELL_GAP;
   const colW = new Array(P || 1).fill(80);
   const laneH = new Array(L).fill(90);
@@ -405,21 +408,26 @@ function renderMatrix(
   // connectors act as horizontal spacers — and every cross-column horizontal gets its own
   // track in a dedicated strip at the top of a lane. Nothing is ever routed through a node.
   // Gutter g sits left of column g (0..P); a vertical right of col p → gutter p+1, left → gutter p.
-  type Plan = { fe: any; straight: boolean; single: boolean; forward: boolean; g1: number; g2: number; tg1: number; tg2: number; tch: number; chLane: number };
-  const gutterN = new Map<number, number>(); // gutter → tracks allocated
+  // A non-straight edge leaves its source from the TOP into the source lane's channel strip
+  // (clear — nothing sits above a node in the horizontal layout), runs across in that strip to
+  // a column gutter, drops through the gutter (clear — no nodes between columns) to the target
+  // lane's strip, runs across to the target column, and enters the target from the TOP. Every
+  // segment is in an empty strip/gutter, so nothing ever crosses a node. Each connector gets
+  // its own track in the strips it uses and the gutter it drops through (which widen to fit).
+  type Plan = { fe: any; straight: boolean; sl: number; tl: number; gX: number; tGut: number; tSrc: number; tTgt: number };
+  const gutterN = new Map<number, number>(); // gutter → vertical tracks allocated
   const chanN = new Map<number, number>();    // lane → horizontal channel tracks allocated
   const plans: Plan[] = [];
   for (const fe of edges) {
     const sc = nodeCell.get(fe.sourceRef.id), tc = nodeCell.get(fe.targetRef.id);
     if (!sc || !tc) continue;
-    const forward = tc.p > sc.p;
-    // Same lane and in the same or an adjacent column → straight (siblings / next-step); nothing between them.
-    if (sc.l === tc.l && tc.p >= sc.p && tc.p - sc.p <= 1) { plans.push({ fe, straight: true, single: true, forward, g1: 0, g2: 0, tg1: 0, tg2: 0, tch: 0, chLane: tc.l }); continue; }
-    const g1 = sc.p + 1, g2 = forward ? tc.p : tc.p + 1, single = g1 === g2;
-    const tg1 = gutterN.get(g1) ?? 0; gutterN.set(g1, tg1 + 1);
-    let tg2 = 0, tch = 0;
-    if (!single) { tg2 = gutterN.get(g2) ?? 0; gutterN.set(g2, tg2 + 1); tch = chanN.get(tc.l) ?? 0; chanN.set(tc.l, tch + 1); }
-    plans.push({ fe, straight: false, single, forward, g1, g2, tg1, tg2, tch, chLane: tc.l });
+    // Same lane, same/adjacent column → straight left-to-right (main flow reads horizontally).
+    if (sc.l === tc.l && tc.p >= sc.p && tc.p - sc.p <= 1) { plans.push({ fe, straight: true, sl: sc.l, tl: tc.l, gX: 0, tGut: 0, tSrc: 0, tTgt: 0 }); continue; }
+    const gX = tc.p > sc.p ? tc.p : tc.p + 1; // gutter beside the target, on the source's side
+    const tGut = gutterN.get(gX) ?? 0; gutterN.set(gX, tGut + 1);
+    const tSrc = chanN.get(sc.l) ?? 0; chanN.set(sc.l, tSrc + 1);
+    const tTgt = chanN.get(tc.l) ?? 0; chanN.set(tc.l, tTgt + 1);
+    plans.push({ fe, straight: false, sl: sc.l, tl: tc.l, gX, tGut, tSrc, tTgt });
   }
   const gutterCount = (g: number) => gutterN.get(g) ?? 0;
   const gutterW = (g: number) => Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK);
@@ -445,7 +453,7 @@ function renderMatrix(
     planeElement.push(shape);
   };
 
-  // Nodes sit BELOW their lane's channel strip, centred in the remaining band.
+  // Nodes sit side by side in their cell, below the lane's channel strip, the row centred.
   for (let p = 0; p < P1; p++) for (let l = 0; l < L; l++) {
     const arr = cells.get(cellKey(p, l)) ?? [];
     if (!arr.length) continue;
@@ -479,26 +487,25 @@ function renderMatrix(
     const fe = pl.fe;
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
     if (!s || !t) continue;
-    const sx = s.x + s.width, sy = s.y + s.height / 2, tx = t.x, ty = t.y + t.height / 2;
     let pts: Pt[];
     if (pl.straight) {
-      pts = [{ x: sx, y: sy }, { x: tx, y: ty }];
+      pts = [{ x: s.x + s.width, y: s.y + s.height / 2 }, { x: t.x, y: t.y + t.height / 2 }];
     } else {
-      const tEnterX = pl.forward ? t.x : t.x + t.width;
-      const gX1 = trackX(pl.g1, pl.tg1);
-      if (pl.single) {
-        pts = [{ x: sx, y: sy }, { x: gX1, y: sy }, { x: gX1, y: ty }, { x: tEnterX, y: ty }];
-      } else {
-        const gX2 = trackX(pl.g2, pl.tg2), chY = channelY(pl.chLane, pl.tch);
-        pts = [{ x: sx, y: sy }, { x: gX1, y: sy }, { x: gX1, y: chY }, { x: gX2, y: chY }, { x: gX2, y: ty }, { x: tEnterX, y: ty }];
-      }
+      // top-exit → source strip → gutter → target strip → top-enter (all channels are empty).
+      const sCx = s.x + s.width / 2, tCx = t.x + t.width / 2;
+      const chYs = channelY(pl.sl, pl.tSrc), chYt = channelY(pl.tl, pl.tTgt), gx = trackX(pl.gX, pl.tGut);
+      pts = [
+        { x: sCx, y: s.y }, { x: sCx, y: chYs },
+        { x: gx, y: chYs }, { x: gx, y: chYt },
+        { x: tCx, y: chYt }, { x: tCx, y: t.y },
+      ];
     }
     const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
     if (fe.name) {
       const lw = labelWidth(fe.name);
       const pos = GATEWAY_TYPES.has(fe.sourceRef?.$type)
-        ? branchLabelPos(gwSeen, fe.sourceRef.id, pts, 14)
+        ? branchLabelPos(gwSeen, fe.sourceRef.id, s, 14)
         : labelNearSource(pts[0], pts[1], lw, 14);
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
