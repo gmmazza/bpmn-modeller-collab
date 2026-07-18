@@ -119,6 +119,10 @@ capas como **plantillas** reutilizables.
 ![Selector de duración de la reserva](docs/screenshots/09-reserva.png)
 
 ### Productividad
+- **Auto-organizar**: re-acomoda el diagrama con un layout automático **horizontal**
+  que **respeta swimlanes y fases** y rutea los conectores ortogonalmente
+  minimizando cruces. Anda en el editor y en el **mapa maestro**, es **deshacible**
+  y conserva colores. Incluye **"Reorganizar solo la selección"**.
 - **Gestión de archivos** con subcarpetas: crear, abrir, renombrar, duplicar,
   mover, copiar y borrar desde el menú **⋯** de cada fila.
 - **Atajos de teclado** para herramientas y edición; **deshacer/rehacer** robusto

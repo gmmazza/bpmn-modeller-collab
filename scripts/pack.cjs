@@ -11,8 +11,11 @@ const { packager } = require("@electron/packager");
 
 // Exclude everything that isn't needed at runtime. Anchored at the repo root so
 // dist/ (the built renderer) and electron/ (main+preload) are kept.
+// NB: `release[^\\/]*` (not bare `release`) so it also excludes the accumulated one-off
+// `release-r*` / `release-new` dirs — otherwise they get swallowed into the asar and it
+// overflows the 4.2GB asar limit once a couple of them exist.
 const EXCLUDE =
-  /^[\\/](release|node_modules|src|docs|e2e|coverage|scratchpad|build|test|test-results|playwright-report|playwright\.config\.ts|qa-workspace|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
+  /^[\\/](release[^\\/]*|node_modules|src|docs|e2e|coverage|scratchpad|build|test|test-results|playwright-report|playwright\.config\.ts|qa-workspace|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
 
 packager({
   dir: ".",

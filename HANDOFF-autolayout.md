@@ -1,7 +1,8 @@
 # Auto-organization (Auto-organizar) — WIP handoff
 
-**Status:** work-in-progress on branch **`feat/autolayout-d`** (27 commits on top of `main` = `30d6ae0`).
-NOT merged to `main`. Pushed to `origin` as a WIP branch. Resume here in a clean context.
+**Status:** SHIPPED in **v0.6.5** (2026-07-18) — `feat/autolayout-d` merged to `main` and released.
+This doc is kept as the design/rationale record for the layouter; the blow-by-blow history lives
+in the auto-memory `d-autolayout-status.md`.
 
 **Feature D from the backlog** ("Auto-organizar"): a toolbar button that re-lays the current
 `.bpmn` diagram. Fully working end-to-end (browser + Electron), verified across 15 refinement
@@ -14,9 +15,9 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
 
 - **Primary button `#autolayout` = elkjs engine.** bpmn-auto-layout was demoted to a
   **"Modo rápido (backup)"** menu item. The caret `▾` (`#autolayout-caret`) opens the
-  **"opciones de organización"** dropdown: variants (Flujo horizontal / vertical / Árbol —
-  remembered in `localStorage` key `bpmn.autolayout.elkVariant`), **"Reorganizar solo la
-  selección"**, and the backup.
+  **"opciones de organización"** dropdown: **"Reorganizar solo la selección"** and the backup.
+  Layout is **horizontal-only** — the earlier selectable vertical / árbol (tree) variants and
+  their `localStorage` persistence were removed.
 - **Three diagram shapes handled:**
   - **Plain single process** → elk layered layout (clean, high quality).
   - **Swimlanes (pools/lanes, no phase groups)** → `renderProcess` (elk seeded-Y).
@@ -38,8 +39,8 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
   `UnsupportedLayoutError`.
 - `src/layoutTidy.ts` — quick-wins for the backup engine (restore box sizes, `labelNearSource`).
 - **`src/layoutElk.ts`** — the main engine. Key functions:
-  - `layoutDiagramElk(xml, variantId)` — entry; dispatches collaboration → `layoutCollaborationElk`.
-  - `ELK_VARIANTS`, `resolveElkVariant`, `DEFAULT_ELK_VARIANT`.
+  - `layoutDiagramElk(xml)` — entry; dispatches collaboration → `layoutCollaborationElk`.
+  - `LAYOUT_OPTIONS` — the single horizontal (left→right) elk option set (no variants).
   - `renderProcess(...)` — single process / plain swimlane (elk seeded-Y + INTERACTIVE nodePlacement).
   - **`renderMatrix(process, groups, ...)`** — the matrix layouter (see §3). This is where the
     active refinement is.
@@ -48,8 +49,8 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
   - `branchLabelPos(...)` — stacks a gateway's Sí/No labels down its right side.
   - `layoutSubgraphElk(...)` — reorganize-selection.
 - `src/main.ts` — toolbar HTML (`#autolayout`, `#autolayout-caret`, `#autolayout-pop`),
-  `doAutoLayout(engine)`, `doAutoLayoutMaster(engine)`, `reorganizeSelection()`, variant
-  persistence, the dropdown wiring, coarse-undo, master one-slot undo.
+  `doAutoLayout(engine)`, `doAutoLayoutMaster(engine)`, `reorganizeSelection()`, the dropdown
+  wiring, coarse-undo, master one-slot undo.
 - `src/icons.ts` — `autoLayout` icon.
 - **Tests:** `src/layoutElk.test.ts` (synthetic units), `src/layoutTidy.test.ts`,
   `src/autoLayout.test.ts`, `src/contextMenu.test.ts`, and — the important one —
@@ -60,43 +61,58 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
 
 ---
 
-## 3. The matrix layouter + top-exit channel router (the current focus)
+## 3. The matrix layouter — hybrid fine columns + compact side router (RONDA 17 — current)
 
-`renderMatrix` places each node in its **cell** (column = its phase group, ordered by old x;
-row = its lane), then routes edges. This is what preserves the 2-D matrix (elk destroys it —
-verified: elk moves nodes ~409px avg).
+`renderMatrix` places each node in a **fine column** (X) at its **lane band** (Y), then routes
+edges. This preserves the 2-D matrix (elk destroys it — verified: elk moves nodes ~409px avg)
+AND reads like the hand-authored flow.
 
-- **Placement:** cell members side by side (horizontal flow reads left→right). Columns widen to
-  the widest cell; lane bands fit the tallest node + `PAD`; each lane also reserves a top
-  **channel strip** (`laneExtra`) for horizontal connector tracks.
-- **Routing (`routeCell` was replaced by a planned two-phase channel router):** every
-  non-straight edge **leaves its source from the TOP** into the source lane's (empty) channel
-  strip, runs across that strip to a **column gutter**, **drops through the gutter** (empty
-  between columns) to the target lane's strip, runs across, and **enters the target from the
-  top**. Straight = same lane + same/adjacent column (the main flow).
-- **Tracks:** each connector gets its own track in the strips it uses and the gutter it drops
-  through; **gutters/strips widen to fit their tracks** (connectors act as spacers → decompression).
-- **Result on the real fixture:** 2 edge-through-node crossings (was 14 for the naive router),
-  0 node/lane/group overlaps, width 1.5k→2.7k (decompressed), horizontal flow preserved.
+- **Fine columns by FLOW GENERATION (RONDA 18):** each node's `gen` = longest-path depth in the
+  sequence-flow graph (DFS, cycle-guarded; boundary events inherit the host's gen). Within each phase,
+  nodes are bucketed by `gen` into *fine columns* (was old-x clustering in R17 — generations are the
+  truth, so a successor lands STRICTLY later and nodes never stack at the same x). A phase's fine
+  columns are **consecutive**, so its box stays one clean contiguous X band (no round-11 mush). Same-
+  gen nodes in different lanes share a fine column (parallel branches align). Phase-boundary gutters get
+  `+PHASE_GAP`. `phaseFc[p]` = the lo/hi fine-column range of phase p.
+- **Placement:** each node centred in its fine cell; **lane bands fit the tallest node + `PAD`
+  only** — no top channel strip.
+- **Obstacle-aware router (RONDA 19-21):** the user's rule — max horizontality, stay INSIDE the lane,
+  make the ONE vertical at the LAST moment (just before the target). Per cross-lane edge, `laneClear(a,b,lane)`
+  (topological — is that lane empty in the fine columns between a and b, from `cells`) decides:
+  **source lane clear → drop-late** (`kind:"gutter"`, vertical in the gutter beside the TARGET, horizontal
+  at the source's row — stays in the source lane); **else target lane clear → drop-early** (vertical beside
+  the source, horizontal at the target's row); **else → highway** (a clear INTER-LANE CHANNEL, 2 verticals,
+  used by the few edges where both rows are blocked, so channels stay thin). Port-sides: forward exits EAST
+  / enters WEST (gutter beside target, never past it). Port distribution: `exitY`/`entryY` spread an edge
+  along a node's side ordered by the other endpoint's Y, so a gateway's branches never leave/enter one
+  overprinted point. One-node-per-cell fine-column split so an edge never passes a cell-mate. Result on the
+  fixture: 0 node crossings, 0 right-entries, 0 overprinted ports.
+- **Why the change:** the old top-exit router piled all 30 non-straight edges into fat `laneExtra`
+  strips above each lane → lanes **doubled** (890→1946 tall) and the diagram became edge spaghetti,
+  even though the crossings metric was green (2). The user chose *compact like the authored diagram*
+  over zero-crossings. Now the vertical-through-gutter part (the genuinely good idea) is kept — so
+  **verticals never cross a node** — while horizontals run at node rows and may clip a same-row node.
+- **Result on the real fixture (RONDA 18):** height **1082** (authored 890, +18% for the routing
+  channels — not the 2× of the old strip), width **6582** (wide: every generation is a column, so the
+  diagram is airy — tunable via `COL_GAP`/`CELL_GAP`/colW-min). No node stacking, flow steps left→right,
+  phase columns clean & non-overlapping, connectors mostly short with the long ones in channels.
+  **2 residual horizontal corner-clips** (0 vertical), down from 14. 0 node/lane/group overlaps.
 
 **Key probe result to remember:** elk (`layered` + all-INTERACTIVE strategies) routes at ~3
-crossings but re-layouts nodes (~409px drift) → cannot be used to route on fixed matrix
-positions. The top-exit channel router replicates the clean-routing idea on the fixed matrix.
+crossings but re-layouts nodes (~409px drift) → cannot be used to route on fixed matrix positions.
 
 ---
 
 ## 4. Open refinement items (pick up here)
 
-1. **Channel bands look dense.** All non-straight edges pile into the lane top strips, so the
-   strip band above a busy lane has many parallel horizontals. Ideas: reuse a track when two
-   edges don't overlap in x; route some edges through the strip BELOW a lane; cap strip height.
-2. **2 residual crossings** on the real fixture. Investigate with the XML analysis in §5;
-   likely a boundary-event edge or a same-cell case the top-exit doesn't cover.
+1. ~~**Channel bands look dense.**~~ **RESOLVED in RONDA 16** — replaced the top-exit channel
+   router with compact side routing (see §3); lane bands no longer inflate.
+2. **14 horizontal-clip crossings** on the real fixture (accepted trade-off for compactness).
+   If zero crossings are wanted back WITHOUT inflating bands, the next step is a real
+   obstacle-avoiding router (visibility-graph / A* over the gutter×row grid) — the big piece.
 3. **Backup engine (bpmn-auto-layout) loses colors/groups** — port the old-shape-reuse trick
    from `layoutElk` into `layoutTidy` if the backup needs parity.
-4. **Vertical variant + matrix**: the variant menu (horizontal/vertical/tree) only affects the
-   plain/swimlane path; matrix is always horizontal. Decide if vertical matrix is wanted.
-5. **Reorganize-selection happy path** is only unit-tested (`layoutSubgraphElk`); the e2e tests
+4. **Reorganize-selection happy path** is only unit-tested (`layoutSubgraphElk`); the e2e tests
    the guard (clicking bpmn-js shapes in e2e is flaky — the Token Simulation `.bts-toggle-mode`
    overlays the top-left). If you want an e2e happy path, drive selection via evaluate/hook.
 

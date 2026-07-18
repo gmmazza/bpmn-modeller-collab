@@ -4,6 +4,34 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.6.5] — 2026-07-18
+
+**Auto-organizar**: layout automático de diagramas (flujo horizontal, con
+swimlanes y fases respetados y ruteo ortogonal de mínimos cruces), más
+correcciones de visualización en el mapa maestro.
+
+### Agregado
+- **Auto-organizar (layout automático).** Botón de la barra que re-acomoda el
+  diagrama con un motor de layout por capas (elkjs): flujo de izquierda a derecha
+  por generaciones de flujo, **swimlanes y fases preservados** (la matriz 2-D no
+  se destruye) y **ruteo ortogonal** de los conectores dentro del carril,
+  minimizando cruces. Funciona en el editor y en el **mapa maestro**, es
+  **deshacible** (Ctrl+Z) y conserva colores y cajas de fase. En el menú de
+  opciones (▾): **"Reorganizar solo la selección"** y **"Modo rápido (backup)"**.
+
+### Corregido
+- **Resultados alternativos en el mapa maestro.** Cuando una Call Activity tiene
+  varios resultados (eventos de borde de escalación), ahora se **reparten a lo
+  largo del borde inferior** y sus **etiquetas se escalonan**, en vez de apilarse
+  en un punto y superponerse. Aplica tanto al auto-organizar como al **alta de un
+  resultado nuevo**.
+- **"Reorganizar solo la selección"** ahora **preserva los carriles**: reordena en
+  el eje horizontal sin sacar los nodos de su swimlane.
+
+### Cambiado
+- El auto-organizar es **horizontal**; se quitaron las variantes *vertical* y
+  *árbol* (y el selector de variante).
+
 ## [0.6.0] — 2026-07-16
 
 Gran salto de **gestión de conocimiento de procesos**: mapas en capas
