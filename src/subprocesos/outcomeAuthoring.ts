@@ -4,6 +4,7 @@
 // Call Activity. All mutations go through bpmn-js modeling / moddle so the command stack
 // (and the app's coarse-undo layer) captures them.
 import { escalationCodeFor } from "./escalationCode";
+import { distributeBoundaries } from "./boundaryLayout";
 
 // Find an existing bpmn:Escalation root element with this code, or declare a new one
 // (id convention `Escalation_<code>` so re-marking / re-attaching reuses the same
@@ -86,7 +87,38 @@ export function addEscalationBoundary(
   const attachPos = { x: callActivity.x + callActivity.width / 2, y: callActivity.y + callActivity.height };
   modeling.createShape(boundaryShape, attachPos, callActivity, { attach: true });
   modeling.connect(boundaryShape, destination);
+  // Every boundary is dropped at the host's centre; from the 2nd on they'd stack on that point
+  // and their labels would overprint. Re-space all of the host's boundaries along the bottom
+  // edge and cascade their labels after each add (matches the auto-layout stagger; undoable).
+  redistributeHostBoundaries(modeler, callActivity);
   return boundaryShape.id;
+}
+
+// Spread a host's escalation boundaries evenly along its bottom edge and cascade their labels,
+// so N alternative outcomes read cleanly instead of piling on the single attach point. Pure
+// geometry in distributeBoundaries; the moves go through modeling so the command stack (and the
+// app's coarse-undo) captures them. A lone boundary keeps its centred attach point.
+export function redistributeHostBoundaries(modeler: { get(s: string): any }, host: any): void {
+  const elementRegistry = modeler.get("elementRegistry");
+  const modeling = modeler.get("modeling");
+  const boundaries = elementRegistry
+    .filter((el: any) => (el.type ?? "").endsWith("BoundaryEvent") && el.businessObject?.attachedToRef === host.businessObject)
+    .sort((a: any, b: any) => a.x - b.x);
+  if (boundaries.length < 2) return;
+  const slots = distributeBoundaries(host, boundaries.length);
+  // Pass 1: slide each circle to its slot (moving a shape carries its own label along).
+  boundaries.forEach((b: any, i: number) => {
+    const dx = Math.round(slots[i].cx - (b.x + b.width / 2));
+    const dy = Math.round(slots[i].cy - (b.y + b.height / 2));
+    if (dx || dy) modeling.moveElements([b], { x: dx, y: dy });
+  });
+  // Pass 2: cascade the (now-moved) labels so several outcome names don't overprint.
+  boundaries.forEach((b: any, i: number) => {
+    if (!b.label) return;
+    const dx = Math.round(slots[i].labelX - b.label.x);
+    const dy = Math.round(slots[i].labelY - b.label.y);
+    if (dx || dy) modeling.moveElements([b.label], { x: dx, y: dy });
+  });
 }
 
 export function removeEscalationBoundary(modeler: { get(s: string): any }, escalationCode: string): void {

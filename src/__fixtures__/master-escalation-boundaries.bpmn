@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Representative master-map scenario reproducing the real Novotec defect: one Call Activity
+     ("2b · Motor donante") carrying FOUR named escalation boundary events (the subprocess's
+     alternative outcomes), each wired to a distinct destination. Authored DI intentionally
+     drops all four boundaries at the host's centre-bottom (the addEscalationBoundary attach
+     point) so their default centred-below labels overprint — the exact bug in the screenshot.
+     layoutDiagramElk regenerates the DI; the test asserts the outcome labels no longer pile up. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  id="defs_master" targetNamespace="http://novotec">
+  <bpmn:escalation id="Esc_compra" name="Compra motor donante" escalationCode="p2b__compra_motor_donante"/>
+  <bpmn:escalation id="Esc_consigue" name="Consigue motor donante" escalationCode="p2b__consigue_motor_donante"/>
+  <bpmn:escalation id="Esc_envia" name="Envía motor donante" escalationCode="p2b__envia_motor_donante"/>
+  <bpmn:escalation id="Esc_alt" name="Se elije poner alternativo" escalationCode="p2b__poner_alternativo"/>
+  <bpmn:process id="proc_mapa" isExecutable="false">
+    <bpmn:startEvent id="start" name="Inicio"><bpmn:outgoing>f_in</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:callActivity id="s2b" name="2b · Motor donante" calledElement="proc_rep_2b">
+      <bpmn:incoming>f_in</bpmn:incoming>
+      <bpmn:outgoing>f_out</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:exclusiveGateway id="gw" name="En diagnóstico"><bpmn:incoming>f_out</bpmn:incoming></bpmn:exclusiveGateway>
+
+    <bpmn:boundaryEvent id="b_compra" name="Compra motor donante" attachedToRef="s2b">
+      <bpmn:outgoing>f_compra</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Esc_compra"/>
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b_consigue" name="Consigue motor donante" attachedToRef="s2b">
+      <bpmn:outgoing>f_consigue</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Esc_consigue"/>
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b_envia" name="Envía motor donante" attachedToRef="s2b">
+      <bpmn:outgoing>f_envia</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Esc_envia"/>
+    </bpmn:boundaryEvent>
+    <bpmn:boundaryEvent id="b_alt" name="Se elije poner alternativo" attachedToRef="s2b">
+      <bpmn:outgoing>f_alt</bpmn:outgoing>
+      <bpmn:escalationEventDefinition escalationRef="Esc_alt"/>
+    </bpmn:boundaryEvent>
+
+    <bpmn:endEvent id="e_diag" name="En diagnóstico"><bpmn:incoming>f_compra</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="e_dev" name="Donante devuelto"><bpmn:incoming>f_consigue</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="e_nuevo" name="Cliente compró motor nuevo"><bpmn:incoming>f_envia</bpmn:incoming></bpmn:endEvent>
+    <bpmn:endEvent id="e_scrap" name="Motor a scrap"><bpmn:incoming>f_alt</bpmn:incoming></bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="f_in" sourceRef="start" targetRef="s2b"/>
+    <bpmn:sequenceFlow id="f_out" sourceRef="s2b" targetRef="gw"/>
+    <bpmn:sequenceFlow id="f_compra" sourceRef="b_compra" targetRef="e_diag"/>
+    <bpmn:sequenceFlow id="f_consigue" sourceRef="b_consigue" targetRef="e_dev"/>
+    <bpmn:sequenceFlow id="f_envia" sourceRef="b_envia" targetRef="e_nuevo"/>
+    <bpmn:sequenceFlow id="f_alt" sourceRef="b_alt" targetRef="e_scrap"/>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="dia">
+    <bpmndi:BPMNPlane id="plane" bpmnElement="proc_mapa">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start"><dc:Bounds x="120" y="200" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="s2b_di" bpmnElement="s2b"><dc:Bounds x="220" y="178" width="120" height="80"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_di" bpmnElement="gw"><dc:Bounds x="420" y="193" width="50" height="50"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_compra_di" bpmnElement="b_compra"><dc:Bounds x="262" y="240" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_consigue_di" bpmnElement="b_consigue"><dc:Bounds x="262" y="240" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_envia_di" bpmnElement="b_envia"><dc:Bounds x="262" y="240" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="b_alt_di" bpmnElement="b_alt"><dc:Bounds x="262" y="240" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_diag_di" bpmnElement="e_diag"><dc:Bounds x="540" y="120" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_dev_di" bpmnElement="e_dev"><dc:Bounds x="540" y="200" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_nuevo_di" bpmnElement="e_nuevo"><dc:Bounds x="540" y="280" width="36" height="36"/></bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="e_scrap_di" bpmnElement="e_scrap"><dc:Bounds x="540" y="360" width="36" height="36"/></bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

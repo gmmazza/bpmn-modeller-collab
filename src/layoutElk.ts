@@ -1,10 +1,10 @@
-// D · Auto-layout — elkjs engine (BETA).
+// D · Auto-layout — elkjs engine.
 //
 // Higher-quality layout than bpmn-auto-layout: elkjs (the Eclipse Layout Kernel JS port)
 // runs a proper layered algorithm with orthogonal edge routing and on-edge label
-// placement. We regenerate the diagram interchange (DI) from the semantic model. A
-// selectable `variant` (horizontal / vertical / tree) picks the elk options; a
-// collaboration is laid out as swimlanes (pools stacked, optional lanes as bands).
+// placement. We regenerate the diagram interchange (DI) from the semantic model. Layout is
+// always horizontal (left→right); a collaboration is laid out as swimlanes (pools stacked,
+// optional lanes as bands).
 // @ts-expect-error no type declarations published
 import { BpmnModdle } from "bpmn-moddle";
 import { labelNearSource } from "./layoutTidy";
@@ -26,6 +26,10 @@ const EDGE_TYPES = new Set(["bpmn:SequenceFlow", "bpmn:Association"]);
 const POOL_HEADER = 30; // left band that holds the pool (participant) name
 const LANE_HEADER = 30; // left band that holds each lane name (inside the pool)
 const LANE_PAD = 18;    // vertical breathing room around a lane's content
+const BLABEL_STEP = 34; // vertical step between stacked boundary-event labels on one host. Long
+                        // outcome names wrap to ~2 lines (≈28px rendered — taller than the 14px DI
+                        // hint), so the step must clear a wrapped label or several escalation
+                        // outcomes on one Call Activity still overprint.
 
 function defaultSize(type: string): { width: number; height: number } {
   if (EVENT_TYPES.has(type)) return { width: 36, height: 36 };
@@ -38,14 +42,8 @@ function defaultSize(type: string): { width: number; height: number } {
 
 const labelWidth = (text: string): number => Math.min(120, Math.max(20, text.length * 6.5));
 
-// Selectable layout variants (the "opciones de organización" menu). Each is a full elk
-// option set + the side boundary-event ports ride (so they stay sensible per direction).
-export interface ElkVariant {
-  id: string;
-  label: string;
-  portSide: string;
-  layoutOptions: Record<string, string>;
-}
+// The auto-layout runs a single horizontal (left→right) flow layout. The earlier selectable
+// "vertical" and "árbol" (tree) organizers were removed — horizontal is the only variant.
 const COMPACT_LAYERED = {
   "elk.algorithm": "layered",
   "elk.edgeRouting": "ORTHOGONAL",
@@ -58,15 +56,9 @@ const COMPACT_LAYERED = {
   "elk.spacing.edgeEdge": "12",
   "elk.layered.spacing.edgeNodeBetweenLayers": "20",
 };
-export const ELK_VARIANTS: ElkVariant[] = [
-  { id: "horizontal", label: "Flujo horizontal (→)", portSide: "SOUTH", layoutOptions: { ...COMPACT_LAYERED, "elk.direction": "RIGHT" } },
-  { id: "vertical", label: "Flujo vertical (↓)", portSide: "EAST", layoutOptions: { ...COMPACT_LAYERED, "elk.direction": "DOWN" } },
-  { id: "arbol", label: "Árbol", portSide: "SOUTH", layoutOptions: { "elk.algorithm": "mrtree", "elk.edgeRouting": "ORTHOGONAL", "elk.direction": "RIGHT", "elk.spacing.nodeNode": "40" } },
-];
-export const DEFAULT_ELK_VARIANT = ELK_VARIANTS[0].id;
-export function resolveElkVariant(id: string | undefined): ElkVariant {
-  return ELK_VARIANTS.find((v) => v.id === id) ?? ELK_VARIANTS[0];
-}
+// Horizontal flow: left→right, with boundary-event ports on the SOUTH (bottom) edge.
+const LAYOUT_OPTIONS: Record<string, string> = { ...COMPACT_LAYERED, "elk.direction": "RIGHT" };
+const BOUNDARY_PORT_SIDE = "SOUTH";
 
 let elkInstance: any = null;
 async function getElk(): Promise<any> {
@@ -89,13 +81,11 @@ type Pt = { x: number; y: number };
 export async function layoutSubgraphElk(
   nodes: Array<{ id: string; width: number; height: number }>,
   edges: Array<{ id: string; source: string; target: string }>,
-  variantId?: string,
 ): Promise<Map<string, Pt>> {
-  const variant = resolveElkVariant(variantId);
   const elk = await getElk();
   const laid = await elk.layout({
     id: "sel",
-    layoutOptions: variant.layoutOptions,
+    layoutOptions: LAYOUT_OPTIONS,
     children: nodes.map((n) => ({ id: n.id, width: n.width, height: n.height })),
     edges: edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
   });
@@ -133,7 +123,7 @@ function oldDiFromDefs(defs: any): { shapeById: Map<string, any>; boundsById: Ma
  * flows) and the lane bands (for the caller to draw lane shapes).
  */
 async function renderProcess(
-  process: any, moddle: any, elk: any, variant: ElkVariant,
+  process: any, moddle: any, elk: any,
   sizeById: Map<string, Bounds>, shapeById: Map<string, any>, offsetX: number, offsetY: number,
 ): Promise<{ planeElement: any[]; width: number; height: number; nodeBounds: Map<string, Bounds>; laneBands: Array<{ lane: any; y: number; height: number }> }> {
   const flowElements: any[] = process.flowElements ?? [];
@@ -182,15 +172,15 @@ async function renderProcess(
   const laid = await elk.layout({
     id: "root",
     layoutOptions: hasLanes
-      ? { ...variant.layoutOptions, "elk.direction": "RIGHT", "elk.layered.nodePlacement.strategy": "INTERACTIVE" }
-      : variant.layoutOptions,
+      ? { ...LAYOUT_OPTIONS, "elk.direction": "RIGHT", "elk.layered.nodePlacement.strategy": "INTERACTIVE" }
+      : LAYOUT_OPTIONS,
     children: elkNodes.filter((n) => !isDisconnected(n.id)).map((n) => {
       const child: any = { id: n.id, width: n.width, height: n.height };
       if (hasLanes) child.y = (laneOf.get(n.id) ?? 0) * LANE_SEED;
       const bs = boundaryByHost.get(n.id);
       if (bs?.length) {
         child.layoutOptions = { "elk.portConstraints": "FIXED_SIDE" };
-        child.ports = bs.map((b: any) => ({ id: b.id, width: 30, height: 30, layoutOptions: { "elk.port.side": hasLanes ? "SOUTH" : variant.portSide } }));
+        child.ports = bs.map((b: any) => ({ id: b.id, width: 30, height: 30, layoutOptions: { "elk.port.side": BOUNDARY_PORT_SIDE } }));
       }
       return child;
     }),
@@ -252,6 +242,7 @@ async function renderProcess(
 
   // Boundary events, from the host's laid-out port positions (+ the host's lane shift).
   const boundaryBounds = new Map<string, Bounds>();
+  const perHostBoundaries = new Map<string, Array<{ fe: any; shape: any; b: Bounds }>>();
   for (const [bid, hid] of boundaryHost) {
     const host = laidNode.get(hid);
     const port = host?.ports?.find((p: any) => p.id === bid);
@@ -265,11 +256,21 @@ async function renderProcess(
     const fe = boundaryFe.get(bid);
     const shape = shapeById.get(bid) ?? moddle.create("bpmndi:BPMNShape", { id: `${bid}_di`, bpmnElement: fe });
     shape.bounds = bounds(b.x, b.y, b.width, b.height);
-    if (fe?.name) {
-      const lw = labelWidth(fe.name);
-      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4, lw, 14) });
-    }
     planeElement.push(shape);
+    if (!perHostBoundaries.has(hid)) perHostBoundaries.set(hid, []);
+    perHostBoundaries.get(hid)!.push({ fe, shape, b });
+  }
+  // Several boundary events can share one host's edge (a Call Activity with N escalation
+  // outcomes). A fixed centred-below label overprints its siblings, so cascade each label a
+  // row lower — ordered left→right by the circle's x — so the N outcome names stack readably
+  // instead of piling on one point (mirrors the outcome-pill stagger in masterPane.ts).
+  for (const list of perHostBoundaries.values()) {
+    list.sort((a, z) => a.b.x - z.b.x);
+    list.forEach(({ fe, shape, b }, i) => {
+      if (!fe?.name) return;
+      const lw = labelWidth(fe.name);
+      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4 + i * BLABEL_STEP, lw, 14) });
+    });
   }
 
   const gwSeen = new Map<string, number>();
@@ -346,8 +347,9 @@ function renderMatrix(
   process: any, groups: any[], moddle: any, boundsById: Map<string, Bounds>, shapeById: Map<string, any>,
   offsetX: number, offsetY: number,
 ): { planeElement: any[]; width: number; height: number; nodeBounds: Map<string, Bounds>; laneBands: Array<{ lane: any; y: number; height: number }>; phaseColumns: Array<{ group: any; x: number; width: number }> } {
-  const COL_GAP = 90, PAD = 24; // COL_GAP is the MIN gutter; it widens per connector below
-  const V_TRACK = 18, H_TRACK = 16; // spacing between parallel vertical / horizontal connector tracks
+  const COL_GAP = 34, PAD = 24; // COL_GAP is the MIN gutter; it widens per connector + at phase edges
+  const V_TRACK = 34; // spacing between parallel vertical connector tracks inside a gutter
+  const HW_TRACK = 14; // spacing between parallel horizontal connector tracks inside an inter-lane channel
   const bounds = (x: number, y: number, w: number, h: number) =>
     moddle.create("dc:Bounds", { x: Math.round(x), y: Math.round(y), width: Math.round(w), height: Math.round(h) });
 
@@ -381,65 +383,166 @@ function renderMatrix(
     nodes.push({ id: fe.id, fe, w: size.width, h: size.height, p: phaseOf(fe.id), l: laneOf.get(fe.id) ?? 0 });
   }
 
-  // cells[p][l] = nodes, ordered left-to-right by their old x.
-  const cellKey = (p: number, l: number) => `${p}:${l}`;
-  const cells = new Map<string, typeof nodes>();
-  for (const n of nodes) { const k = cellKey(n.p, n.l); if (!cells.has(k)) cells.set(k, []); cells.get(k)!.push(n); }
-  for (const arr of cells.values()) arr.sort((a, b) => (boundsById.get(a.id)?.x ?? 0) - (boundsById.get(b.id)?.x ?? 0));
-
-  // Cell members are laid out side by side (horizontal flow, as authored). Edges never cross
-  // a sibling because they leave/enter a node from the TOP into the lane's channel strip.
-  const CELL_GAP = 40;
-  const cellWidth = (arr: typeof nodes) => arr.reduce((s, n) => s + n.w, 0) + Math.max(0, arr.length - 1) * CELL_GAP;
-  const colW = new Array(P || 1).fill(80);
-  const laneH = new Array(L).fill(90);
-  for (let p = 0; p < (P || 1); p++) for (let l = 0; l < L; l++) {
-    const arr = cells.get(cellKey(p, l)) ?? [];
-    if (!arr.length) continue;
-    colW[p] = Math.max(colW[p], cellWidth(arr));
-    for (const n of arr) laneH[l] = Math.max(laneH[l], n.h + 2 * PAD);
+  // FLOW GENERATIONS ("sub-generations", the no-swimlane X logic): each node's generation is its
+  // longest-path depth in the sequence-flow graph, so every successor sits STRICTLY after its
+  // predecessors — nodes never stack at the same x. The authored old-x is only a proxy for this
+  // (and gets it wrong wherever the author didn't align a node to its flow depth), which is what
+  // produced the "objeto arriba de otro" stacking. Boundary events inherit their host's depth;
+  // cycles (back-edges) are ignored so they don't inflate the depth.
+  const hostOf = (id: string) => boundaryHost.get(id) ?? id;
+  const preds = new Map<string, Set<string>>();
+  for (const n of nodes) preds.set(n.id, new Set());
+  for (const fe of edges) {
+    const s = hostOf(fe.sourceRef.id), t = hostOf(fe.targetRef.id);
+    if (preds.has(t) && preds.has(s) && s !== t) preds.get(t)!.add(s);
   }
-  const nodeCell = new Map<string, { p: number; l: number }>();
-  for (const n of nodes) nodeCell.set(n.id, { p: n.p, l: n.l });
+  const gen = new Map<string, number>(), gState = new Map<string, number>(); // 1=in-stack, 2=done
+  const genDfs = (id: string): void => {
+    gState.set(id, 1);
+    let g = 0;
+    for (const p of preds.get(id) ?? []) {
+      const st = gState.get(p) ?? 0;
+      if (st === 1) continue;              // back-edge (cycle) — skip, don't push depth forward
+      if (st !== 2) genDfs(p);
+      g = Math.max(g, (gen.get(p) ?? 0) + 1);
+    }
+    gen.set(id, g); gState.set(id, 2);
+  };
+  for (const n of nodes) if ((gState.get(n.id) ?? 0) !== 2) genDfs(n.id);
+  const cxOld = (id: string) => { const b = boundsById.get(id); return b ? b.x + b.width / 2 : 0; };
+
+  // FINE COLUMNS (hybrid X): within each phase, bucket nodes by GENERATION into flow steps and
+  // flatten to a global left→right list of fine columns. Successors land in later fine columns
+  // (clean left-side entry) while the phase stays ONE contiguous X band (its fine columns are
+  // consecutive → the phase box is still a clean column, no round-11 mush). Same-generation nodes
+  // in different lanes share a fine column (parallel branches align vertically).
+  const fineCols: Array<{ phase: number }> = [];
+  const fcOf = new Map<string, number>();
+  const phaseFc = new Array(P || 1).fill(null).map(() => ({ lo: Infinity, hi: -Infinity }));
+  for (let p = 0; p < (P || 1); p++) {
+    const inPhase = nodes.filter((n) => n.p === p)
+      .sort((a, b) => (gen.get(a.id)! - gen.get(b.id)!) || (cxOld(a.id) - cxOld(b.id)));
+    let prevGen = -Infinity, fc = -1;
+    for (const n of inPhase) {
+      const g = gen.get(n.id)!;
+      // New fine column only on a GENERATION step. Same-gen nodes in the same lane are PARALLEL
+      // branches — they share the column and get STACKED in vertical slots (below) instead of being
+      // spread into sequential columns (which forced one to detour around the other). A layer is a
+      // vertical stack, elk-style. Stacked nodes sit at different Y, so no edge passes a cell-mate.
+      if (fc < 0 || g > prevGen) { fineCols.push({ phase: p }); fc = fineCols.length - 1; }
+      fcOf.set(n.id, fc);
+      phaseFc[p].lo = Math.min(phaseFc[p].lo, fc); phaseFc[p].hi = Math.max(phaseFc[p].hi, fc);
+      prevGen = g;
+    }
+  }
+  const NF = Math.max(fineCols.length, 1);
+
+  // cells[fc][l] = nodes STACKED top→bottom by their AUTHORED y (slot 0 = the topmost, i.e. the row
+  // the author kept as the main flow). Usually one node per cell; parallel same-gen branches stack.
+  const yOld = (id: string) => boundsById.get(id)?.y ?? 0;
+  const cellKey = (fc: number, l: number) => `${fc}:${l}`;
+  const cells = new Map<string, typeof nodes>();
+  for (const n of nodes) { const k = cellKey(fcOf.get(n.id)!, n.l); if (!cells.has(k)) cells.set(k, []); cells.get(k)!.push(n); }
+  for (const arr of cells.values()) arr.sort((a, b) => yOld(a.id) - yOld(b.id));
+  const slotOf = new Map<string, number>();
+  for (const arr of cells.values()) arr.forEach((n, i) => slotOf.set(n.id, i));
+
+  const colW = new Array(NF).fill(80);   // widest single node in the column (nodes stack, not spread)
+  const rowUnit = new Array(L).fill(90); // one slot's height in a lane = tallest node + 2·PAD
+  const slots = new Array(L).fill(1);    // max stacked nodes in any of the lane's cells
+  for (let f = 0; f < NF; f++) for (let l = 0; l < L; l++) {
+    const arr = cells.get(cellKey(f, l)) ?? [];
+    if (!arr.length) continue;
+    slots[l] = Math.max(slots[l], arr.length);
+    for (const n of arr) { colW[f] = Math.max(colW[f], n.w); rowUnit[l] = Math.max(rowUnit[l], n.h + 2 * PAD); }
+  }
+  const laneH = new Array(L).fill(0).map((_, l) => slots[l] * rowUnit[l]); // node-band = all slots stacked
+  const nodeCell = new Map<string, { fc: number; l: number }>();
+  for (const n of nodes) nodeCell.set(n.id, { fc: fcOf.get(n.id)!, l: n.l });
   for (const [bid, hid] of boundaryHost) { const c = nodeCell.get(hid); if (c) nodeCell.set(bid, c); }
 
-  // --- Channel routing plan (the visibility/channel idea elk uses): every vertical connector
-  // gets its own TRACK inside a column gutter — the gutter widens to fit them, so the
-  // connectors act as horizontal spacers — and every cross-column horizontal gets its own
-  // track in a dedicated strip at the top of a lane. Nothing is ever routed through a node.
-  // Gutter g sits left of column g (0..P); a vertical right of col p → gutter p+1, left → gutter p.
-  // A non-straight edge leaves its source from the TOP into the source lane's channel strip
-  // (clear — nothing sits above a node in the horizontal layout), runs across in that strip to
-  // a column gutter, drops through the gutter (clear — no nodes between columns) to the target
-  // lane's strip, runs across to the target column, and enters the target from the TOP. Every
-  // segment is in an empty strip/gutter, so nothing ever crosses a node. Each connector gets
-  // its own track in the strips it uses and the gutter it drops through (which widen to fit).
-  type Plan = { fe: any; straight: boolean; sl: number; tl: number; gX: number; tGut: number; tSrc: number; tTgt: number };
+  // --- Grid routing plan. Fine columns (flow generations) turn MOST edges into adjacent-column
+  // hops routed cleanly through an EMPTY column gutter (vertical) with short horizontals at the
+  // node rows. Only a SKIP edge (|Δgeneration| ≥ 2) or a back-edge would need a LONG horizontal
+  // that crosses intermediate nodes — those are routed through a clear INTER-LANE CHANNEL instead
+  // (borrowed from elk's channel routing): two gutter verticals joined by a horizontal that runs
+  // on a lane boundary (no nodes there), each connector on its own track so parallels never
+  // overprint. Gutter g sits left of fine column g (0..NF); channel c sits above lane band c.
+  type Plan =
+    | { fe: any; kind: "straight" }
+    | { fe: any; kind: "gutter"; gX: number; tGut: number }
+    // both rows blocked → route in a SUB-ROW inside the SOURCE lane (widen that lane, stay inside it)
+    | { fe: any; kind: "subrow"; gS: number; tGutS: number; gT: number; tGutT: number; subLane: number; subDir: number; subI: number }
+    // back-edge → exit right/bottom-rear, loop through a source-lane sub-row, ENTER the target from the LEFT
+    | { fe: any; kind: "return"; gT: number; tGutT: number; subLane: number; subDir: number; subI: number };
   const gutterN = new Map<number, number>(); // gutter → vertical tracks allocated
-  const chanN = new Map<number, number>();    // lane → horizontal channel tracks allocated
+  const subN = new Map<string, number>();    // "lane:dir" → intra-lane sub-row tracks allocated
+  const bump = (m: Map<any, number>, k: any) => { const v = m.get(k) ?? 0; m.set(k, v + 1); return v; };
+  // Is `lane` empty across the fine columns strictly between a and b? (topological, no pixels.)
+  const laneClear = (a: number, b: number, lane: number) => {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    for (let f = lo + 1; f < hi; f++) if ((cells.get(cellKey(f, lane)) ?? []).length) return false;
+    return true;
+  };
   const plans: Plan[] = [];
   for (const fe of edges) {
     const sc = nodeCell.get(fe.sourceRef.id), tc = nodeCell.get(fe.targetRef.id);
     if (!sc || !tc) continue;
-    // Same lane, same/adjacent column → straight left-to-right (main flow reads horizontally).
-    if (sc.l === tc.l && tc.p >= sc.p && tc.p - sc.p <= 1) { plans.push({ fe, straight: true, sl: sc.l, tl: tc.l, gX: 0, tGut: 0, tSrc: 0, tTgt: 0 }); continue; }
-    const gX = tc.p > sc.p ? tc.p : tc.p + 1; // gutter beside the target, on the source's side
-    const tGut = gutterN.get(gX) ?? 0; gutterN.set(gX, tGut + 1);
-    const tSrc = chanN.get(sc.l) ?? 0; chanN.set(sc.l, tSrc + 1);
-    const tTgt = chanN.get(tc.l) ?? 0; chanN.set(tc.l, tTgt + 1);
-    plans.push({ fe, straight: false, sl: sc.l, tl: tc.l, gX, tGut, tSrc, tTgt });
+    const dfc = tc.fc - sc.fc;
+    // Same lane, same/adjacent fine column → straight left-to-right (main flow reads horizontally).
+    if (sc.l === tc.l && dfc >= 0 && dfc <= 1) { plans.push({ fe, kind: "straight" }); continue; }
+    // BACK-EDGE (target laid to the left): all exits leave the RIGHT or the rear (left) half of the
+    // top/bottom, all entries arrive at the LEFT — so a return loops out the bottom-rear, runs back
+    // in a source-lane sub-row, and enters the target from the west. Never exit the left face.
+    if (dfc < 0) {
+      const subDir = tc.l < sc.l ? -1 : 1, subLane = sc.l;
+      const subI = bump(subN, `${subLane}:${subDir}`);
+      const gT = tc.fc, tGutT = bump(gutterN, gT); // gutter just left of the target → enter WEST
+      plans.push({ fe, kind: "return", gT, tGutT, subLane, subDir, subI });
+      continue;
+    }
+    const gTarget = tc.fc, gSource = sc.fc + 1; // gutters beside target / source
+    // The user's rule: stay HORIZONTAL in the SOURCE lane and make the ONE vertical change at the
+    // LAST moment, just before the target. SOURCE lane clear across the span → drop-late (run at the
+    // source's row, drop in the gutter beside the target). Else route in a SUB-ROW inside the source
+    // lane (widen it a hair) so the connector STILL runs at the source's level and turns late —
+    // never at the target's row (which would turn early), never in the gap between lanes.
+    if (laneClear(sc.fc, tc.fc, sc.l)) {
+      plans.push({ fe, kind: "gutter", gX: gTarget, tGut: bump(gutterN, gTarget) });
+    } else {
+      const subDir = tc.l < sc.l ? -1 : 1, subLane = sc.l;
+      const subI = bump(subN, `${subLane}:${subDir}`);
+      const gS = gSource, gT = gTarget;
+      plans.push({ fe, kind: "subrow", gS, tGutS: bump(gutterN, gS), gT, tGutT: bump(gutterN, gT), subLane, subDir, subI });
+    }
   }
   const gutterCount = (g: number) => gutterN.get(g) ?? 0;
-  const gutterW = (g: number) => Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK);
-  const laneExtra = new Array(L).fill(0).map((_, l) => { const c = chanN.get(l) ?? 0; return c ? c * H_TRACK + 10 : 0; });
+  // Widen the gutter at a PHASE BOUNDARY (fine cols g-1 and g in different phases) so phases read
+  // as separated bands, not just where their dashed boxes happen to sit.
+  const PHASE_GAP = 70;
+  const phaseBoundary = (g: number) => g > 0 && g < NF && fineCols[g].phase !== fineCols[g - 1].phase;
+  const gutterW = (g: number) => Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK) + (phaseBoundary(g) ? PHASE_GAP : 0);
 
-  const P1 = P || 1;
-  const colX = new Array(P1); { let x = gutterW(0); for (let p = 0; p < P1; p++) { colX[p] = x; x += colW[p] + gutterW(p + 1); } }
-  const laneY = new Array(L); { let y = 0; for (let l = 0; l < L; l++) { laneY[l] = y; y += laneH[l] + laneExtra[l]; } }
+  // Intra-lane SUB-ROWS: a lane band = its node band (laneH[l] = slots · rowUnit) PLUS a thin
+  // routing sub-row per blocked/back edge that runs INSIDE this lane, above or below the node band
+  // (never in the gap between lanes — that read as "outside the swimlane"). The lane WIDENS to fit
+  // only the connectors that need it (0 otherwise), so bands stay compact.
+  const nodeBandH = laneH; // node band = slots · rowUnit (stacked parallel branches)
+  const upN = (l: number) => subN.get(`${l}:-1`) ?? 0;
+  const downN = (l: number) => subN.get(`${l}:1`) ?? 0;
+  const laneFullH = new Array(L).fill(0).map((_, l) => upN(l) * HW_TRACK + nodeBandH[l] + downN(l) * HW_TRACK);
+  const laneY = new Array(L); { let y = 0; for (let l = 0; l < L; l++) { laneY[l] = y; y += laneFullH[l]; } }
+  const innerH = L ? laneY[L - 1] + laneFullH[L - 1] : 0;
+  // top of a node's SLOT within its lane band (slot 0 = the main row, higher slots stack below).
+  const slotTop = (l: number, s: number) => laneY[l] + upN(l) * HW_TRACK + s * rowUnit[l];
+  const subRowY = (l: number, dir: number, i: number) => offsetY + (dir < 0
+    ? laneY[l] + (i + 0.5) * HW_TRACK                                        // up sub-row (above the node band)
+    : laneY[l] + upN(l) * HW_TRACK + nodeBandH[l] + (i + 0.5) * HW_TRACK);   // down sub-row (below the node band)
+
+  const colX = new Array(NF); { let x = gutterW(0); for (let f = 0; f < NF; f++) { colX[f] = x; x += colW[f] + gutterW(f + 1); } }
   const contentX = offsetX + LANE_HEADER;
   const gutterMid = (g: number) => (g === 0 ? 0 : colX[g - 1] + colW[g - 1]) + gutterW(g) / 2;
   const trackX = (g: number, i: number) => contentX + gutterMid(g) + (i - (gutterCount(g) - 1) / 2) * V_TRACK;
-  const channelY = (l: number, i: number) => offsetY + laneY[l] + 6 + i * H_TRACK;
 
   const nodeBounds = new Map<string, Bounds>();
   const planeElement: any[] = [];
@@ -453,17 +556,18 @@ function renderMatrix(
     planeElement.push(shape);
   };
 
-  // Nodes sit side by side in their cell, below the lane's channel strip, the row centred.
-  for (let p = 0; p < P1; p++) for (let l = 0; l < L; l++) {
-    const arr = cells.get(cellKey(p, l)) ?? [];
-    if (!arr.length) continue;
-    let x = contentX + colX[p] + (colW[p] - cellWidth(arr)) / 2;
-    for (const n of arr) {
-      const b: Bounds = { x, y: offsetY + laneY[l] + laneExtra[l] + (laneH[l] - n.h) / 2, width: n.w, height: n.h };
-      nodeBounds.set(n.id, b);
-      emitShape(n.id, n.fe, b, EXTERNAL_LABEL_TYPES.has(n.fe.$type));
-      x += n.w + CELL_GAP;
-    }
+  // Nodes sit centred horizontally in their fine column; vertically each takes its SLOT within the
+  // lane band (slot 0 = main row on top, parallel branches stacked below). Single-node lanes just
+  // centre the one node in the (single-slot) band.
+  for (const n of nodes) {
+    const c = nodeCell.get(n.id)!, s = slotOf.get(n.id)!;
+    const b: Bounds = {
+      x: contentX + colX[c.fc] + (colW[c.fc] - n.w) / 2,
+      y: offsetY + slotTop(c.l, s) + (rowUnit[c.l] - n.h) / 2,
+      width: n.w, height: n.h,
+    };
+    nodeBounds.set(n.id, b);
+    emitShape(n.id, n.fe, b, EXTERNAL_LABEL_TYPES.has(n.fe.$type));
   }
 
   // Boundary events on their host's bottom edge.
@@ -478,27 +582,131 @@ function renderMatrix(
     const fe = boundaryFe.get(bid);
     const shape = shapeById.get(bid) ?? moddle.create("bpmndi:BPMNShape", { id: `${bid}_di`, bpmnElement: fe });
     shape.bounds = bounds(b.x, b.y, b.width, b.height);
-    if (fe?.name) { const lw = labelWidth(fe.name); shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4, lw, 14) }); }
+    // Cascade stacked outcome labels a row lower each (seen is already left→right) so several
+    // escalation boundaries on one host don't overprint their names — see renderProcess.
+    if (fe?.name) { const lw = labelWidth(fe.name); shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4 + seen * BLABEL_STEP, lw, 14) }); }
     planeElement.push(shape);
   }
+
+  // Port distribution. The MAIN FLOW (a straight same-lane edge) leaves and enters at the node's
+  // CENTRE so it stays perfectly straight — no tiny unnecessary step (the thing the user was
+  // nudging nodes by hand to fix). BRANCH edges spread into the HALF they head toward (up-going in
+  // the top half, down-going in the bottom half), ordered by the other endpoint's Y so they never
+  // overprint or cross. Entries follow the same rule (straight → centre, others by direction).
+  const cyOf = (id: string) => { const b = nodeBounds.get(id); return b ? b.y + b.height / 2 : 0; };
+  const cxOf = (id: string) => { const b = nodeBounds.get(id); return b ? b.x + b.width / 2 : 0; };
+  const kindOf = new Map<string, string>(plans.map((pl) => [pl.fe.id, pl.kind]));
+  const exitY = new Map<string, number>(), entryY = new Map<string, number>();
+  const outBy = new Map<string, any[]>(), inBy = new Map<string, any[]>();
+  for (const pl of plans) {
+    if (!nodeBounds.get(pl.fe.sourceRef.id) || !nodeBounds.get(pl.fe.targetRef.id)) continue;
+    (outBy.get(pl.fe.sourceRef.id) ?? outBy.set(pl.fe.sourceRef.id, []).get(pl.fe.sourceRef.id)!).push(pl.fe);
+    (inBy.get(pl.fe.targetRef.id) ?? inBy.set(pl.fe.targetRef.id, []).get(pl.fe.targetRef.id)!).push(pl.fe);
+  }
+  // Place a group of edges within the [lo,hi] Y range of a node side, ordered by `key`. If the
+  // range is too tight to give each a MIN_PORT_GAP (small gateways with several same-side edges),
+  // EXPAND symmetrically around the range centre so the ports never crowd/overprint — this is the
+  // vertical spacing the user was fixing by hand on the join fan-in.
+  const MIN_PORT_GAP = 16;
+  const spread = (g: any[], lo: number, hi: number, key: (fe: any) => number, set: (fe: any, y: number) => void) => {
+    g.sort((a, z) => key(a) - key(z));
+    const n = g.length;
+    if (!n) return;
+    let step = (hi - lo) / (n + 1);
+    if (step < MIN_PORT_GAP) { const mid = (lo + hi) / 2, half = (MIN_PORT_GAP * (n + 1)) / 2; lo = mid - half; hi = mid + half; step = MIN_PORT_GAP; }
+    g.forEach((fe, i) => set(fe, lo + step * (i + 1)));
+  };
+  for (const [sid, list] of outBy) {
+    const b = nodeBounds.get(sid)!, cy = b.y + b.height / 2;
+    const up: any[] = [], down: any[] = [];
+    for (const fe of list) {
+      // Only a TRUE horizontal main-flow edge (target on the SAME row) leaves the centre. An edge to
+      // a stacked sibling in a lower/upper slot is a branch even if same-lane — distribute it, else
+      // it overprints the horizontal exit (why "Hay otro motor" fired Sí+No from one spot).
+      if (kindOf.get(fe.id) === "straight" && Math.abs(cyOf(fe.targetRef.id) - cy) < 2) { exitY.set(fe.id, cy); continue; }
+      (cyOf(fe.targetRef.id) < cy ? up : down).push(fe);
+    }
+    // Fan-out: order branches by the TARGET's x so the one dropping FARTHEST exits at the level
+    // closest to centre (its long horizontal then stays clear of the nearer branch's vertical) —
+    // ordering by target y instead let a far-but-lower branch cross a near-but-higher one.
+    spread(up, b.y + 6, cy, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y));
+    spread(down, cy, b.y + b.height - 6, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y));
+  }
+  for (const [tid, list] of inBy) {
+    const b = nodeBounds.get(tid)!, cy = b.y + b.height / 2;
+    const up: any[] = [], down: any[] = [];
+    for (const fe of list) {
+      if (kindOf.get(fe.id) === "straight" && Math.abs(cyOf(fe.sourceRef.id) - cy) < 2) { entryY.set(fe.id, cy); continue; } // true horizontal → centre
+      (cyOf(fe.sourceRef.id) < cy ? up : down).push(fe);
+    }
+    // Entry SLOT order must match the vertical-track order (both keyed by source x) or the entry
+    // horizontals cross the verticals. From ABOVE (verticals descend): closest source → TOP slot,
+    // so its short vertical never spans the lower slots. From BELOW (verticals rise): farthest
+    // source → TOP slot. (Both verified against the join and the Trasladar fan-ins.)
+    spread(up, b.y + 6, cy, (fe) => -cxOf(fe.sourceRef.id), (fe, y) => entryY.set(fe.id, y));
+    spread(down, cy, b.y + b.height - 6, (fe) => cxOf(fe.sourceRef.id), (fe, y) => entryY.set(fe.id, y));
+  }
+
+  // Connector NESTING: now that entry/exit Y are known, order the parallel verticals inside each
+  // gutter so they DON'T cross. For a fan-in entering a node's left side, the edge landing on the
+  // TOP slot takes the track CLOSEST to the node (innermost) and the bottom slot the outermost —
+  // i.e. order by the Y the vertical connects to on that side, descending. Same for sub-row tracks.
+  const entryYof = (fe: any) => entryY.get(fe.id) ?? cyOf(fe.targetRef.id);
+  // Anti-crossing NESTING keyed by the FAR endpoint's x (not the local y). The crossing happens when
+  // one connector reaches the node with a VERTICAL and another's HORIZONTAL runs across it. To avoid
+  // it, the connector whose OTHER end is CLOSEST (largest x on the source side) takes the INNERMOST
+  // track (nearest the node); the ones coming from farther away take OUTER tracks, so their long
+  // horizontals stop short of the inner verticals. Order each gutter by that x, ascending (far = out).
+  const gOrder = new Map<number, Array<{ k: number; set: (i: number) => void }>>();
+  const sOrder = new Map<string, Array<{ y: number; set: (i: number) => void }>>();
+  const gAdd = (g: number, k: number, set: (i: number) => void) => { (gOrder.get(g) ?? gOrder.set(g, []).get(g)!).push({ k, set }); };
+  const sAdd = (key: string, y: number, set: (i: number) => void) => { (sOrder.get(key) ?? sOrder.set(key, []).get(key)!).push({ y, set }); };
+  for (const pl of plans) {
+    if (pl.kind === "gutter") gAdd(pl.gX, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGut = i)); // entry vertical → key = source x
+    else if (pl.kind === "subrow") {
+      gAdd(pl.gS, cxOf(pl.fe.targetRef.id), (i) => (pl.tGutS = i)); gAdd(pl.gT, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGutT = i));
+      sAdd(`${pl.subLane}:${pl.subDir}`, entryYof(pl.fe), (i) => (pl.subI = i));
+    } else if (pl.kind === "return") {
+      gAdd(pl.gT, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGutT = i));
+      sAdd(`${pl.subLane}:${pl.subDir}`, cyOf(pl.fe.sourceRef.id), (i) => (pl.subI = i));
+    }
+  }
+  for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k); list.forEach((e, i) => e.set(i)); }
+  for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
   const gwSeen = new Map<string, number>();
   for (const pl of plans) {
     const fe = pl.fe;
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
     if (!s || !t) continue;
+    const sey = exitY.get(fe.id) ?? s.y + s.height / 2, tey = entryY.get(fe.id) ?? t.y + t.height / 2;
     let pts: Pt[];
-    if (pl.straight) {
-      pts = [{ x: s.x + s.width, y: s.y + s.height / 2 }, { x: t.x, y: t.y + t.height / 2 }];
+    if (pl.kind === "straight") {
+      // Keep the main flow horizontal; only bend (orthogonally) if the two ports ended up at
+      // different heights because the source or target fans out.
+      pts = sey === tey
+        ? [{ x: s.x + s.width, y: sey }, { x: t.x, y: tey }]
+        : [{ x: s.x + s.width, y: sey }, { x: (s.x + s.width + t.x) / 2, y: sey }, { x: (s.x + s.width + t.x) / 2, y: tey }, { x: t.x, y: tey }];
+    } else if (pl.kind === "gutter") {
+      // side-exit → gutter drop → side-enter (adjacent columns, short).
+      const gx = trackX(pl.gX, pl.tGut);
+      const sx = gx >= s.x + s.width / 2 ? s.x + s.width : s.x;
+      const tx = gx >= t.x + t.width / 2 ? t.x + t.width : t.x;
+      pts = sey === tey
+        ? [{ x: sx, y: sey }, { x: tx, y: tey }]
+        : [{ x: sx, y: sey }, { x: gx, y: sey }, { x: gx, y: tey }, { x: tx, y: tey }];
+    } else if (pl.kind === "subrow") {
+      // Both rows blocked: exit EAST, drop into a sub-row INSIDE the source lane (above/below the
+      // node row — still inside the swimlane), run across it, then one vertical in the gutter beside
+      // the target and enter WEST. The sub-row is clear (nodes sit on the node row, not here).
+      const xS = trackX(pl.gS, pl.tGutS), xT = trackX(pl.gT, pl.tGutT), ry = subRowY(pl.subLane, pl.subDir, pl.subI);
+      pts = [{ x: s.x + s.width, y: sey }, { x: xS, y: sey }, { x: xS, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: t.x, y: tey }];
     } else {
-      // top-exit → source strip → gutter → target strip → top-enter (all channels are empty).
-      const sCx = s.x + s.width / 2, tCx = t.x + t.width / 2;
-      const chYs = channelY(pl.sl, pl.tSrc), chYt = channelY(pl.tl, pl.tTgt), gx = trackX(pl.gX, pl.tGut);
-      pts = [
-        { x: sCx, y: s.y }, { x: sCx, y: chYs },
-        { x: gx, y: chYs }, { x: gx, y: chYt },
-        { x: tCx, y: chYt }, { x: tCx, y: t.y },
-      ];
+      // return (back-edge): exit the source's BOTTOM/TOP rear (never the left face), loop back in a
+      // source-lane sub-row, rise/drop in the gutter just left of the target, and ENTER from the WEST.
+      const xT = trackX(pl.gT, pl.tGutT), ry = subRowY(pl.subLane, pl.subDir, pl.subI);
+      const sBackX = s.x + s.width * 0.3, sBackY = pl.subDir < 0 ? s.y : s.y + s.height;
+      pts = [{ x: sBackX, y: sBackY }, { x: sBackX, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: t.x, y: tey }];
     }
     const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
@@ -512,11 +720,20 @@ function renderMatrix(
     planeElement.push(edge);
   }
 
-  const laneBands = lanes.map((lane, l) => ({ lane, y: laneY[l], height: laneH[l] + laneExtra[l] }));
-  const phaseColumns = phaseGroups.map((pg, p) => ({ group: pg.g, x: contentX + colX[p] - gutterW(p) / 2, width: colW[p] + gutterW(p) / 2 + gutterW(p + 1) / 2 }));
-  const totalW = LANE_HEADER + colX[P1 - 1] + colW[P1 - 1] + gutterW(P1);
-  const totalH = L ? laneY[L - 1] + laneH[L - 1] + laneExtra[L - 1] : 0;
-  return { planeElement, width: totalW + 20, height: totalH + 20, nodeBounds, laneBands, phaseColumns };
+  // Lane bands tile the full height with no gaps: each band absorbs the channel ABOVE it (and the
+  // last band the channel below), so the inter-lane routing channels sit inside the swimlanes.
+  const laneBands = lanes.map((lane, l) => ({ lane, y: laneY[l], height: laneFullH[l] }));
+  // A phase box spans ALL its fine columns (a clean, contiguous column — no round-11 overlap),
+  // from just left of its first to just right of its last, meeting the neighbouring phase mid-gap.
+  const phaseColumns = phaseGroups.map((pg, p) => {
+    const r = phaseFc[p];
+    if (r.hi < r.lo) return null; // a phase with no nodes contributes no box
+    const left = colX[r.lo] - gutterW(r.lo) / 2;
+    const right = colX[r.hi] + colW[r.hi] + gutterW(r.hi + 1) / 2;
+    return { group: pg.g, x: contentX + left, width: right - left };
+  }).filter(Boolean) as Array<{ group: any; x: number; width: number }>;
+  const totalW = LANE_HEADER + colX[NF - 1] + colW[NF - 1] + gutterW(NF);
+  return { planeElement, width: totalW + 20, height: innerH + 20, nodeBounds, laneBands, phaseColumns };
 }
 
 /**
@@ -566,20 +783,19 @@ function emitGroups(
 }
 
 /** Single-process (no pools) layout: one process rendered at the origin. */
-export async function layoutDiagramElk(xml: string, variantId?: string): Promise<string> {
-  const variant = resolveElkVariant(variantId);
+export async function layoutDiagramElk(xml: string): Promise<string> {
   const moddle = new BpmnModdle();
   const { rootElement: defs } = await moddle.fromXML(xml);
   const roots = (defs as any).rootElements ?? [];
   const collaboration = roots.find((e: any) => e.$type === "bpmn:Collaboration");
-  if (collaboration) return layoutCollaborationElk(defs, collaboration, moddle, variant, xml);
+  if (collaboration) return layoutCollaborationElk(defs, collaboration, moddle, xml);
 
   const process = roots.find((e: any) => e.$type === "bpmn:Process" && (e.flowElements?.length ?? 0) > 0);
   if (!process) return xml;
 
   const elk = await getElk();
   const { shapeById, boundsById } = oldDiFromDefs(defs);
-  const { planeElement, nodeBounds } = await renderProcess(process, moddle, elk, variant, boundsById, shapeById, 0, 0);
+  const { planeElement, nodeBounds } = await renderProcess(process, moddle, elk, boundsById, shapeById, 0, 0);
   const groups = emitGroups(process.artifacts, boundsById, nodeBounds, shapeById, moddle);
 
   const plane = moddle.create("bpmndi:BPMNPlane", { id: "BPMNPlane_elk", bpmnElement: process, planeElement: [...groups, ...planeElement] });
@@ -593,7 +809,7 @@ export async function layoutDiagramElk(xml: string, variantId?: string): Promise
  * bands when it declares lanes), pools stacked vertically, and message flows routed between
  * them. This is what makes auto-organize work on carriles/pools.
  */
-async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any, variant: ElkVariant, xml: string): Promise<string> {
+async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any, xml: string): Promise<string> {
   const elk = await getElk();
   const { shapeById, boundsById } = oldDiFromDefs(defs);
   const bounds = (x: number, y: number, w: number, h: number) =>
@@ -624,7 +840,7 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
   const renderOne = (proc: any, ox: number, oy: number): Promise<any> =>
     matrixMode
       ? Promise.resolve(renderMatrix(proc, groups, moddle, boundsById, shapeById, ox, oy))
-      : renderProcess(proc, moddle, elk, variant, boundsById, shapeById, ox, oy);
+      : renderProcess(proc, moddle, elk, boundsById, shapeById, ox, oy);
   const groupColumnShape = (group: any, x: number, y: number, w: number, h: number) => {
     const s = shapeById.get(group.id) ?? moddle.create("bpmndi:BPMNShape", { id: `${group.id}_di`, bpmnElement: group });
     s.bounds = bounds(x, y, w, h);

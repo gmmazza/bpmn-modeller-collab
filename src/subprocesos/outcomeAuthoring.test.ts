@@ -65,6 +65,12 @@ async function fakeModeler(xml: string): Promise<any> {
         process.flowElements = (process.flowElements ?? []).filter((fe: any) => fe.id !== el.businessObject.id);
         byId.delete(el.id);
       },
+      moveElements: (els: any[], delta: any) => {
+        for (const el of els) {
+          el.x += delta.x; el.y += delta.y;
+          if (el.label) { el.label.x += delta.x; el.label.y += delta.y; }
+        }
+      },
     },
     elementFactory: {
       createShape: (attrs: any) => {
@@ -156,6 +162,24 @@ describe("addEscalationBoundary / removeEscalationBoundary (master side)", () =>
     expect(modeler.get("elementRegistry").get(boundaryId)).toBeUndefined();
     const stillThere = process.flowElements.find((fe: any) => (fe.$type ?? "").endsWith("BoundaryEvent"));
     expect(stillThere).toBeUndefined();
+  });
+
+  it("spreads several boundaries on one host so they don't stack on the attach point", async () => {
+    const modeler = await fakeModeler(MASTER_XML);
+    for (const k of ["a", "b", "c", "d"]) {
+      addEscalationBoundary(modeler, {
+        callActivityId: "s3", escalationCode: `code_${k}`, outcomeName: `Resultado ${k}`, destinationId: "end_norep",
+      });
+    }
+    const callActivity = modeler.get("elementRegistry").get("s3");
+    const boundaries = modeler.get("elementRegistry").filter(
+      (el: any) => (el.type ?? "").endsWith("BoundaryEvent") && el.businessObject?.attachedToRef === callActivity.businessObject,
+    );
+    expect(boundaries).toHaveLength(4);
+    const xs = boundaries.map((b: any) => b.x).sort((a: number, b: number) => a - b);
+    // Distinct positions (not all on the centre attach point) and ≥ one diameter apart.
+    expect(new Set(xs).size, "boundaries stacked on the same x").toBe(4);
+    for (let i = 1; i < xs.length; i++) expect(xs[i] - xs[i - 1]).toBeGreaterThanOrEqual(30);
   });
 
   it("reuses an existing escalation with the same code across two boundary attachments", async () => {

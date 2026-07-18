@@ -124,17 +124,6 @@ describe("layoutDiagramElk", () => {
     expect(y("P2")).toBeGreaterThan(y("P1"));
   });
 
-  it("applies the selected variant (vertical stacks the flow top-to-bottom)", async () => {
-    const outH = await layoutDiagramElk(PROC, "horizontal");
-    const outV = await layoutDiagramElk(PROC, "vertical");
-    const span = (xml: string) => {
-      const ys = [...xml.matchAll(/<dc:Bounds x="[\-\d.]+" y="([\-\d.]+)"/g)].map((m) => Number(m[1]));
-      return Math.max(...ys) - Math.min(...ys);
-    };
-    // Vertical flow spreads further on the Y axis than horizontal flow does.
-    expect(span(outV)).toBeGreaterThan(span(outH));
-  });
-
   // Regression: elk regenerates the DI, which used to drop DI-only styling (colors) and
   // artifacts (group/phase boxes). Colors are reused off the old shape; groups are rebuilt.
   it("preserves shape colors and rebuilds group boxes through the re-layout", async () => {

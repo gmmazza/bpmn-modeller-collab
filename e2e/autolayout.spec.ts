@@ -128,7 +128,7 @@ test("the primary Auto-organizar (elk) lays out pools as swimlanes (both pools k
   expect(await py("Part_B")).toBeGreaterThan(await py("Part_A"));
 });
 
-test("the organization-options menu picks a variant, remembers it, and runs it", async ({ page }) => {
+test("the organization-options menu opens and exposes its actions", async ({ page }) => {
   await openApp(page, { "messy.bpmn": MESSY_BPMN });
   await page.getByText("📄 messy.bpmn").click();
   await expect(page.locator("#canvas .djs-container")).toBeVisible();
@@ -136,15 +136,9 @@ test("the organization-options menu picks a variant, remembers it, and runs it",
   await page.locator("#autolayout-caret").click();
   const pop = page.locator("#autolayout-pop");
   await expect(pop).toBeVisible();
-  await expect(pop.getByRole("button", { name: /Flujo horizontal/ })).toContainText("✓"); // default marked
-  await pop.getByRole("button", { name: /Flujo vertical/ }).click();
-  await expect(page.locator(".toast")).toContainText("reorganizado"); // ran immediately
-
-  // Persisted: reopening the menu shows Vertical as the active (checked) variant.
-  const saved = await page.evaluate(() => localStorage.getItem("bpmn.autolayout.elkVariant"));
-  expect(saved).toBe("vertical");
-  await page.locator("#autolayout-caret").click();
-  await expect(pop.getByRole("button", { name: /Flujo vertical/ })).toContainText("✓");
+  // Layout is horizontal-only now (no variant picker); the menu just carries the two actions.
+  await expect(pop.getByRole("button", { name: /solo la selección/ })).toBeVisible();
+  await expect(pop.getByRole("button", { name: /Modo rápido/ })).toBeVisible();
 });
 
 test("'Modo rápido (backup)' runs bpmn-auto-layout and refuses pools", async ({ page }) => {

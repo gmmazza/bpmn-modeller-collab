@@ -15,7 +15,7 @@ import "./app.css";
 import { applyTheme, getTheme, toggleTheme } from "./theme";
 import { icon } from "./icons";
 import { layoutDiagram, UnsupportedLayoutError } from "./autoLayout";
-import { layoutDiagramElk, layoutSubgraphElk, ELK_VARIANTS, DEFAULT_ELK_VARIANT } from "./layoutElk";
+import { layoutDiagramElk, layoutSubgraphElk } from "./layoutElk";
 import { showHelp } from "./help";
 import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
@@ -1655,7 +1655,7 @@ async function bootstrap() {
     $("redo").addEventListener("click", () => void doRedo().catch(onError));
     // Primary "Auto-organizar" now runs elk (high quality); bpmn-auto-layout is a backup.
     $("autolayout").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
-    // "Opciones de organización" dropdown: variants (remembered) + reorganize-selection + backup.
+    // "Opciones de organización" dropdown: reorganize-selection + backup engine.
     const elkPop = document.getElementById("autolayout-pop") as HTMLElement | null;
     function popItem(label: string, onClick: () => void): HTMLButtonElement {
       const b = document.createElement("button");
@@ -1666,17 +1666,9 @@ async function bootstrap() {
     }
     function renderElkPop(): void {
       if (!elkPop) return;
-      const active = getElkVariant();
       elkPop.innerHTML = "";
-      for (const v of ELK_VARIANTS) {
-        elkPop.appendChild(popItem((v.id === active ? "✓ " : "") + v.label, () => {
-          setElkVariant(v.id);
-          void doAutoLayout("elk").catch(onError);
-        }));
-      }
-      const sep1 = document.createElement("div"); sep1.className = "menu-sep"; elkPop.appendChild(sep1);
       elkPop.appendChild(popItem("Reorganizar solo la selección", () => void reorganizeSelection().catch(onError)));
-      const sep2 = document.createElement("div"); sep2.className = "menu-sep"; elkPop.appendChild(sep2);
+      const sep = document.createElement("div"); sep.className = "menu-sep"; elkPop.appendChild(sep);
       elkPop.appendChild(popItem("Modo rápido (backup)", () => void doAutoLayout("auto").catch(onError)));
     }
     $("autolayout-caret").addEventListener("click", (e) => {
@@ -2120,16 +2112,8 @@ async function bootstrap() {
   // a fast backup). importXML wipes the native command stack, so — like a history-restore —
   // we make it a coarse-undo snapshot: Ctrl+Z / the Deshacer button revert the whole re-layout.
   type LayoutEngine = "auto" | "elk";
-  // The primary (elk) button remembers the last-picked organization variant (localStorage).
-  const ELK_VARIANT_KEY = "bpmn.autolayout.elkVariant";
-  const getElkVariant = (): string => {
-    try { return localStorage.getItem(ELK_VARIANT_KEY) || DEFAULT_ELK_VARIANT; } catch { return DEFAULT_ELK_VARIANT; }
-  };
-  const setElkVariant = (id: string): void => {
-    try { localStorage.setItem(ELK_VARIANT_KEY, id); } catch { /* private mode */ }
-  };
   const runLayout = (engine: LayoutEngine, xml: string): Promise<string> =>
-    engine === "elk" ? layoutDiagramElk(xml, getElkVariant()) : layoutDiagram(xml);
+    engine === "elk" ? layoutDiagramElk(xml) : layoutDiagram(xml);
   function toastLayoutError(e: unknown, engine: LayoutEngine): void {
     if (e instanceof UnsupportedLayoutError) {
       // Only the "auto" backup refuses pools now; elk handles them.
@@ -2204,14 +2188,19 @@ async function bootstrap() {
     const pos = await layoutSubgraphElk(
       shapes.map((s: any) => ({ id: s.id, width: s.width, height: s.height })),
       edges.map((e: any) => ({ id: e.id, source: e.source.id, target: e.target.id })),
-      getElkVariant(),
     );
+    // elk lays the subgraph out in 2-D, oblivious to swimlanes, so applying its Y would yank
+    // each node into whatever lane its flow-layer landed in — scattering a laned diagram (the
+    // "desordena los swimlanes" bug). When the diagram has lanes, keep every node's Y (its lane
+    // band) and apply ONLY elk's horizontal reordering — the same hybrid rule the full
+    // auto-layout uses (preserve Y, reorganize X by flow).
+    const hasLanes = registry.filter((el: any) => el.type === "bpmn:Lane").length > 0;
     const minX0 = Math.min(...shapes.map((s: any) => s.x));
     const minY0 = Math.min(...shapes.map((s: any) => s.y));
     for (const s of shapes) {
       const p = pos.get(s.id);
       if (!p) continue;
-      const dx = (minX0 + p.x) - s.x, dy = (minY0 + p.y) - s.y;
+      const dx = (minX0 + p.x) - s.x, dy = hasLanes ? 0 : (minY0 + p.y) - s.y;
       if (dx || dy) modeling.moveElements([s], { x: Math.round(dx), y: Math.round(dy) });
     }
     render();
