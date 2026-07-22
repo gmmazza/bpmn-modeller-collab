@@ -475,7 +475,9 @@ function renderMatrix(
   // on a lane boundary (no nodes there), each connector on its own track so parallels never
   // overprint. Gutter g sits left of fine column g (0..NF); channel c sits above lane band c.
   type Plan =
-    | { fe: any; kind: "straight" }
+    // gX/tGut present when the straight hop crosses slots and bends — the bend then rides a
+    // real allocated gutter track (nested like any other vertical) instead of a free midpoint
+    | { fe: any; kind: "straight"; gX?: number; tGut?: number }
     | { fe: any; kind: "gutter"; gX: number; tGut: number }
     // both rows blocked → route in a SUB-ROW inside the SOURCE lane (widen that lane, stay inside it)
     | { fe: any; kind: "subrow"; gS: number; tGutS: number; gT: number; tGutT: number; subLane: number; subDir: number; subI: number }
@@ -496,7 +498,16 @@ function renderMatrix(
     if (!sc || !tc) continue;
     const dfc = tc.fc - sc.fc;
     // Same lane, same/adjacent fine column → straight left-to-right (main flow reads horizontally).
-    if (sc.l === tc.l && dfc >= 0 && dfc <= 1) { plans.push({ fe, kind: "straight" }); continue; }
+    // A hop onto a DIFFERENT slot bends; its vertical takes a real gutter track — a freestanding
+    // mid-column vertical braids with the gutter's tracks (rep_2b f13×f14 double-cross) and can
+    // land collinear with one.
+    if (sc.l === tc.l && dfc >= 0 && dfc <= 1) {
+      const slotOfId = (id: string) => slotOf.get(hostOf(id)) ?? 0;
+      if (dfc === 1 && slotOfId(fe.sourceRef.id) !== slotOfId(fe.targetRef.id))
+        plans.push({ fe, kind: "straight", gX: tc.fc, tGut: bump(gutterN, tc.fc) });
+      else plans.push({ fe, kind: "straight" });
+      continue;
+    }
     // BACK-EDGE (target laid to the left): all exits leave the RIGHT or the rear (left) half of the
     // top/bottom, all entries arrive at the LEFT — so a return loops out the bottom-rear, runs back
     // in a source-lane sub-row, and enters the target from the west. Never exit the left face.
@@ -617,8 +628,8 @@ function renderMatrix(
   // EXPAND symmetrically around the range centre so the ports never crowd/overprint — this is the
   // vertical spacing the user was fixing by hand on the join fan-in.
   const MIN_PORT_GAP = 16;
-  const spread = (g: any[], lo: number, hi: number, key: (fe: any) => number, set: (fe: any, y: number) => void) => {
-    g.sort((a, z) => key(a) - key(z));
+  const spread = (g: any[], lo: number, hi: number, key: (fe: any) => number, set: (fe: any, y: number) => void, key2: (fe: any) => number = () => 0) => {
+    g.sort((a, z) => key(a) - key(z) || key2(a) - key2(z));
     const n = g.length;
     if (!n) return;
     let step = (hi - lo) / (n + 1);
@@ -638,8 +649,11 @@ function renderMatrix(
     // Fan-out: order branches by the TARGET's x so the one dropping FARTHEST exits at the level
     // closest to centre (its long horizontal then stays clear of the nearer branch's vertical) —
     // ordering by target y instead let a far-but-lower branch cross a near-but-higher one.
-    spread(up, b.y + 6, cy, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y));
-    spread(down, cy, b.y + b.height - 6, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y));
+    // X-ties (targets stacked in ONE column, rep_2b f13/f14) break by target Y: the shallower
+    // hop exits nearer the centre, the deep drop underneath it, so their verticals nest.
+    const tieY = (fe: any) => cyOf(fe.targetRef.id);
+    spread(up, b.y + 6, cy, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
+    spread(down, cy, b.y + b.height - 6, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
   }
   for (const [tid, list] of inBy) {
     const b = nodeBounds.get(tid)!, cy = b.y + b.height / 2;
@@ -666,12 +680,18 @@ function renderMatrix(
   // it, the connector whose OTHER end is CLOSEST (largest x on the source side) takes the INNERMOST
   // track (nearest the node); the ones coming from farther away take OUTER tracks, so their long
   // horizontals stop short of the inner verticals. Order each gutter by that x, ascending (far = out).
-  const gOrder = new Map<number, Array<{ k: number; set: (i: number) => void }>>();
+  const gOrder = new Map<number, Array<{ k: number; k2: number; set: (i: number) => void }>>();
   const sOrder = new Map<string, Array<{ y: number; set: (i: number) => void }>>();
-  const gAdd = (g: number, k: number, set: (i: number) => void) => { (gOrder.get(g) ?? gOrder.set(g, []).get(g)!).push({ k, set }); };
+  const gAdd = (g: number, k: number, set: (i: number) => void, k2 = 0) => { (gOrder.get(g) ?? gOrder.set(g, []).get(g)!).push({ k, k2, set }); };
   const sAdd = (key: string, y: number, set: (i: number) => void) => { (sOrder.get(key) ?? sOrder.set(key, []).get(key)!).push({ y, set }); };
+  // X-ties (several verticals whose sources sit in the SAME column) nest by how far the
+  // vertical travels: the deeper a down-drop (or the higher an up-rise) reaches, the further
+  // LEFT its track, so the shallower hops' horizontals stop short of the long verticals
+  // (rep_2b: f13's slot bend × f14's cross-lane drop braided into a double crossing).
+  const farY = (fe: any) => { const ty = cyOf(fe.targetRef.id); return ty > cyOf(fe.sourceRef.id) ? -ty : ty; };
   for (const pl of plans) {
-    if (pl.kind === "gutter") gAdd(pl.gX, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGut = i)); // entry vertical → key = source x
+    if (pl.kind === "straight") { if (pl.gX !== undefined) gAdd(pl.gX, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGut = i), farY(pl.fe)); }
+    else if (pl.kind === "gutter") gAdd(pl.gX, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGut = i), farY(pl.fe)); // entry vertical → key = source x
     else if (pl.kind === "subrow") {
       gAdd(pl.gS, cxOf(pl.fe.targetRef.id), (i) => (pl.tGutS = i)); gAdd(pl.gT, cxOf(pl.fe.sourceRef.id), (i) => (pl.tGutT = i));
       sAdd(`${pl.subLane}:${pl.subDir}`, entryYof(pl.fe), (i) => (pl.subI = i));
@@ -680,7 +700,7 @@ function renderMatrix(
       sAdd(`${pl.subLane}:${pl.subDir}`, cyOf(pl.fe.sourceRef.id), (i) => (pl.subI = i));
     }
   }
-  for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k); list.forEach((e, i) => e.set(i)); }
+  for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k || a.k2 - b.k2); list.forEach((e, i) => e.set(i)); }
   for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
   // Gateway branch labels: a clean column just right of the gateway, top-aligned to the row's
@@ -717,10 +737,12 @@ function renderMatrix(
     let pts: Pt[];
     if (pl.kind === "straight") {
       // Keep the main flow horizontal; only bend (orthogonally) if the two ports ended up at
-      // different heights because the source or target fans out.
+      // different heights because the source or target fans out. A slot hop bends on its
+      // allocated gutter track (late, nested); port-fan-out wiggles keep the midpoint.
+      const bendX = pl.gX !== undefined ? trackX(pl.gX, pl.tGut!) : (s.x + s.width + t.x) / 2;
       pts = sey === tey
         ? [{ x: s.x + s.width, y: sey }, { x: t.x, y: tey }]
-        : [{ x: s.x + s.width, y: sey }, { x: (s.x + s.width + t.x) / 2, y: sey }, { x: (s.x + s.width + t.x) / 2, y: tey }, { x: t.x, y: tey }];
+        : [{ x: s.x + s.width, y: sey }, { x: bendX, y: sey }, { x: bendX, y: tey }, { x: t.x, y: tey }];
     } else if (pl.kind === "gutter") {
       // side-exit → gutter drop → side-enter (adjacent columns, short).
       const gx = trackX(pl.gX, pl.tGut);
