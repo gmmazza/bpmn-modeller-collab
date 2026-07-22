@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T19:09:19.615Z",
+  "generatedAt": "2026-07-22T20:54:32.215Z",
   "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Stores the full MetricsReport, including hard-rule fields - those are kept for reference only and are never used as a gate (hard rules are always checked against 0 directly, not against this file).",
   "diagrams": {
     "Compras": {
@@ -137,17 +137,17 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 238.45454545454547,
-        "totalEdgeLength": 2623,
+        "meanEdgeLength": 235.1818181818182,
+        "totalEdgeLength": 2587,
         "bboxArea": 425716
       }
     },
     "rep_2b_motor_donante": {
       "crossings": {
         "hv": 2,
-        "hh": 1,
+        "hh": 0,
         "vv": 0,
-        "total": 3
+        "total": 2
       },
       "clips": {
         "horizontal": 0,
@@ -167,13 +167,13 @@
         "violations": 0
       },
       "straightness": {
-        "straightPct": 87.5,
-        "sameRowBends": 2,
-        "dodges": 2
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 210.06666666666666,
-        "totalEdgeLength": 3151,
+        "meanEdgeLength": 206.93333333333334,
+        "totalEdgeLength": 3104,
         "bboxArea": 1022720
       }
     },
@@ -207,8 +207,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 199,
-        "totalEdgeLength": 1393,
+        "meanEdgeLength": 197.28571428571428,
+        "totalEdgeLength": 1381,
         "bboxArea": 637450
       }
     },
@@ -242,8 +242,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 133,
-        "totalEdgeLength": 798,
+        "meanEdgeLength": 132,
+        "totalEdgeLength": 792,
         "bboxArea": 235264
       }
     },
@@ -347,8 +347,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 136,
-        "totalEdgeLength": 544,
+        "meanEdgeLength": 133,
+        "totalEdgeLength": 532,
         "bboxArea": 206298
       }
     },

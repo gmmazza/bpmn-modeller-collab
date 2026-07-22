@@ -131,37 +131,42 @@ for (const { name, file } of FIXTURES) {
 // (label bounds + edge waypoints ARE what the layouter controls) and reproduce both modes.
 const IS_GATEWAY = (t: string) => /Gateway$/.test(t);
 
+const IS_EVENT = (t: string) => /Event$/.test(t);
+
 for (const { name, file } of FIXTURES) {
   describe(`gateway branch-label placement — ${name}`, () => {
-    // Per gateway with named outgoing flows: gateway box, its branch labels' DI boxes, the
-    // horizontal exit segments, and every outgoing edge's exit-port Y (first waypoint).
-    type Lab = { id: string; x: number; y: number; w: number; h: number };
-    type Seg = { y: number; x0: number; x1: number };
-    let gateways: Array<{ gid: string; top: number; bottom: number; labels: Lab[]; exitSegs: Seg[]; exitPorts: number[] }>;
+    // Per gateway: its box + one record per NAMED outgoing branch (exit-port Y, waypoint count,
+    // its own label box, and its target's centre / leaf-event-ness — for the straight-branch check).
+    type Branch = { id: string; exitY: number; wp: number; label?: { y: number; h: number; x: number; w: number }; targetCy: number; targetLeafEvent: boolean };
+    let gateways: Array<{ gid: string; cy: number; branches: Branch[]; exitPorts: number[] }>;
 
     beforeAll(async () => {
       const src = readFileSync(file, "utf8");
       const out = await layoutDiagramElk(src);
       const { shapes, edges } = await parseDi(out);
-      const gwBounds = new Map(
-        shapes.filter((s) => IS_GATEWAY(s.bpmnElement.$type)).map((s) => [s.bpmnElement.id, s.bounds]),
-      );
-      const labelsBySrc = new Map<string, Lab[]>();
-      const segsBySrc = new Map<string, Seg[]>();
-      const portsBySrc = new Map<string, number[]>();
+      const box = new Map(shapes.map((s) => [s.bpmnElement.id, s.bounds]));
+      const type = new Map(shapes.map((s) => [s.bpmnElement.id, s.bpmnElement.$type as string]));
+      const outdeg = new Map<string, number>();
+      for (const e of edges) { const s = e.bpmnElement?.sourceRef?.id; if (s) outdeg.set(s, (outdeg.get(s) ?? 0) + 1); }
+      const gwIds = new Set(shapes.filter((s) => IS_GATEWAY(s.bpmnElement.$type)).map((s) => s.bpmnElement.id));
+
+      const bySrc = new Map<string, Branch[]>();
       for (const e of edges) {
-        const sid = e.bpmnElement?.sourceRef?.id;
-        if (!sid || !gwBounds.has(sid)) continue;
-        const wp = e.waypoint ?? [];
-        if (wp.length >= 1) (portsBySrc.get(sid) ?? portsBySrc.set(sid, []).get(sid)!).push(wp[0].y);
-        if (wp.length >= 2 && Math.abs(wp[0].y - wp[1].y) < 1) // the horizontal exit run
-          (segsBySrc.get(sid) ?? segsBySrc.set(sid, []).get(sid)!).push({ y: wp[0].y, x0: Math.min(wp[0].x, wp[1].x), x1: Math.max(wp[0].x, wp[1].x) });
-        if (e.label?.bounds)
-          (labelsBySrc.get(sid) ?? labelsBySrc.set(sid, []).get(sid)!).push({ id: e.bpmnElement.id, x: e.label.bounds.x, y: e.label.bounds.y, w: e.label.bounds.width, h: e.label.bounds.height });
+        const sid = e.bpmnElement?.sourceRef?.id, tid = e.bpmnElement?.targetRef?.id;
+        if (!sid || !gwIds.has(sid) || !e.bpmnElement?.name) continue;
+        const wp = e.waypoint ?? []; if (!wp.length) continue;
+        const tb = tid ? box.get(tid) : undefined;
+        const lb = e.label?.bounds;
+        (bySrc.get(sid) ?? bySrc.set(sid, []).get(sid)!).push({
+          id: e.bpmnElement.id, exitY: wp[0].y, wp: wp.length,
+          label: lb ? { y: lb.y, h: lb.height, x: lb.x, w: lb.width } : undefined,
+          targetCy: tb ? tb.y + tb.height / 2 : NaN,
+          targetLeafEvent: !!tid && (outdeg.get(tid) ?? 0) === 0 && IS_EVENT(type.get(tid) ?? ""),
+        });
       }
-      gateways = [...labelsBySrc].map(([gid, labels]) => {
-        const b = gwBounds.get(gid)!;
-        return { gid, top: b.y, bottom: b.y + b.height, labels: labels.sort((a, z) => a.y - z.y), exitSegs: segsBySrc.get(gid) ?? [], exitPorts: (portsBySrc.get(gid) ?? []).sort((a, z) => a - z) };
+      gateways = [...bySrc].map(([gid, branches]) => {
+        const b = box.get(gid)!;
+        return { gid, cy: b.y + b.height / 2, branches, exitPorts: branches.map((br) => br.exitY).sort((a, z) => a - z) };
       });
     });
 
@@ -169,54 +174,42 @@ for (const { name, file } of FIXTURES) {
       expect(gateways.length).toBeGreaterThan(0);
     });
 
-    it("gateway exit ports are spread >= 8px apart (>2-branch connectors don't overprint each other)", () => {
-      // The red-arrow bug: rep_2b's 3-way gateway fired two exits 2px apart (y 64/66), so their
-      // connectors overlapped. Exits must be distributed with real spacing.
+    it("gateway exit ports are spread >= 8px apart (connectors of one gateway don't overprint)", () => {
+      // The red-arrow bug: rep_2b's 3-way gateway fired two exits 2px apart (y 64/66).
       const offenders: string[] = [];
-      for (const g of gateways) {
+      for (const g of gateways)
         for (let i = 0; i < g.exitPorts.length - 1; i++) {
           const d = g.exitPorts[i + 1] - g.exitPorts[i];
           if (d < 8) offenders.push(`${g.gid}: exit ports ${Math.round(g.exitPorts[i])}/${Math.round(g.exitPorts[i + 1])} only ${Math.round(d)}px apart`);
         }
-      }
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
 
-    it("no branch label overprints the gateway's outgoing connector lines", () => {
+    it("every branch label rides just above ITS OWN connector (not stacked away from it)", () => {
+      // The user's "label junto al connector" ask: each label's bottom sits a few px above its own
+      // exit line, within [exitY-24, exitY]. Pre-fix the ≤2-branch path STACKED both labels above
+      // the top exit, so the branch whose exit is lower had its label floated ~28px above it.
       const offenders: string[] = [];
-      for (const g of gateways) {
-        for (const l of g.labels) {
-          for (const s of g.exitSegs) {
-            const onLine = l.y <= s.y && s.y <= l.y + l.h && !(l.x + l.w < s.x0 || l.x > s.x1);
-            if (onLine) { offenders.push(`${g.gid}: label ${l.id} [y ${Math.round(l.y)}..${Math.round(l.y + l.h)}] straddles exit line y=${Math.round(s.y)}`); break; }
-          }
+      for (const g of gateways)
+        for (const br of g.branches) {
+          if (!br.label) continue;
+          const bottom = br.label.y + br.label.h;
+          if (bottom < br.exitY - 24 || bottom > br.exitY)
+            offenders.push(`${g.gid}/${br.id}: label bottom ${Math.round(bottom)} not just above its exit ${Math.round(br.exitY)} (want [${Math.round(br.exitY - 24)}, ${Math.round(br.exitY)}])`);
         }
-      }
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
 
-    it("branch labels stay next to their gateway (not floated off to the row top)", () => {
-      // Guards the "too far above" mode: labels must sit within the gateway's vertical neighbourhood
-      // (row-top anchoring floated them ~40px above). 28px above the top / 24px below the bottom
-      // covers a label just above the highest exit and one just above the lowest.
+    it("a straight branch to a nearby leaf event renders straight — no Z-step", () => {
+      // The user's "escalón innecesario" ask: rep_2b's "Reparar con alternativo" → the "Sigue con
+      // alternativo" end event stepped (exit y42 ≠ entry y64) because the event wasn't moved to the
+      // branch's row. A branch to a leaf event within ~2 gaps of the gateway centre must be a single
+      // straight segment (2 waypoints); the layouter nudges the event's height to make it so.
       const offenders: string[] = [];
-      for (const g of gateways) {
-        for (const l of g.labels) {
-          if (l.y < g.top - 28 || l.y + l.h > g.bottom + 24)
-            offenders.push(`${g.gid}: label ${l.id} [y ${Math.round(l.y)}..${Math.round(l.y + l.h)}] outside gateway band [${Math.round(g.top - 28)}, ${Math.round(g.bottom + 24)}]`);
-        }
-      }
-      expect(offenders, offenders.join("; ")).toEqual([]);
-    });
-
-    it("stacked branch labels of one gateway keep a >= 8px vertical gap (no cramping/overprint)", () => {
-      const offenders: string[] = [];
-      for (const g of gateways) {
-        for (let i = 0; i < g.labels.length - 1; i++) {
-          const gap = g.labels[i + 1].y - (g.labels[i].y + g.labels[i].h);
-          if (gap < 8) offenders.push(`${g.gid}: ${g.labels[i].id}->${g.labels[i + 1].id} gap ${Math.round(gap)}px`);
-        }
-      }
+      for (const g of gateways)
+        for (const br of g.branches)
+          if (br.targetLeafEvent && Math.abs(br.targetCy - g.cy) <= 44 && br.wp !== 2)
+            offenders.push(`${g.gid}/${br.id}: leaf-event branch has ${br.wp} waypoints (Z-step), expected 2 (straight)`);
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
   });

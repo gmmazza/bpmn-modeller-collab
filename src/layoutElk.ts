@@ -573,6 +573,7 @@ function renderMatrix(
       const lw = labelWidth(fe.name);
       shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 6, lw, 14) });
     }
+    shapeById.set(id, shape); // register so a later pass (e.g. gateway target-nudge) can move it
     planeElement.push(shape);
   };
 
@@ -655,21 +656,6 @@ function renderMatrix(
     spread(up, b.y + 6, cy, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
     spread(down, cy, b.y + b.height - 6, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
   }
-  // >2 branches out of one gateway: pinning one straight and fanning the rest can leave two exits a
-  // couple of px apart (rep_2b gw_decide fired 3 at y 64/66/82 → the 64/66 connectors overprinted).
-  // Respace such a gateway's exits EVENLY, centred on cy, GW_EXIT_GAP apart (room for a label above
-  // each), PRESERVING the fan's crossing-minimising order — only the spacing changes, not who's
-  // where. GW_EXIT_GAP = ~14px label + breathing room.
-  const GW_EXIT_GAP = 22;
-  for (const [sid, list] of outBy) {
-    if (list.length < 3 || !GATEWAY_TYPES.has(list[0]?.sourceRef?.$type)) continue;
-    const b = nodeBounds.get(sid)!, cy = b.y + b.height / 2;
-    const ordered = [...list].sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
-    const minGap = Math.min(...ordered.slice(1).map((fe, i) => (exitY.get(fe.id) ?? cy) - (exitY.get(ordered[i].id) ?? cy)));
-    if (minGap >= GW_EXIT_GAP) continue; // already spread enough
-    const top = cy - ((ordered.length - 1) * GW_EXIT_GAP) / 2;
-    ordered.forEach((fe, i) => exitY.set(fe.id, top + i * GW_EXIT_GAP));
-  }
   for (const [tid, list] of inBy) {
     const b = nodeBounds.get(tid)!, cy = b.y + b.height / 2;
     const up: any[] = [], down: any[] = [];
@@ -683,6 +669,50 @@ function renderMatrix(
     // source → TOP slot. (Both verified against the join and the Trasladar fan-ins.)
     spread(up, b.y + 6, cy, (fe) => -cxOf(fe.sourceRef.id), (fe, y) => entryY.set(fe.id, y));
     spread(down, cy, b.y + b.height - 6, (fe) => cxOf(fe.sourceRef.id), (fe, y) => entryY.set(fe.id, y));
+  }
+
+  // Gateway fan-out (needs entry Y, so it runs after the fan-in pass): give each NAMED branch a
+  // distinct, label-height-spaced exit that stays as straight as it can. The branch whose target is
+  // on the gateway's own row is anchored at its TARGET'S entry port (so exit == entry → one straight
+  // segment, no 2px Z-step); up-going branches stack above it, down-going below, GW_EXIT_GAP apart,
+  // nearest target innermost (preserving the fan's crossing order). Only if the stack OVERFLOWS the
+  // gateway face do we recentre it on cy — which shifts the straight-row branch off its port; if that
+  // target is a MOVABLE leaf event we then nudge the event to the exit (kills the Z-step the user
+  // flagged), otherwise a fixed task target just steps. GW_EXIT_GAP = ~14px label + breathing room.
+  const GW_EXIT_GAP = 22;
+  const gwNudges: Array<{ targetId: string; y: number }> = [];
+  for (const [sid, list] of outBy) {
+    const srcNode = nodeById.get(sid);
+    if (!srcNode || !GATEWAY_TYPES.has(srcNode.fe.$type) || !list.some((fe) => fe.name)) continue;
+    const b = nodeBounds.get(sid)!, cy = b.y + b.height / 2;
+    const tcy = (fe: any) => cyOf(fe.targetRef.id);
+    const byTargetX = (a: any, z: any) => -cxOf(a.targetRef.id) - -cxOf(z.targetRef.id) || tcy(a) - tcy(z);
+    const straightRow = list.filter((fe) => Math.abs(tcy(fe) - cy) <= 8);
+    const ups = list.filter((fe) => tcy(fe) < cy - 8).sort(byTargetX);
+    const downs = list.filter((fe) => tcy(fe) > cy + 8).sort(byTargetX);
+    // anchor the straight-row branch on its own entry port; the fan centres on that (else on cy)
+    const anchor = straightRow.length ? entryY.get(straightRow[0].id) ?? cy : cy;
+    const assign = new Map<string, number>();
+    straightRow.forEach((fe) => assign.set(fe.id, entryY.get(fe.id) ?? anchor));
+    ups.forEach((fe, i) => assign.set(fe.id, anchor - (i + 1) * GW_EXIT_GAP));
+    downs.forEach((fe, i) => assign.set(fe.id, anchor + (i + 1) * GW_EXIT_GAP));
+    const ys = [...assign.values()], lo = Math.min(...ys), hi = Math.max(...ys);
+    const faceLo = b.y, faceHi = b.y + b.height; // exits may reach the diamond's top/bottom vertices
+    let shift = 0;
+    if (lo < faceLo || hi > faceHi) { // overflow → recentre on cy, clamped to the face
+      shift = cy - (lo + hi) / 2;
+      if (lo + shift < faceLo) shift = faceLo - lo;
+      if (hi + shift > faceHi) shift = faceHi - hi;
+    }
+    for (const fe of list) {
+      const y = (assign.get(fe.id) ?? cy) + shift;
+      exitY.set(fe.id, y);
+      const tid = fe.targetRef.id;
+      // straight-row branch pushed off its entry port → nudge a movable leaf event onto the exit
+      if (straightRow.includes(fe) && Math.abs(y - (entryY.get(fe.id) ?? y)) > 1 && Math.abs(y - tcy(fe)) <= 40
+          && !outBy.has(tid) && /Event/.test(nodeById.get(tid)?.fe.$type ?? ""))
+        gwNudges.push({ targetId: tid, y });
+    }
   }
 
   // Connector NESTING: now that entry/exit Y are known, order the parallel verticals inside each
@@ -718,42 +748,35 @@ function renderMatrix(
   for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k || a.k2 - b.k2); list.forEach((e, i) => e.set(i)); }
   for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
-  // Gateway branch labels ("Sí"/"No"/…): each sits just ABOVE its own outgoing connector, right of
-  // the gateway, so a label never lands on a line. When a gateway has >2 branches the exits are
-  // spread GW_EXIT_GAP apart (see the port distribution above), so each label rides directly over
-  // its own exit — the most legible layout for a wide fan. With ≤2 branches the two exits are close
-  // (one is the straight main flow at the centre), so per-exit labels would overlap; there we stack
-  // the labels just above the highest exit line instead. The labelPad gutter reserves the width.
+  // Gateway target-nudge: move a movable leaf event onto its straight branch's exit Y (decided in
+  // the fan-out spread) so the branch renders as ONE straight segment instead of a Z-step (rep_2b
+  // "Reparar con alternativo" → "Sigue con alternativo"). Update the node bounds, its already-emitted
+  // shape + external label, and pin the incoming edge's entry to the exit.
+  for (const { targetId, y } of gwNudges) {
+    const tb = nodeBounds.get(targetId); if (!tb) continue;
+    const newY = Math.round(y - tb.height / 2), dy = newY - tb.y;
+    if (!dy) continue;
+    tb.y = newY;
+    const shape = shapeById.get(targetId);
+    if (shape?.bounds) shape.bounds.y = newY;
+    if (shape?.label?.bounds) shape.label.bounds.y += dy;
+    for (const fe of (inBy.get(targetId) ?? [])) entryY.set(fe.id, exitY.get(fe.id) ?? y);
+  }
+
+  // Gateway branch labels ("Sí"/"No"/…): each rides just ABOVE its OWN outgoing connector, right of
+  // the gateway. The fan-out spread above already separated the exits by GW_EXIT_GAP (≥ a label +
+  // gap), so a per-exit label is legible for every fan size and never lands on a line or a sibling.
+  // Clamp the top to the lane band so a label near the band top can't escape the pool.
   const branchLabel = new Map<string, Pt>();
   {
-    const bySrc = new Map<string, any[]>();
+    const LINE_H = 14, ABOVE = 6; // LINE_H = DI label height; labels render single-line
     for (const pl of plans) {
       const fe = pl.fe;
-      if (fe.name && GATEWAY_TYPES.has(fe.sourceRef?.$type) && nodeBounds.has(fe.sourceRef.id))
-        (bySrc.get(fe.sourceRef.id) ?? bySrc.set(fe.sourceRef.id, []).get(fe.sourceRef.id)!).push(fe);
-    }
-    const LINE_H = 14, BR_GAP = 8, ABOVE = 6; // LINE_H = DI label height; labels render single-line
-    for (const [gid, list] of bySrc) {
-      const b = nodeBounds.get(gid)!;
-      const cy = b.y + b.height / 2;
-      const laneTop = laneY[nodeCell.get(gid)!.l];
-      if (list.length >= 3) {
-        for (const fe of list) {
-          const ey = exitY.get(fe.id) ?? cy;
-          branchLabel.set(fe.id, { x: b.x + b.width + 6, y: Math.max(laneTop + 2, ey - ABOVE - LINE_H) });
-        }
-        continue;
-      }
-      list.sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
-      const topExit = Math.min(...list.map((fe) => exitY.get(fe.id) ?? cy));
-      const stackH = list.length * LINE_H + (list.length - 1) * BR_GAP;
-      // Stack sits ABOVE px above the highest exit line, growing upward; clamp the top to the lane
-      // band so the stack can't escape the pool.
-      let y = Math.max(laneTop + 2, topExit - ABOVE - stackH);
-      for (const fe of list) {
-        branchLabel.set(fe.id, { x: b.x + b.width + 6, y });
-        y += LINE_H + BR_GAP;
-      }
+      if (!fe.name || !GATEWAY_TYPES.has(fe.sourceRef?.$type)) continue;
+      const b = nodeBounds.get(fe.sourceRef.id); if (!b) continue;
+      const laneTop = laneY[nodeCell.get(fe.sourceRef.id)!.l];
+      const ey = exitY.get(fe.id) ?? b.y + b.height / 2;
+      branchLabel.set(fe.id, { x: b.x + b.width + 6, y: Math.max(laneTop + 2, ey - ABOVE - LINE_H) });
     }
   }
   for (const pl of plans) {
