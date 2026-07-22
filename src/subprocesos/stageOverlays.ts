@@ -19,18 +19,41 @@ export interface StageOverlayModel {
   exits: StageExit[];
 }
 
-// Find the Call Activity's normal (plain) outgoing target in the master: the sequence
-// flow leaving the Call Activity box itself (boundary flows leave the boundary event).
+// Find the Call Activity's normal (plain) successor in the master, walking THROUGH
+// gateways (transparent) to the nearest real next node — another stage (so the "▶ va a"
+// becomes an open-link) or a plain node/end (highlight). This mirrors deriveEntrySources'
+// upstream walk, so "▶ va a" and "◀ viene de" behave symmetrically when a gateway sits
+// between two stages. (Boundary flows leave the boundary event, not the Call Activity.)
 async function normalSuccessorId(masterXml: string, callActivityId: string): Promise<string | null> {
   const moddle = new BpmnModdle();
   const { rootElement } = await (moddle as any).fromXML(masterXml);
   const process = (rootElement.rootElements ?? []).find((r: any) => (r.$type ?? "").endsWith("Process"));
-  for (const fe of process?.flowElements ?? []) {
-    if ((fe.$type ?? "").endsWith("SequenceFlow") && fe.sourceRef?.id === callActivityId) {
-      return fe.targetRef?.id ?? null;
+  const flow: any[] = process?.flowElements ?? [];
+  const byId = new Map<string, any>();
+  const targetsOf = new Map<string, string[]>();
+  for (const fe of flow) {
+    byId.set(fe.id, fe);
+    if ((fe.$type ?? "").endsWith("SequenceFlow") && fe.sourceRef?.id && fe.targetRef?.id) {
+      const arr = targetsOf.get(fe.sourceRef.id) ?? [];
+      arr.push(fe.targetRef.id);
+      targetsOf.set(fe.sourceRef.id, arr);
     }
   }
-  return null;
+  const visited = new Set<string>();
+  function walk(id: string): string | null {
+    for (const t of targetsOf.get(id) ?? []) {
+      if (visited.has(t)) continue;
+      visited.add(t);
+      if ((byId.get(t)?.$type ?? "").endsWith("Gateway")) {
+        const deep = walk(t); // gateways are transparent — keep going to the next real node
+        if (deep) return deep;
+      } else {
+        return t;
+      }
+    }
+    return null;
+  }
+  return walk(callActivityId);
 }
 
 export async function buildStageOverlayModel(args: {
@@ -72,7 +95,7 @@ export interface StageOverlayHost { add(elementId: string, html: HTMLElement): s
 export function mountStageOverlays(
   host: StageOverlayHost,
   model: StageOverlayModel,
-  nav: { goToSource(s: EntrySource): void; goToExit(masterId: string | null): void },
+  nav: { goToSource(s: EntrySource): void; goToExit(exit: StageExit): void },
 ): { clear(): void } {
   const ids: string[] = [];
   function add(elementId: string, el: HTMLElement): void {
@@ -98,7 +121,7 @@ export function mountStageOverlays(
     el.title = "Ir al destino en el mapa";
     el.addEventListener("click", (e) => {
       e.stopPropagation();
-      nav.goToExit(exit.targetMasterId);
+      nav.goToExit(exit);
     });
     add(exit.endId, el);
   }

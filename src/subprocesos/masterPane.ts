@@ -41,6 +41,7 @@ export interface MasterPaneHandle {
   isDirty(): boolean;
   markSaved(): void;
   setCurrentStage(processId: string | null): void; // highlight the box whose calledElement === processId
+  highlightElement(elementId: string | null): void; // highlight ANY master element by id (null clears)
   refreshBadges(): void; // re-classify against the current registry
   destroy(): void;
 }
@@ -93,6 +94,16 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
 
   function overlays(): any { return modeler.get("overlays"); }
   function canvas(): any { return modeler.get("canvas"); }
+
+  // Highlight ANY master element by id (a "▶ va a / ◀ viene de" pill may point at a plain
+  // node — start/gateway/end — not only a linked Call Activity). Marker-only, like the
+  // current-stage highlight; passing null clears the current highlight.
+  function highlightElement(elementId: string | null): void {
+    const c = canvas();
+    if (currentMarker) { try { c.removeMarker(currentMarker, CURRENT_MARKER); } catch { /* gone */ } currentMarker = null; }
+    if (!elementId) return;
+    try { c.addMarker(elementId, CURRENT_MARKER); currentMarker = elementId; } catch { /* gone */ }
+  }
 
   function clearOverlays(): void {
     const ov = overlays();
@@ -161,12 +172,10 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
     isDirty: () => editor.isDirty(),
     markSaved: () => editor.markSaved(),
     setCurrentStage(processId: string | null) {
-      const c = canvas();
-      if (currentMarker) { try { c.removeMarker(currentMarker, CURRENT_MARKER); } catch { /* gone */ } currentMarker = null; }
-      if (!processId) return;
-      const match = links.find((l) => l.calledElement === processId);
-      if (match) { try { c.addMarker(match.elementId, CURRENT_MARKER); currentMarker = match.elementId; } catch { /* gone */ } }
+      const match = processId ? links.find((l) => l.calledElement === processId) : null;
+      highlightElement(match?.elementId ?? null);
     },
+    highlightElement,
     refreshBadges,
     destroy() {
       try { (modeler as any).destroy?.(); } catch { /* already gone */ }

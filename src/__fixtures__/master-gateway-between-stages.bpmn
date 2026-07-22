@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Master where a join gateway sits BETWEEN two stages (mirrors the real Novotec map:
+     "1 · Recepción" → gw "En diagnóstico" → "2 · Diagnóstico"). The "▶ va a" of the first
+     stage must walk THROUGH the gateway to the next stage (proc_rep_4) and resolve to an
+     "open" intent — not stop at the gateway and only highlight. Semantic only. -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="defs_gw" targetNamespace="http://novotec">
+  <bpmn:process id="proc_mapa" isExecutable="false">
+    <bpmn:startEvent id="start" name="Inicio"><bpmn:outgoing>g0</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:callActivity id="sA" name="2 · Diagnóstico" calledElement="proc_rep_2">
+      <bpmn:incoming>g0</bpmn:incoming>
+      <bpmn:outgoing>g1</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:exclusiveGateway id="gw" name="En reparación">
+      <bpmn:incoming>g1</bpmn:incoming>
+      <bpmn:outgoing>g2</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:callActivity id="sB" name="4 · Reparación" calledElement="proc_rep_4">
+      <bpmn:incoming>g2</bpmn:incoming>
+      <bpmn:outgoing>g3</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:endEvent id="e_fin" name="Fin del mapa"><bpmn:incoming>g3</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="g0" sourceRef="start" targetRef="sA"/>
+    <bpmn:sequenceFlow id="g1" sourceRef="sA" targetRef="gw"/>
+    <bpmn:sequenceFlow id="g2" sourceRef="gw" targetRef="sB"/>
+    <bpmn:sequenceFlow id="g3" sourceRef="sB" targetRef="e_fin"/>
+  </bpmn:process>
+</bpmn:definitions>

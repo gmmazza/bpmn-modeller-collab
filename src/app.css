@@ -574,6 +574,29 @@ body.col-resizing { cursor: col-resize; user-select: none; }
   box-shadow: 0 1px 2px rgba(0,0,0,.15);
 }
 
+/* Navigation-pills show/hide toggle — floating pill over the canvas, centred at the top
+   (clear of the palette + token-simulation top-left, the minimap top-right, the bpmn.io
+   watermark bottom-right, and the lint bar bottom). Only shown when navigation pills exist. */
+#navpills-toggle {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--surface, #fff); color: var(--text, #1e293b);
+  border: 1px solid var(--border, #cbd5e1); box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  font-family: inherit; font-size: 12px; cursor: pointer;
+}
+#navpills-toggle[hidden] { display: none; }
+#navpills-toggle:hover { border-color: #0d9488; }
+#navpills-toggle.off { opacity: .65; }
+#navpills-toggle.off .npt-lbl { text-decoration: line-through; }
+
+/* Hide every navigation pill in BOTH panes with one body class (pills stay in the DOM, but a
+   display:none overlay can't be clicked). Type badges / datos / ideas are unaffected. */
+body.nav-pills-hidden .subproc-badge,
+body.nav-pills-hidden .subproc-outcome-badge,
+body.nav-pills-hidden .stage-entry-badge,
+body.nav-pills-hidden .stage-exit-badge { display: none !important; }
+
 /* Ideas panel — focus header (shown when an element is selected) */
 .ideas-focus { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
 .ideas-focus-label { font-weight: 600; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

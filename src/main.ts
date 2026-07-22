@@ -97,6 +97,8 @@ import { createProcessRegistry } from "./subprocesos/processRegistry";
 import { mountMasterPane, type MasterPaneHandle } from "./subprocesos/masterPane";
 import { renderLinkPopover } from "./subprocesos/linkPopover";
 import { buildStageOverlayModel, mountStageOverlays } from "./subprocesos/stageOverlays";
+import { resolveEntryNav, resolveExitNav, type NavIntent } from "./subprocesos/navResolve";
+import { findReferencingMaster } from "./subprocesos/findReferencingMaster";
 import { markEndAsEscalation, revertEscalationToNormal, addEscalationBoundary, removeEscalationBoundary } from "./subprocesos/outcomeAuthoring";
 import { renderOutcomePopover } from "./subprocesos/outcomePopover";
 import { typeBadgeFor } from "./subprocesos/typeBadges";
@@ -186,8 +188,11 @@ async function bootstrap() {
   let currentMasterFile: string | null = null; // the master .bpmn currently mapped (null = not in master mode)
   let masterNodeNames = new Map<string, string>(); // elementId -> name, for outcome badges
   let masterNodeTypes = new Map<string, string>(); // elementId -> $type, to filter valid outcome destinations
-  let masterNodeCalled = new Map<string, string>(); // callActivity elementId -> calledElement (processId), for exit navigation
   let stageOverlaysHandle: { clear(): void } | null = null; // "viene de / va a" pills on the open stage
+  // Show/hide state for the navigation pills (drill 🗺, → destino, ◀ viene de, ▶ va a).
+  // Persisted; pills are hidden via a body class so both panes react at once and the choice
+  // survives the per-import overlay wipe + reloads. Default ON.
+  let navPillsVisible = localStorage.getItem("navPillsVisible") !== "0";
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
   let masterPaneFocused = false; // true → the master pane is the active editor for Publicar/Ctrl+S
   let masterDraftTimer: number | null = null; // debounce for the master pane's local-draft autosave
@@ -1181,6 +1186,7 @@ async function bootstrap() {
       <main class="app">
         <aside id="files"><div class="files-tree"></div></aside>
         <section id="canvasarea">
+          <button id="navpills-toggle" type="button" hidden aria-pressed="true" title="Ocultar vínculos de navegación"><span class="npt-ico">🔗</span><span class="npt-lbl">Vínculos</span></button>
           <section id="master-canvas" hidden></section>
           <div id="master-split-resizer" class="master-split-resizer" hidden></div>
           <section id="canvas"></section>
@@ -1220,6 +1226,10 @@ async function bootstrap() {
     setupFilesResize();
     setupMasterSplitResize();
     setupCanvasSplitResize();
+    // Navigation-pills show/hide toggle (floating over the canvas). Apply the persisted
+    // choice once so the body class + button reflect it from the first render.
+    document.getElementById("navpills-toggle")?.addEventListener("click", () => toggleNavPills());
+    applyNavPillsVisibility();
 
     await mountModeler();
 
@@ -2292,11 +2302,9 @@ async function bootstrap() {
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     masterNodeNames = new Map();
     masterNodeTypes = new Map();
-    masterNodeCalled = new Map();
     try {
       const els = await parseCallLinks(masterXml); // RawEl[] carry id + name + type
       for (const el of els) { masterNodeNames.set(el.id, el.name ?? ""); masterNodeTypes.set(el.id, el.type ?? ""); }
-      for (const l of callLinksFromEls(els)) masterNodeCalled.set(l.elementId, l.calledElement);
     } catch { /* names are best-effort */ }
     if (mc) {
       mc.innerHTML = "";
@@ -2314,6 +2322,7 @@ async function bootstrap() {
     }
     // The map itself is not edited — leave "editing" until a stage is chosen below.
     dispatch({ type: "closedFile" });
+    updateNavToggle();
     renderTree(lastTree); // the master file is now open — show its "abierto" marker
   }
 
@@ -2325,7 +2334,7 @@ async function bootstrap() {
     closeLinkPopover();
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
-    masterNodeNames = new Map(); masterNodeTypes = new Map(); masterNodeCalled = new Map();
+    masterNodeNames = new Map(); masterNodeTypes = new Map();
     currentMasterFile = null;
     masterHeadRevisionId = null;
     document.body.classList.remove("master-mode");
@@ -2336,7 +2345,92 @@ async function bootstrap() {
     if (split) (split as HTMLElement).hidden = true;
     const bar = document.getElementById("master-bar") as HTMLElement | null;
     if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+    updateNavToggle();
     renderTree(lastTree); // no master/stage open anymore — clear "abierto" markers
+  }
+
+  // Shared overlay host for the stage "◀ viene de / ▶ va a" pills (diagram-js overlays on
+  // the bottom editor). Wiped by every importXML, so pills are (re)mounted per open.
+  function navPillHost(): { add(id: string, html: HTMLElement): string; remove(id: string): void } {
+    const overlays = modeler.get("overlays") as { add(id: string, o: any): string; remove(id: string): void };
+    return {
+      add: (elId: string, html: HTMLElement) => overlays.add(elId, { position: { top: -12, left: 0 }, html }),
+      remove: (id: string) => overlays.remove(id),
+    };
+  }
+
+  // Act on a pill's resolved navigation intent. "open" jumps to the target stage (drill
+  // inside the split when a master pane is up; otherwise open it standalone). "highlight"
+  // focuses the referencing master and marks the plain element there (entering the map first
+  // if the stage was opened standalone). This is what makes the pills real links (bug #2).
+  function actOnNavIntent(intent: NavIntent, masterFile: string): void {
+    if (intent.kind === "none") return;
+    if (intent.kind === "open") {
+      if (masterHandle) void openStage(intent.file).catch(onError);
+      else void openFile(intent.file).catch(onError);
+      return;
+    }
+    if (masterHandle) { masterHandle.highlightElement(intent.masterElementId); return; }
+    void (async () => {
+      await enterMasterMode(masterFile, await api.getXml(masterFile));
+      highlightInMaster(intent.masterElementId); // read masterHandle fresh (enterMasterMode set it)
+    })().catch(onError);
+  }
+
+  // Highlight in its own function so callers don't fight TS's narrowing of the masterHandle
+  // closure variable (enterMasterMode reassigns it out of band).
+  function highlightInMaster(elementId: string): void { masterHandle?.highlightElement(elementId); }
+
+  // (Re)mount the "viene de / va a" pills for an open stage, given the master that calls it.
+  // Works both drilled (master pane up) and standalone (no pane, bug #1). Name/called maps
+  // are built from THIS master so navigation resolves correctly in either context.
+  async function mountNavPills(
+    stageXml: string,
+    master: { file: string; xml: string; callActivityId: string },
+  ): Promise<void> {
+    stageOverlaysHandle?.clear();
+    stageOverlaysHandle = null;
+    let names = new Map<string, string>();
+    let called = new Map<string, string>();
+    try {
+      const els = await parseCallLinks(master.xml);
+      names = new Map(els.map((e) => [e.id, e.name ?? ""]));
+      called = new Map(callLinksFromEls(els).map((l) => [l.elementId, l.calledElement]));
+    } catch { /* names are best-effort */ }
+    const model = await buildStageOverlayModel({
+      stageXml, masterXml: master.xml, callActivityId: master.callActivityId,
+      resolveName: (id) => names.get(id) ?? "",
+    }).catch(() => null);
+    if (!model) return; // couldn't derive the link model — leave no pills
+    stageOverlaysHandle = mountStageOverlays(navPillHost(), model, {
+      goToSource: (s) => actOnNavIntent(resolveEntryNav(s, registry.resolve), master.file),
+      goToExit: (exit) => actOnNavIntent(resolveExitNav(exit, called, registry.resolve), master.file),
+    });
+    updateNavToggle();
+  }
+
+  // The floating "🔗 Vínculos" toggle only matters when navigation pills exist — a master
+  // map is open, or a standalone stage that belongs to some master. Otherwise it stays hidden.
+  function updateNavToggle(): void {
+    const btn = document.getElementById("navpills-toggle") as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.hidden = !(document.body.classList.contains("master-mode") || !!stageOverlaysHandle);
+    btn.setAttribute("aria-pressed", String(navPillsVisible));
+    btn.classList.toggle("off", !navPillsVisible);
+    btn.title = navPillsVisible ? "Ocultar vínculos de navegación" : "Mostrar vínculos de navegación";
+  }
+
+  // Apply the show/hide choice: one body class hides every navigation pill in BOTH panes at
+  // once (they stay in the DOM; a display:none overlay can't be clicked). Persist + refresh.
+  function applyNavPillsVisibility(): void {
+    document.body.classList.toggle("nav-pills-hidden", !navPillsVisible);
+    localStorage.setItem("navPillsVisible", navPillsVisible ? "1" : "0");
+    updateNavToggle();
+  }
+
+  function toggleNavPills(): void {
+    navPillsVisible = !navPillsVisible;
+    applyNavPillsVisibility();
   }
 
   // Drill-down: load a stage (subprocess) into the bottom editor via the normal path
@@ -2344,33 +2438,20 @@ async function bootstrap() {
   async function openStage(file: string): Promise<void> {
     await openFile(file, { asPlainEditor: true, keepMaster: true });
     renderBreadcrumb(shortName(file));
+    let stageXml = "";
+    let pid = "";
     try {
-      const xml = await api.getXml(file);
-      masterHandle?.setCurrentStage((await parseDiagramInfo(xml)).processId);
+      stageXml = await api.getXml(file);
+      pid = (await parseDiagramInfo(stageXml)).processId;
+      masterHandle?.setCurrentStage(pid);
     } catch { /* highlight is best-effort */ }
     stageOverlaysHandle?.clear();
     stageOverlaysHandle = null;
-    if (currentMasterFile) {
+    if (currentMasterFile && stageXml) {
       try {
-        const stageXml = await api.getXml(file);
         const masterXml = await api.getXml(currentMasterFile);
-        const pid = (await parseDiagramInfo(stageXml)).processId;
         const link = callLinksFromEls(await parseCallLinks(masterXml)).find((l) => l.calledElement === pid);
-        if (link) {
-          const model = await buildStageOverlayModel({
-            stageXml, masterXml, callActivityId: link.elementId,
-            resolveName: (id) => masterNodeNames.get(id) ?? "",
-          });
-          const overlays = (modeler.get("overlays") as { add(id: string, o: any): string; remove(id: string): void });
-          const host = {
-            add: (elId: string, html: HTMLElement) => overlays.add(elId, { position: { top: -12, left: 0 }, html }),
-            remove: (id: string) => overlays.remove(id),
-          };
-          stageOverlaysHandle = mountStageOverlays(host, model, {
-            goToSource: (s) => { masterHandle?.setCurrentStage(s.processId); },
-            goToExit: (mid) => { if (mid) masterHandle?.setCurrentStage(masterNodeCalled.get(mid) ?? null); },
-          });
-        }
+        if (link) await mountNavPills(stageXml, { file: currentMasterFile, xml: masterXml, callActivityId: link.elementId });
       } catch { /* overlays are best-effort */ }
     }
     // Type badges (A.3): label precise task/event types on the stage for non-technical
@@ -2394,47 +2475,47 @@ async function bootstrap() {
       }
     } catch { /* best-effort */ }
     masterPaneFocused = false; // the stage editor is now the active pane
+    updateNavToggle();
     renderTree(lastTree); // the drilled stage is now open — show its "abierto" marker
   }
 
-  // Best-effort: if a directly-opened stage is referenced by some master in the folder,
-  // offer to view it inside that master's map. Scans registry.all() (cheap for a folder).
-  async function maybeOfferOpenInMap(fileId: string, xml: string): Promise<void> {
+  // A directly-opened stage (not drilled from a master): find the master that references it,
+  // then (a) render its "◀ viene de / ▶ va a" pills right here so they work standalone
+  // (bug #1) and (b) offer "Ver en el mapa". One registry scan (findReferencingMaster) feeds
+  // both. If several masters reference the stage, the first wins (same as before).
+  async function onStandaloneStageOpened(fileId: string, xml: string): Promise<void> {
     const bar = document.getElementById("map-offer") as HTMLElement | null;
-    if (!bar) return;
-    bar.hidden = true;
-    bar.innerHTML = "";
-    if (document.body.classList.contains("master-mode")) return; // already in a map
-    let masterFile: string | null = null;
+    if (bar) { bar.hidden = true; bar.innerHTML = ""; }
+    if (document.body.classList.contains("master-mode")) return; // the drill flow owns the pills
+    let hit: Awaited<ReturnType<typeof findReferencingMaster>> = null;
     try {
       const pid = (await parseDiagramInfo(xml)).processId;
-      if (pid) {
-        for (const entry of registry.all()) {
-          if (entry.file === fileId) continue;
-          const mxml = await api.readPath(entry.file);
-          if (!mxml) continue;
-          const links = callLinksFromEls(await parseCallLinks(mxml));
-          if (links.some((l) => l.calledElement === pid)) { masterFile = entry.file; break; }
-        }
-      }
+      hit = pid
+        ? await findReferencingMaster({ entries: registry.all(), readXml: (f) => api.readPath(f), stageFile: fileId, stageProcessId: pid })
+        : null;
     } catch { /* best-effort */ }
-    if (!masterFile) return;
-    const found = masterFile;
-    const label = document.createElement("span");
-    label.textContent = "Esta etapa forma parte de un mapa.";
-    const btn = document.createElement("button");
-    btn.className = "btn";
-    btn.type = "button";
-    btn.textContent = "Ver en el mapa";
-    btn.addEventListener("click", () => {
-      void (async () => {
-        const mxml = await api.getXml(found);
-        await enterMasterMode(found, mxml);
-        await openStage(fileId);
-      })().catch(onError);
-    });
-    bar.append(label, btn);
-    bar.hidden = false;
+    if (!hit) { updateNavToggle(); return; }
+    // (a) pills — navigable even without the master pane.
+    await mountNavPills(xml, { file: hit.masterFile, xml: hit.masterXml, callActivityId: hit.callActivityId });
+    // (b) the "Ver en el mapa" affordance.
+    if (bar) {
+      const found = hit.masterFile;
+      const label = document.createElement("span");
+      label.textContent = "Esta etapa forma parte de un mapa.";
+      const btn = document.createElement("button");
+      btn.className = "btn";
+      btn.type = "button";
+      btn.textContent = "Ver en el mapa";
+      btn.addEventListener("click", () => {
+        void (async () => {
+          const mxml = await api.getXml(found);
+          await enterMasterMode(found, mxml);
+          await openStage(fileId);
+        })().catch(onError);
+      });
+      bar.append(label, btn);
+      bar.hidden = false;
+    }
   }
 
   async function openFile(fileId: string, opts?: { asPlainEditor?: boolean; keepMaster?: boolean }) {
@@ -2489,8 +2570,9 @@ async function bootstrap() {
     try { await docsController?.regenerateIndex(); } catch { /* index is best-effort */ }
     void ideasCtl?.refresh();
     if (ideaMode?.isOn()) void ideaMode.refresh();
-    // A.2: a plain-opened stage may belong to a master's map — offer to view it there.
-    if (!opts) void maybeOfferOpenInMap(fileId, shared).catch(onError);
+    // A.2: a plain-opened stage may belong to a master's map — render its navigation pills
+    // here (so they work standalone) and offer to view it in that map.
+    if (!opts) void onStandaloneStageOpened(fileId, shared).catch(onError);
     // T6: refresh the tree so this file's "abierto" marker shows immediately, not just
     // on the next incidental refresh (mirrors the renderTree(lastTree) calls the
     // master-mode transitions already make — see enterMasterMode/openStage/closeStage/

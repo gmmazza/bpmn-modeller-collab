@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { buildStageOverlayModel, mountStageOverlays } from "./stageOverlays";
 
 const STAGE = `<?xml version="1.0" encoding="UTF-8"?>
@@ -41,6 +42,23 @@ describe("buildStageOverlayModel", () => {
       { endId: "E_ok", label: "▶ va a: Reparación", targetMasterId: "s4", kind: "normal" },
       { endId: "E_dev", label: "▶ va a: Devuelto sin reparar", targetMasterId: "end_norep", kind: "escalation" },
     ]);
+  });
+});
+
+describe("buildStageOverlayModel — normal exit walks through gateways", () => {
+  it("resolves the '▶ va a' target across an intermediate gateway to the next stage (real fixture)", async () => {
+    const master = readFileSync("src/__fixtures__/master-gateway-between-stages.bpmn", "utf8");
+    const stage = readFileSync("src/__fixtures__/rep-lanes-diagnostico.bpmn", "utf8"); // proc_rep_2 = sA
+    const names: Record<string, string> = { sB: "4 · Reparación", gw: "En reparación" };
+    const model = await buildStageOverlayModel({
+      stageXml: stage, masterXml: master, callActivityId: "sA",
+      resolveName: (id) => names[id] ?? "",
+    });
+    const normal = model.exits.find((e) => e.kind === "normal")!;
+    // Before the fix this stopped at the gateway ("gw") → the pill only highlighted; now it
+    // walks through the gateway to the real next stage, so the pill becomes an open-link.
+    expect(normal.targetMasterId).toBe("sB");
+    expect(normal.label).toBe("▶ va a: 4 · Reparación");
   });
 });
 

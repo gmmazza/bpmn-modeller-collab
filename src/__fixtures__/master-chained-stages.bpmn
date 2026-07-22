@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Master map with two Call Activities chained in sequence (mirrors the real Novotec
+     stage-to-stage flow): "2 · Diagnóstico" (proc_rep_2) → "4 · Reparación" (proc_rep_4)
+     → plain end. Used to test navResolve: a "▶ va a" whose successor is another stage must
+     resolve to an "open" intent (bug #2), while a "▶ va a" whose successor is a plain end
+     resolves to "highlight". Semantic layer only (no DI needed by the moddle parsers). -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  id="defs_chained" targetNamespace="http://novotec">
+  <bpmn:process id="proc_mapa" isExecutable="false">
+    <bpmn:startEvent id="start" name="Inicio"><bpmn:outgoing>f_in</bpmn:outgoing></bpmn:startEvent>
+    <bpmn:callActivity id="s_diag" name="2 · Diagnóstico" calledElement="proc_rep_2">
+      <bpmn:incoming>f_in</bpmn:incoming>
+      <bpmn:outgoing>f_mid</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:callActivity id="s_rep" name="4 · Reparación" calledElement="proc_rep_4">
+      <bpmn:incoming>f_mid</bpmn:incoming>
+      <bpmn:outgoing>f_out</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:endEvent id="e_fin" name="Fin del mapa"><bpmn:incoming>f_out</bpmn:incoming></bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_in" sourceRef="start" targetRef="s_diag"/>
+    <bpmn:sequenceFlow id="f_mid" sourceRef="s_diag" targetRef="s_rep"/>
+    <bpmn:sequenceFlow id="f_out" sourceRef="s_rep" targetRef="e_fin"/>
+  </bpmn:process>
+</bpmn:definitions>
