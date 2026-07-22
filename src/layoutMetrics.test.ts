@@ -169,6 +169,22 @@ describe("overlaps", () => {
     expect(overlaps(scene).labelNode).toBe(1);
   });
 
+  it("excludes a label overlapping its own owner node (internal labels sit inside their shape)", () => {
+    const scene = makeScene({
+      nodes: [{ id: "n1", x: 0, y: 0, width: 100, height: 40 }],
+      labels: [{ id: "lb1", owner: "n1", x: 10, y: 10, width: 60, height: 14 }], // fully inside n1
+    });
+    expect(overlaps(scene).labelNode).toBe(0);
+  });
+
+  it("counts the same label overlapping a DIFFERENT node that isn't its owner", () => {
+    const scene = makeScene({
+      nodes: [{ id: "n2", x: 0, y: 0, width: 100, height: 40 }], // same box, different id
+      labels: [{ id: "lb1", owner: "n1", x: 10, y: 10, width: 60, height: 14 }],
+    });
+    expect(overlaps(scene).labelNode).toBe(1);
+  });
+
   it("sums all three overlap kinds into total", () => {
     const scene = makeScene({
       nodes: [
@@ -179,7 +195,9 @@ describe("overlaps", () => {
       labels: [
         { id: "l1", owner: "n1", x: 300, y: 0, width: 40, height: 14 },
         { id: "l2", owner: "n2", x: 320, y: 0, width: 40, height: 14 },
-        { id: "l3", owner: "n3", x: 210, y: 210, width: 20, height: 14 },
+        // owner is "n1" (not "n3") even though it geometrically sits inside n3 — this must still
+        // count as a labelNode overlap; only overlap with one's OWN owner is exempt.
+        { id: "l3", owner: "n1", x: 210, y: 210, width: 20, height: 14 },
       ],
     });
     const r = overlaps(scene);
@@ -220,6 +238,22 @@ describe("laneContainment", () => {
         { id: "L2", x: 0, y: 50, width: 500, height: 100 }, // starts before L1 ends
       ],
     });
+    const r = laneContainment(scene);
+    expect(r.bandOverlaps).toBe(1);
+    expect(r.violations).toBe(1);
+  });
+
+  it("finds a non-adjacent band overlap regardless of raw scene.lanes array order", () => {
+    // L2 is clear of both; L1 and L3 genuinely overlap (0-100 vs 50-150) — exactly ONE true
+    // violation. Placed in array order [L2, L1, L3] (not sorted by y): a scan that only compares
+    // RAW-order adjacent pairs checks (L2,L1) and (L1,L3) — the first is a spurious flag (L2 and
+    // L1 don't overlap; the check only looks broken because the array isn't sorted), while
+    // (L1,L3) IS the real violation — so the raw-order scan reports 2 (one real + one spurious),
+    // not 1. Sorting by y before scanning collapses this to the correct single violation.
+    const L1 = { id: "L1", x: 0, y: 0, width: 500, height: 100 };     // 0-100
+    const L2 = { id: "L2", x: 0, y: 300, width: 500, height: 100 };   // 300-400, clear of both
+    const L3 = { id: "L3", x: 0, y: 50, width: 500, height: 100 };    // 50-150, overlaps L1
+    const scene = makeScene({ lanes: [L2, L1, L3] });
     const r = laneContainment(scene);
     expect(r.bandOverlaps).toBe(1);
     expect(r.violations).toBe(1);

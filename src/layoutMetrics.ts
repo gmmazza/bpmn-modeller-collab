@@ -147,7 +147,9 @@ function rectOverlaps(a: Rect, b: Rect, tolerance: number): boolean {
 
 /** Node×node (4px tolerance, matching the proven loop), label×label and label×node with REAL
  * rendered label boxes — labels are held to a tighter tolerance since "never overprint" is a
- * hard rule (3), not a placement-noise allowance like node stacking. */
+ * hard rule (3), not a placement-noise allowance like node stacking. A label overlapping its
+ * OWN owner node is exempt from label×node — internal labels (e.g. a task's name) are drawn
+ * inside their owner shape by design and would otherwise fire on every internally-labelled node. */
 export function overlaps(scene: Scene): MetricsReport["overlaps"] {
   let nodeNode = 0;
   for (let i = 0; i < scene.nodes.length; i++)
@@ -161,8 +163,10 @@ export function overlaps(scene: Scene): MetricsReport["overlaps"] {
 
   let labelNode = 0;
   for (const l of scene.labels)
-    for (const n of scene.nodes)
+    for (const n of scene.nodes) {
+      if (l.owner === n.id) continue;
       if (rectOverlaps(l, n, 0.5)) labelNode++;
+    }
 
   return { nodeNode, labelLabel, labelNode, total: nodeNode + labelLabel + labelNode };
 }
@@ -189,11 +193,18 @@ export function laneContainment(scene: Scene): MetricsReport["lanes"] {
     if (!within) outOfLane++;
   }
 
-  // Adjacent bands (in the authored laneSet order the scene array is built from) must not
-  // overlap or invert — either defect shows up as one band's bottom crossing the next one's top.
+  // Bands, sorted by Y (scene.lanes isn't guaranteed to already be in visual top-to-bottom
+  // order), must not overlap or invert — either defect shows up as one band's bottom crossing
+  // the next one's top. Checking only ADJACENT pairs after sorting is sufficient to catch every
+  // violating pair, not just neighbours: if each sorted-adjacent pair is clear (next.y >= this
+  // band's bottom), then by transitivity every later band's y is also >= every earlier band's
+  // bottom, so no non-adjacent pair can overlap either. Scanning the RAW (unsorted) array
+  // instead is a blind spot — two non-adjacent-in-sort-order bands that truly overlap can be
+  // missed while an unrelated adjacent-in-raw-order pair gets flagged instead (see test).
+  const sortedLanes = [...scene.lanes].sort((a, b) => a.y - b.y);
   let bandOverlaps = 0;
-  for (let i = 0; i < scene.lanes.length - 1; i++) {
-    if (scene.lanes[i].y + scene.lanes[i].height > scene.lanes[i + 1].y + tol) bandOverlaps++;
+  for (let i = 0; i < sortedLanes.length - 1; i++) {
+    if (sortedLanes[i].y + sortedLanes[i].height > sortedLanes[i + 1].y + tol) bandOverlaps++;
   }
 
   const missingLaneShapes = missingLaneIds.size;
@@ -244,6 +255,8 @@ export function cohesion(scene: Scene): MetricsReport["cohesion"] {
   }
   const meanEdgeLength = scene.edges.length ? totalEdgeLength / scene.edges.length : 0;
 
+  // Judgment call: the bbox union includes lane and label rects, not just nodes — lanes
+  // typically define the diagram's outer extent even where node coverage is sparse near an edge.
   const rects: Rect[] = [...scene.nodes, ...scene.lanes, ...scene.labels];
   let bboxArea = 0;
   if (rects.length) {
