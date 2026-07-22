@@ -903,7 +903,9 @@ async function layoutCollaborationElk(defs: any, collaboration: any, moddle: any
   const allNodeBounds = new Map<string, Bounds>();
   const POOL_GAP = 60;
   let poolY = 0;
-  let poolW = 600;
+  // Content drives the pool width; the floor only guards the degenerate empty-pool case. A
+  // 600px floor forced small diagrams (rep_5: ~520px of content) into an oversized lane band.
+  let poolW = 300;
   let poolsBottom = 0;
 
   // Matrix mode: a diagram with lane + group (phase) structure is a 2-D matrix elk can't
