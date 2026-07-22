@@ -416,6 +416,20 @@ function renderMatrix(
     for (const n of arr) { colW[f] = Math.max(colW[f], n.w); rowUnit[l] = Math.max(rowUnit[l], n.h + 2 * PAD); }
   }
   const laneH = new Array(L).fill(0).map((_, l) => slots[l] * rowUnit[l]); // node-band = all slots stacked
+  // Gateway branch labels ("Sí"/"No") live in a column just right of their gateway (see the
+  // stack further down). The gutter right of a gateway's fine column must reserve room for the
+  // longest branch label BEFORE the vertical tracks — with the bare COL_GAP the label overruns
+  // the neighbouring column's node (rep_2's "No, necesita PaP" overprint).
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const labelPad = new Array(NF + 1).fill(0);
+  for (const fe of edges) {
+    const src = fe.sourceRef?.id ? nodeById.get(fe.sourceRef.id) : undefined;
+    if (!src || !fe.name || !GATEWAY_TYPES.has(src.fe.$type)) continue;
+    const f = fcOf.get(src.id)!;
+    // Part of the label column that sticks past the gateway's fine column into the gutter.
+    const into = 6 + labelWidth(fe.name) + 4 - (colW[f] - src.w) / 2;
+    labelPad[f + 1] = Math.max(labelPad[f + 1], into);
+  }
   const nodeCell = new Map<string, { fc: number; l: number }>();
   for (const n of nodes) nodeCell.set(n.id, { fc: fcOf.get(n.id)!, l: n.l });
   for (const [bid, hid] of boundaryHost) { const c = nodeCell.get(hid); if (c) nodeCell.set(bid, c); }
@@ -480,7 +494,8 @@ function renderMatrix(
   // as separated bands, not just where their dashed boxes happen to sit.
   const PHASE_GAP = 70;
   const phaseBoundary = (g: number) => g > 0 && g < NF && fineCols[g].phase !== fineCols[g - 1].phase;
-  const gutterW = (g: number) => Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK) + (phaseBoundary(g) ? PHASE_GAP : 0);
+  const gutterW = (g: number) =>
+    Math.max(COL_GAP, 40 + Math.max(0, gutterCount(g) - 1) * V_TRACK) + labelPad[g] + (phaseBoundary(g) ? PHASE_GAP : 0);
 
   // Intra-lane SUB-ROWS: a lane band = its node band (laneH[l] = slots · rowUnit) PLUS a thin
   // routing sub-row per blocked/back edge that runs INSIDE this lane, above or below the node band
@@ -501,7 +516,9 @@ function renderMatrix(
   const colX = new Array(NF); { let x = gutterW(0); for (let f = 0; f < NF; f++) { colX[f] = x; x += colW[f] + gutterW(f + 1); } }
   const contentX = offsetX + LANE_HEADER;
   const gutterMid = (g: number) => (g === 0 ? 0 : colX[g - 1] + colW[g - 1]) + gutterW(g) / 2;
-  const trackX = (g: number, i: number) => contentX + gutterMid(g) + (i - (gutterCount(g) - 1) / 2) * V_TRACK;
+  // Tracks sit in the RIGHT part of the gutter, past the branch-label pad, so gutter verticals
+  // never strike through the label column.
+  const trackX = (g: number, i: number) => contentX + gutterMid(g) + labelPad[g] / 2 + (i - (gutterCount(g) - 1) / 2) * V_TRACK;
 
   const nodeBounds = new Map<string, Bounds>();
   const planeElement: any[] = [];
@@ -633,7 +650,32 @@ function renderMatrix(
   for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k); list.forEach((e, i) => e.set(i)); }
   for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
-  const gwSeen = new Map<string, number>();
+  // Gateway branch labels: a clean column just right of the gateway, top-aligned to the row's
+  // top edge (the whitespace above the gateway's vertex, clear of the gateway's own name label
+  // below it), stacked with REAL wrap-height steps — a 120px-clamped label renders ~2 lines
+  // (~28px), so a fixed 18px step made stacked labels overprint (rep_2b). Ordered by exit Y so
+  // the top label belongs to the top branch. The labelPad gutter widening guarantees the column
+  // fits before the next node and the vertical tracks.
+  const estLabelH = (name: string) => 14 * Math.max(1, Math.ceil((name.length * 6.5) / 120));
+  const branchLabel = new Map<string, Pt>();
+  {
+    const bySrc = new Map<string, any[]>();
+    for (const pl of plans) {
+      const fe = pl.fe;
+      if (fe.name && GATEWAY_TYPES.has(fe.sourceRef?.$type) && nodeBounds.has(fe.sourceRef.id))
+        (bySrc.get(fe.sourceRef.id) ?? bySrc.set(fe.sourceRef.id, []).get(fe.sourceRef.id)!).push(fe);
+    }
+    for (const [gid, list] of bySrc) {
+      const b = nodeBounds.get(gid)!;
+      const cy = b.y + b.height / 2;
+      list.sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
+      let y = cy - rowUnit[nodeCell.get(gid)!.l] / 2 + 2; // the gateway's row-top edge
+      for (const fe of list) {
+        branchLabel.set(fe.id, { x: b.x + b.width + 6, y });
+        y += estLabelH(fe.name) + 4;
+      }
+    }
+  }
   for (const pl of plans) {
     const fe = pl.fe;
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
@@ -671,9 +713,7 @@ function renderMatrix(
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));
     if (fe.name) {
       const lw = labelWidth(fe.name);
-      const pos = GATEWAY_TYPES.has(fe.sourceRef?.$type)
-        ? branchLabelPos(gwSeen, fe.sourceRef.id, s, 14)
-        : labelNearSource(pts[0], pts[1], lw, 14);
+      const pos = branchLabel.get(fe.id) ?? labelNearSource(pts[0], pts[1], lw, 14);
       edge.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(pos.x, pos.y, lw, 14) });
     }
     planeElement.push(edge);
