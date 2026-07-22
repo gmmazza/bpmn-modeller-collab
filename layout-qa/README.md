@@ -108,12 +108,12 @@ here.
   orchestrator explicitly scoped it OUT of this round. Also noted in `reglas.md`.
 - **Obstacle-avoiding router (visibility-graph / A*).** Today's router is a topology-decided
   heuristic (`laneClear`), not a full obstacle-avoiding pathfinder — see
-  `HANDOFF-autolayout.md` §4 item 2 and `graph-layout-ordering-principles` (project memory)
+  `HANDOFF-autolayout.md` §4 item 4 and `graph-layout-ordering-principles` (project memory)
   §3 for why a full router is the next big piece if zero `clips.horizontal` /
   `crossings.total` is ever required.
 - **Backup engine (`bpmn-auto-layout`) parity.** The backup/"Modo rápido" engine still emits
   fresh DI and drops colors/groups — the old-shape-reuse trick that `layoutElk.ts` uses isn't
-  ported to `layoutTidy.ts`. See `HANDOFF-autolayout.md` §4 item 3.
+  ported to `layoutTidy.ts`. See `HANDOFF-autolayout.md` §4 item 5.
 - **Mixed-collaboration `matrixMode` scoping (latent, unexercised).** In a collaboration with
   multiple participants, `layoutCollaborationElk` computes `matrixMode` from the
   collaboration's phase groups globally and can pass those groups into a participant that
