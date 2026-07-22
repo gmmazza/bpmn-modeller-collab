@@ -71,7 +71,10 @@ alrededor de ellos.
 efectivamente salen como un único segmento recto de 2 waypoints), `straightness.sameRowBends`
 y `straightness.dodges` (quiebres sobre esa misma población de aristas — hoy son
 numéricamente iguales por definición; se mantienen como campos separados porque una futura
-ronda podría relajar la tolerancia de alineación Y de uno sin el otro).
+ronda podría relajar la tolerancia de alineación Y de uno sin el otro). Nota: la métrica sólo
+considera aristas cuyo origen y destino comparten carril — en un diagrama SIN carriles esa
+población queda vacía y `straightPct` da 100 de forma vacía (no significa que el diagrama ya
+esté perfectamente recto).
 
 ### 5. UNA vertical, en el último momento (drop-late)
 **Garantiza:** el tramo horizontal corre a la altura de la fila del ORIGEN, dentro del
@@ -160,9 +163,10 @@ costo" (ver historial de rondas en la memoria `graph-layout-ordering-principles`
 ## Duras vs. blandas — cómo las aplica el harness
 
 - **Duras (reglas 1, 2, 3):** tolerancia CERO, siempre. `npm run layout:qa` las compara
-  contra `0` en cada corrida — **nunca** se guardan en `layout-qa/baseline.json` ni se
-  "aflojan" para que pase un diagrama puntual. Cualquier valor mayor a 0 hace fallar la
-  corrida completa (exit 1), sin excepciones ni por-diagrama.
+  contra `0` en cada corrida — **nunca contra el baseline** (el archivo también guarda estos
+  campos por completitud del `MetricsReport`, pero sólo como referencia; nunca se usan como
+  gate ni se "aflojan" para que pase un diagrama puntual). Cualquier valor mayor a 0 hace
+  fallar la corrida completa (exit 1), sin excepciones ni por-diagrama.
 - **Blandas (reglas 4, 7, 10, 11, 12):** se comparan contra `layout-qa/baseline.json`, un
   archivo committeado con un valor por diagrama. Un valor peor que el baseline es una
   regresión (exit 1); igual o mejor, pasa. El baseline sólo se actualiza deliberadamente con

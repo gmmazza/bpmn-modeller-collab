@@ -21,6 +21,17 @@ npm run layout:qa -- --emit-fixture     # write src/__fixtures__/scene-novotec-m
 (`npm run layout:qa` itself is `npx vite-node scripts/layout-qa.ts` — see
 `scripts/layout-qa.ts` for the exact flag parsing if this drifts.)
 
+**`--emit-fixture` is a deliberate re-baseline, not a free read.** It overwrites the committed
+`src/__fixtures__/scene-novotec-matrix.json` with whatever the CURRENT layouter produces, and
+`src/layoutMetrics.test.ts` pins exact numbers against that file (element counts 42 nodes / 43
+edges / 7 lanes / 35 labels, `crossings` = `{hv:10, hh:0, vv:0, total:10}`). If the layouter
+has changed since the fixture was last captured, re-run `--emit-fixture` and update those
+pinned values in `src/layoutMetrics.test.ts` in the SAME commit — otherwise the test silently
+stops guarding the geometry it's meant to pin. (The fixture currently committed predates the
+T6 round and still carries an `overlaps.labelNode` of 1 that was fixed live since — the test
+deliberately does not assert an exact value there, to avoid pinning a number already known to
+be stale.)
+
 Each run:
 1. Scans real `.bpmn` files (see **Fixture source** below).
 2. For each, renders the AUTHORED diagram (before) and the auto-organized one (after
@@ -40,14 +51,17 @@ Each run:
   - `report.md` — human-readable: totals, hard violations, soft regressions, then a full
     metric table per diagram (before / after / baseline / Δ / status).
   - `report.json` — the same data, structured, for tooling.
-- `layout-qa/baseline.json` (**committed**) — one `MetricsReport` per diagram, the ratchet
-  reference for soft metrics. Never holds hard-rule state (hard rules don't ratchet).
+- `layout-qa/baseline.json` (**committed**) — one full `MetricsReport` per diagram, hard-rule
+  fields included. It's the ratchet reference for SOFT metrics only: the hard-rule fields it
+  stores are kept for reference, never used as a gate — hard rules are always checked against
+  `0` directly (see `hardViolations()` in `scripts/layout-qa.ts`), not against this file.
 
 ## Hard vs. soft semantics
 
 - **Hard rules** (`lanes.violations`, `overlaps.total`, `clips.vertical` — rules 1–3 in
-  `reglas.md`): absolute, tolerance 0, checked against `0` every run, never stored in the
-  baseline. Any diagram with a nonzero value fails the whole run (exit 1).
+  `reglas.md`): absolute, tolerance 0, checked against `0` every run — never against the
+  baseline (the baseline stores these fields too, but only for reference; see "What it
+  produces" above). Any diagram with a nonzero value fails the whole run (exit 1).
 - **Soft metrics** (`crossings.total`, `clips.horizontal`, `straightness.straightPct`,
   `straightness.sameRowBends`, `straightness.dodges`, `cohesion.meanEdgeLength`,
   `cohesion.bboxArea` — rules 4, 7, 10–12): ratcheted per diagram against

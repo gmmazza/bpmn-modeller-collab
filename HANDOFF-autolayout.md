@@ -58,7 +58,9 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
     active refinement is.
   - `layoutCollaborationElk(...)` — pools; picks `renderMatrix` when groups exist, else `renderProcess`.
   - `emitGroups(...)` — phase boxes for the non-matrix path (membership inference).
-  - `branchLabelPos(...)` — stacks a gateway's Sí/No labels down its right side.
+  - `branchLabelPos(...)` — stacks a gateway's Sí/No labels down its right side; applies only
+    to the elk (lane-less) path now — `renderMatrix` uses its own branch-label column with
+    real wrap-height stagger (2026-07-22 T6 fix, commit `803b51e`).
   - `layoutSubgraphElk(...)` — reorganize-selection.
 - `src/main.ts` — toolbar HTML (`#autolayout`, `#autolayout-caret`, `#autolayout-pop`),
   `doAutoLayout(engine)`, `doAutoLayoutMaster(engine)`, `reorganizeSelection()`, the dropdown
@@ -124,12 +126,13 @@ crossings but re-layouts nodes (~409px drift) → cannot be used to route on fix
    `renderMatrix`; the seeded-Y lane path in `renderProcess` was deleted. Permanent
    regression coverage: `src/layoutElkLanes.test.ts` (6 lane invariants × 3 real fixtures)
    + `npm run layout:qa` (see §5).
-3. **Gateway branch-label overprint on tight matrix fine-columns.** The 2026-07-22 lane fix
-   exposed a residual label class: `branchLabelPos`'s gateway branch labels can overprint the
-   next fine-column's node/label now that lanes route through the tighter matrix columns —
-   measured on `rep_2_diagnostico` (`overlaps.labelNode` 0→3) and `rep_2b_motor_donante`
-   (`overlaps.labelLabel` 1→2). Being worked in a parallel round — see the round log in
-   `layout-qa/README.md`.
+3. ~~**Gateway branch-label overprint on tight matrix fine-columns.**~~ **RESOLVED 2026-07-22**
+   (commits `803b51e`..`9b0ac12`, T6) — new branch-label column with real wrap-height stagger
+   and label-pad gutters in `renderMatrix`, plus boundary-event re-spread and gutter-track
+   nesting fixes on the elk path. `overlaps.total` is now 0 on all 12 real diagrams (was 3 on
+   `rep_2_diagnostico` and `rep_2b_motor_donante`, 3 also on `flujo_reparaciones_novotec`); a
+   plain `npm run layout:qa` ratchet run exits 0. See round 2 in the `layout-qa/README.md`
+   round log for the full before/after numbers.
 4. **14 horizontal-clip crossings** on the real fixture (accepted trade-off for compactness).
    If zero crossings are wanted back WITHOUT inflating bands, the next step is a real
    obstacle-avoiding router (visibility-graph / A* over the gutter×row grid) — the big piece.
@@ -150,6 +153,29 @@ crossings but re-layouts nodes (~409px drift) → cannot be used to route on fix
    its own, no groups. No corpus diagram exercises mixed matrix + lanes-only pools in one
    collaboration today, so it's harmless — but worth a comment or a per-participant group
    filter before it is.
+9. **Harness/layout latents (final-review triage 2026-07-22).** Minor findings surfaced during
+   the whole-branch review, not scoped to any single round — bundled here as one item:
+   - **Add a phase-group diagram (e.g. `novotec-matrix`) to the `layout-qa` corpus** so the
+     matrix path (lanes × phase groups, not just lanes-only) actually gets ratcheted by
+     `npm run layout:qa` — today's `qa-workspace` corpus only exercises lanes-only and plain
+     process shapes. Ranked FIRST — the rest below are cosmetic/edge-case by comparison.
+   - `playwright` is used by `scripts/layout-qa.ts` as a transitive dependency (pulled in via
+     `@playwright/test`), not an explicit `devDependency` — add it directly or switch the
+     import to `@playwright/test`.
+   - `bpmn:SubProcess` is excluded from `Scene.nodes[]` in the harness's scene extraction — a
+     latent hard-rule blind spot (an expanded sub-process's own overlaps/lane containment
+     aren't checked) until there's a decision on how expanded sub-processes should be scored.
+   - The boundary-event re-spread (commit `5abcd32`) doesn't clamp its span for `N≥5` boundary
+     events on one host, and the router's 2-point-edge case has no diagonal guard — both can in
+     principle produce a diagonal segment that no current metric detects. Needs a `diagonals`
+     metric (producer AND detector together, not just a guard in the router) to catch it.
+   - The entry-slot `inBy` X-tie secondary sort key (`key2`) isn't symmetric — worth a look if
+     a future fixture exposes it.
+   - `deriveNames` in `scripts/layout-qa.ts` can collide post-sanitize (two different raw names
+     sanitizing to the same key) with no dedup guard.
+   - `straightness.straightPct` reads a vacuous 100 on lane-less diagrams — the metric's
+     qualifying population requires same-lane endpoints, so an empty population trivially
+     scores 100 rather than meaning "already straight". Noted in `layout-qa/reglas.md` rule 4.
 
 ---
 

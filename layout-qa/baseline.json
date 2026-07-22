@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-07-22T03:59:00.758Z",
-  "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Hard rules are absolute and never stored here.",
+  "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Stores the full MetricsReport, including hard-rule fields - those are kept for reference only and are never used as a gate (hard rules are always checked against 0 directly, not against this file).",
   "diagrams": {
     "Compras": {
       "crossings": {
