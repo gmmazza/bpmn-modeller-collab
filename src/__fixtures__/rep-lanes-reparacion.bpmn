@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  rep_4_reparacion.bpmn — Etapa 4: Reparación (Novotec).
+  Proceso SIN pool ni lanes (single process, no collaboration).
+  A.3: inicio único none (los reingresos por garantía se derivan del maestro).
+-->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_rep_4"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:collaboration id="collab_1">
+    <bpmn:participant id="pool_1" name="4 · Reparación" processRef="proc_rep_4" />
+  </bpmn:collaboration>
+  <bpmn:process id="proc_rep_4" isExecutable="false">
+    <bpmn:laneSet id="laneset_1">
+      <bpmn:lane id="lane_taller" name="Taller">
+        <bpmn:flowNodeRef>st_in</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>t_repara</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_terc</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>gw_join_terc</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>end_rep</bpmn:flowNodeRef>
+      </bpmn:lane>
+      <bpmn:lane id="lane_terceros" name="Terceros">
+        <bpmn:flowNodeRef>t_tr_terc</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
+
+    <bpmn:startEvent id="st_in" name="◀ Listo para reparar">
+      <bpmn:outgoing>f_join_repara</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:task id="t_repara" name="Reparar mecánica (encamisado/eje/rodam.) + pintar">
+      <bpmn:incoming>f_join_repara</bpmn:incoming>
+      <bpmn:outgoing>f_repara_terc</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="gw_terc" name="¿Necesita tercero?" default="f_terc_no">
+      <bpmn:incoming>f_repara_terc</bpmn:incoming>
+      <bpmn:outgoing>f_terc_no</bpmn:outgoing>
+      <bpmn:outgoing>f_terc_si</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:task id="t_tr_terc" name="Llevar/traer de tercero (servocav, porco)">
+      <bpmn:incoming>f_terc_si</bpmn:incoming>
+      <bpmn:outgoing>f_tr_join</bpmn:outgoing>
+    </bpmn:task>
+
+    <bpmn:exclusiveGateway id="gw_join_terc" name="Mecánica y tercero resueltos" default="f_join_end">
+      <bpmn:incoming>f_terc_no</bpmn:incoming>
+      <bpmn:incoming>f_tr_join</bpmn:incoming>
+      <bpmn:outgoing>f_join_end</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:endEvent id="end_rep" name="Mecánica lista ▶ PaP final">
+      <bpmn:incoming>f_join_end</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="f_join_repara" sourceRef="st_in" targetRef="t_repara" />
+    <bpmn:sequenceFlow id="f_repara_terc" sourceRef="t_repara" targetRef="gw_terc" />
+    <bpmn:sequenceFlow id="f_terc_no" name="No" sourceRef="gw_terc" targetRef="gw_join_terc" />
+    <bpmn:sequenceFlow id="f_terc_si" name="Sí" sourceRef="gw_terc" targetRef="t_tr_terc" />
+    <bpmn:sequenceFlow id="f_tr_join" sourceRef="t_tr_terc" targetRef="gw_join_terc" />
+    <bpmn:sequenceFlow id="f_join_end" sourceRef="gw_join_terc" targetRef="end_rep" />
+
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="collab_1">
+      <bpmndi:BPMNShape id="pool_1_di" bpmnElement="pool_1" isHorizontal="true">
+        <dc:Bounds x="160" y="80" width="1008" height="320" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lane_taller_di" bpmnElement="lane_taller" isHorizontal="true">
+        <dc:Bounds x="190" y="80" width="978" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="lane_terceros_di" bpmnElement="lane_terceros" isHorizontal="true">
+        <dc:Bounds x="190" y="240" width="978" height="160" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="st_in_di" bpmnElement="st_in">
+        <dc:Bounds x="272" y="142" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="235" y="184" width="110" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_repara_di" bpmnElement="t_repara">
+        <dc:Bounds x="400" y="120" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_terc_di" bpmnElement="gw_terc" isMarkerVisible="true">
+        <dc:Bounds x="585" y="135" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="555" y="191" width="110" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_join_terc_di" bpmnElement="gw_join_terc" isMarkerVisible="true">
+        <dc:Bounds x="905" y="135" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="875" y="191" width="110" height="40" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_rep_di" bpmnElement="end_rep">
+        <dc:Bounds x="1072" y="142" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1035" y="184" width="110" height="27" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="t_tr_terc_di" bpmnElement="t_tr_terc">
+        <dc:Bounds x="720" y="280" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_join_repara_di" bpmnElement="f_join_repara">
+        <di:waypoint x="308" y="160" />
+        <di:waypoint x="400" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_repara_terc_di" bpmnElement="f_repara_terc">
+        <di:waypoint x="500" y="160" />
+        <di:waypoint x="585" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_terc_no_di" bpmnElement="f_terc_no">
+        <di:waypoint x="635" y="160" />
+        <di:waypoint x="905" y="160" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="742" y="138" width="56" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_terc_si_di" bpmnElement="f_terc_si">
+        <di:waypoint x="635" y="160" />
+        <di:waypoint x="690" y="160" />
+        <di:waypoint x="690" y="320" />
+        <di:waypoint x="720" y="320" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="662" y="233" width="56" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_tr_join_di" bpmnElement="f_tr_join">
+        <di:waypoint x="820" y="320" />
+        <di:waypoint x="850" y="320" />
+        <di:waypoint x="850" y="160" />
+        <di:waypoint x="905" y="160" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_join_end_di" bpmnElement="f_join_end">
+        <di:waypoint x="955" y="160" />
+        <di:waypoint x="1072" y="160" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

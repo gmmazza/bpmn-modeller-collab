@@ -38,6 +38,9 @@ blob-report/
 # QA seed data (disposable; regenerate with `npm run qa:seed`)
 qa-workspace/
 
+# Layout QA scratch output
+layout-qa/out/
+
 # App-generated process-docs convention file (written into WORKING folders by
 # ensureAgentsFile); not a repo artifact — appears here only if the repo root is
 # opened as a working folder.

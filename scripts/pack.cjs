@@ -15,7 +15,7 @@ const { packager } = require("@electron/packager");
 // `release-r*` / `release-new` dirs — otherwise they get swallowed into the asar and it
 // overflows the 4.2GB asar limit once a couple of them exist.
 const EXCLUDE =
-  /^[\\/](release[^\\/]*|node_modules|src|docs|e2e|coverage|scratchpad|build|test|test-results|playwright-report|playwright\.config\.ts|qa-workspace|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
+  /^[\\/](release[^\\/]*|node_modules|src|docs|e2e|coverage|scratchpad|build|test|test-results|playwright-report|playwright\.config\.ts|qa-workspace|layout-qa|\.git|\.vscode|\.superpowers|\.playwright-mcp|\.idea|dist[\\/].*\.map)([\\/]|$)/;
 
 packager({
   dir: ".",
