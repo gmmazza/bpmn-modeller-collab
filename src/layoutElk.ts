@@ -655,6 +655,21 @@ function renderMatrix(
     spread(up, b.y + 6, cy, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
     spread(down, cy, b.y + b.height - 6, (fe) => -cxOf(fe.targetRef.id), (fe, y) => exitY.set(fe.id, y), tieY);
   }
+  // >2 branches out of one gateway: pinning one straight and fanning the rest can leave two exits a
+  // couple of px apart (rep_2b gw_decide fired 3 at y 64/66/82 → the 64/66 connectors overprinted).
+  // Respace such a gateway's exits EVENLY, centred on cy, GW_EXIT_GAP apart (room for a label above
+  // each), PRESERVING the fan's crossing-minimising order — only the spacing changes, not who's
+  // where. GW_EXIT_GAP = ~14px label + breathing room.
+  const GW_EXIT_GAP = 22;
+  for (const [sid, list] of outBy) {
+    if (list.length < 3 || !GATEWAY_TYPES.has(list[0]?.sourceRef?.$type)) continue;
+    const b = nodeBounds.get(sid)!, cy = b.y + b.height / 2;
+    const ordered = [...list].sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
+    const minGap = Math.min(...ordered.slice(1).map((fe, i) => (exitY.get(fe.id) ?? cy) - (exitY.get(ordered[i].id) ?? cy)));
+    if (minGap >= GW_EXIT_GAP) continue; // already spread enough
+    const top = cy - ((ordered.length - 1) * GW_EXIT_GAP) / 2;
+    ordered.forEach((fe, i) => exitY.set(fe.id, top + i * GW_EXIT_GAP));
+  }
   for (const [tid, list] of inBy) {
     const b = nodeBounds.get(tid)!, cy = b.y + b.height / 2;
     const up: any[] = [], down: any[] = [];
@@ -703,13 +718,12 @@ function renderMatrix(
   for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k || a.k2 - b.k2); list.forEach((e, i) => e.set(i)); }
   for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
-  // Gateway branch labels ("Sí"/"No"/…): a clean column just right of the gateway. A gateway's
-  // outgoing edges leave its east face and fan out STAGGERED from the gateway centre downward
-  // (e.g. rep_2b gw_decide exits at y 64/66/82), so the whole label stack must sit just ABOVE the
-  // highest of those exit lines — otherwise a lower branch's label lands right on its own connector
-  // (seen in the exe). Anchoring the stack's bottom just above that line also keeps it hugging the
-  // gateway (an earlier row-top anchor floated the labels ~40px away). Ordered by exit Y so the top
-  // label belongs to the top branch; the labelPad gutter widening reserves the horizontal room.
+  // Gateway branch labels ("Sí"/"No"/…): each sits just ABOVE its own outgoing connector, right of
+  // the gateway, so a label never lands on a line. When a gateway has >2 branches the exits are
+  // spread GW_EXIT_GAP apart (see the port distribution above), so each label rides directly over
+  // its own exit — the most legible layout for a wide fan. With ≤2 branches the two exits are close
+  // (one is the straight main flow at the centre), so per-exit labels would overlap; there we stack
+  // the labels just above the highest exit line instead. The labelPad gutter reserves the width.
   const branchLabel = new Map<string, Pt>();
   {
     const bySrc = new Map<string, any[]>();
@@ -722,12 +736,20 @@ function renderMatrix(
     for (const [gid, list] of bySrc) {
       const b = nodeBounds.get(gid)!;
       const cy = b.y + b.height / 2;
+      const laneTop = laneY[nodeCell.get(gid)!.l];
+      if (list.length >= 3) {
+        for (const fe of list) {
+          const ey = exitY.get(fe.id) ?? cy;
+          branchLabel.set(fe.id, { x: b.x + b.width + 6, y: Math.max(laneTop + 2, ey - ABOVE - LINE_H) });
+        }
+        continue;
+      }
       list.sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
       const topExit = Math.min(...list.map((fe) => exitY.get(fe.id) ?? cy));
       const stackH = list.length * LINE_H + (list.length - 1) * BR_GAP;
-      // Bottom of the stack sits ABOVE px above the highest exit line; grow upward. Clamp the top to
-      // the lane band so a tall 3-branch stack near the band top can't escape the pool.
-      let y = Math.max(laneY[nodeCell.get(gid)!.l] + 2, topExit - ABOVE - stackH);
+      // Stack sits ABOVE px above the highest exit line, growing upward; clamp the top to the lane
+      // band so the stack can't escape the pool.
+      let y = Math.max(laneTop + 2, topExit - ABOVE - stackH);
       for (const fe of list) {
         branchLabel.set(fe.id, { x: b.x + b.width + 6, y });
         y += LINE_H + BR_GAP;

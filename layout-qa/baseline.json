@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T03:59:00.758Z",
+  "generatedAt": "2026-07-22T19:09:19.615Z",
   "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Stores the full MetricsReport, including hard-rule fields - those are kept for reference only and are never used as a gate (hard rules are always checked against 0 directly, not against this file).",
   "diagrams": {
     "Compras": {
@@ -145,9 +145,9 @@
     "rep_2b_motor_donante": {
       "crossings": {
         "hv": 2,
-        "hh": 0,
+        "hh": 1,
         "vv": 0,
-        "total": 2
+        "total": 3
       },
       "clips": {
         "horizontal": 0,
@@ -167,13 +167,13 @@
         "violations": 0
       },
       "straightness": {
-        "straightPct": 100,
-        "sameRowBends": 0,
-        "dodges": 0
+        "straightPct": 87.5,
+        "sameRowBends": 2,
+        "dodges": 2
       },
       "cohesion": {
-        "meanEdgeLength": 208.73333333333332,
-        "totalEdgeLength": 3131,
+        "meanEdgeLength": 210.06666666666666,
+        "totalEdgeLength": 3151,
         "bboxArea": 1022720
       }
     },

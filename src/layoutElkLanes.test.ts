@@ -133,11 +133,11 @@ const IS_GATEWAY = (t: string) => /Gateway$/.test(t);
 
 for (const { name, file } of FIXTURES) {
   describe(`gateway branch-label placement — ${name}`, () => {
-    // Per gateway with named outgoing flows: gateway centre, its branch labels' DI boxes, and the
-    // horizontal exit segments of its outgoing edges (first waypoint pair).
+    // Per gateway with named outgoing flows: gateway box, its branch labels' DI boxes, the
+    // horizontal exit segments, and every outgoing edge's exit-port Y (first waypoint).
     type Lab = { id: string; x: number; y: number; w: number; h: number };
     type Seg = { y: number; x0: number; x1: number };
-    let gateways: Array<{ gid: string; gcy: number; labels: Lab[]; exitSegs: Seg[] }>;
+    let gateways: Array<{ gid: string; top: number; bottom: number; labels: Lab[]; exitSegs: Seg[]; exitPorts: number[] }>;
 
     beforeAll(async () => {
       const src = readFileSync(file, "utf8");
@@ -148,10 +148,12 @@ for (const { name, file } of FIXTURES) {
       );
       const labelsBySrc = new Map<string, Lab[]>();
       const segsBySrc = new Map<string, Seg[]>();
+      const portsBySrc = new Map<string, number[]>();
       for (const e of edges) {
         const sid = e.bpmnElement?.sourceRef?.id;
         if (!sid || !gwBounds.has(sid)) continue;
         const wp = e.waypoint ?? [];
+        if (wp.length >= 1) (portsBySrc.get(sid) ?? portsBySrc.set(sid, []).get(sid)!).push(wp[0].y);
         if (wp.length >= 2 && Math.abs(wp[0].y - wp[1].y) < 1) // the horizontal exit run
           (segsBySrc.get(sid) ?? segsBySrc.set(sid, []).get(sid)!).push({ y: wp[0].y, x0: Math.min(wp[0].x, wp[1].x), x1: Math.max(wp[0].x, wp[1].x) });
         if (e.label?.bounds)
@@ -159,7 +161,7 @@ for (const { name, file } of FIXTURES) {
       }
       gateways = [...labelsBySrc].map(([gid, labels]) => {
         const b = gwBounds.get(gid)!;
-        return { gid, gcy: b.y + b.height / 2, labels: labels.sort((a, z) => a.y - z.y), exitSegs: segsBySrc.get(gid) ?? [] };
+        return { gid, top: b.y, bottom: b.y + b.height, labels: labels.sort((a, z) => a.y - z.y), exitSegs: segsBySrc.get(gid) ?? [], exitPorts: (portsBySrc.get(gid) ?? []).sort((a, z) => a - z) };
       });
     });
 
@@ -167,15 +169,15 @@ for (const { name, file } of FIXTURES) {
       expect(gateways.length).toBeGreaterThan(0);
     });
 
-    it("the branch-label stack hugs its gateway from just above (lowest label bottom within [cy-24, cy])", () => {
-      // The real criterion: the stack's bottom sits just above the gateway's exit line (≈ cy),
-      // close to the gateway. Catches BOTH failure modes — the row-top anchor left the lowest
-      // bottom far above cy (< cy-24), and centring dropped it below cy (onto/under the line).
+    it("gateway exit ports are spread >= 8px apart (>2-branch connectors don't overprint each other)", () => {
+      // The red-arrow bug: rep_2b's 3-way gateway fired two exits 2px apart (y 64/66), so their
+      // connectors overlapped. Exits must be distributed with real spacing.
       const offenders: string[] = [];
       for (const g of gateways) {
-        const lowestBottom = Math.max(...g.labels.map((l) => l.y + l.h));
-        if (lowestBottom < g.gcy - 24 || lowestBottom > g.gcy)
-          offenders.push(`${g.gid}: lowest label bottom ${Math.round(lowestBottom)} not in [${Math.round(g.gcy - 24)}, ${Math.round(g.gcy)}]`);
+        for (let i = 0; i < g.exitPorts.length - 1; i++) {
+          const d = g.exitPorts[i + 1] - g.exitPorts[i];
+          if (d < 8) offenders.push(`${g.gid}: exit ports ${Math.round(g.exitPorts[i])}/${Math.round(g.exitPorts[i + 1])} only ${Math.round(d)}px apart`);
+        }
       }
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
@@ -188,6 +190,20 @@ for (const { name, file } of FIXTURES) {
             const onLine = l.y <= s.y && s.y <= l.y + l.h && !(l.x + l.w < s.x0 || l.x > s.x1);
             if (onLine) { offenders.push(`${g.gid}: label ${l.id} [y ${Math.round(l.y)}..${Math.round(l.y + l.h)}] straddles exit line y=${Math.round(s.y)}`); break; }
           }
+        }
+      }
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+
+    it("branch labels stay next to their gateway (not floated off to the row top)", () => {
+      // Guards the "too far above" mode: labels must sit within the gateway's vertical neighbourhood
+      // (row-top anchoring floated them ~40px above). 28px above the top / 24px below the bottom
+      // covers a label just above the highest exit and one just above the lowest.
+      const offenders: string[] = [];
+      for (const g of gateways) {
+        for (const l of g.labels) {
+          if (l.y < g.top - 28 || l.y + l.h > g.bottom + 24)
+            offenders.push(`${g.gid}: label ${l.id} [y ${Math.round(l.y)}..${Math.round(l.y + l.h)}] outside gateway band [${Math.round(g.top - 28)}, ${Math.round(g.bottom + 24)}]`);
         }
       }
       expect(offenders, offenders.join("; ")).toEqual([]);
