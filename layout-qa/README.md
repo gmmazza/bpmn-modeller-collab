@@ -96,7 +96,7 @@ here.
 |---|---|---|---|---|---|
 | 0 | 2026-07-22 | Harness lands; baseline captured pre-fix over 12 real diagrams | 2 diagrams hard-violating: `rep_2b_motor_donante` (`lanes.violations`=5, `overlaps.total`=2), `flujo_reparaciones_novotec` (`overlaps.total`=3) | — (baseline itself) | `3ecdf8e` |
 | 1 | 2026-07-22 | T5 — dispatch all laned processes through `renderMatrix` (fixes lane containment) | `lanes.violations` 0 on all 12 diagrams (was 5 on `rep_2b_motor_donante`); 3 diagrams still hard-violating on `overlaps.total`=3 each: `flujo_reparaciones_novotec` (pre-existing, out of T5 scope), `rep_2_diagnostico` (**new** — `overlaps.labelNode` 0→3, exposed by the fix), `rep_2b_motor_donante` (`overlaps.labelLabel` 1→2) | Crossings/cohesion improved on most laned reps once lanes stopped scrambling them (e.g. `rep_2_diagnostico` crossings.total 21→0, `rep_2b_motor_donante` 8→4); one regression: `rep_5_pap_final` `cohesion.bboxArea` 66120→72960 (+6840) | `4413933` |
-| 2 | _pendiente_ | _(T6 — gateway branch-label overprint, `flujo_reparaciones` node overlaps, soft-metric tuning)_ | _pendiente_ | _pendiente_ | _pendiente_ |
+| 2 | 2026-07-22 | T6 — bounded improvement round: gateway branch-label column (real wrap-height stagger) + label-pad gutters; boundary-event re-spread + label-cascade clamp on the elk path; slot-hop bends on real gutter tracks + Y tiebreaks for X-tied fans; content-driven pool width | **0 on all 12 diagrams** (was 3 diagrams at `overlaps.total`=3); plain ratchet run exits 0 | `rep_2_diagnostico` overlaps 3→0; `rep_2b_motor_donante` overlaps 3→0 and crossings.total 4→2 (the 2 left are inherent same-gutter transit conflicts, see Backlog); `flujo_reparaciones_novotec` overlaps 3→0; `rep_5_pap_final` `cohesion.bboxArea` 72960→62720 (round-1 regression resolved, now under the old 66120 baseline). Cost accepted: label-pad gutters grow bboxArea where gateways have named branches (`rep_2` 374k→426k, `rep_2b` 847k→1023k — both far under their old baselines) | `803b51e`..`9b0ac12` |
 
 ## Backlog (deliberately deferred, not silently forgotten)
 
@@ -106,6 +106,13 @@ here.
   visually on the pre-fix renders. It's a deliberate `MetricsReport` contract extension
   (needs coordination before touching `computeMetrics`'s shape), not an oversight — the T6
   orchestrator explicitly scoped it OUT of this round. Also noted in `reglas.md`.
+- **Inherent same-gutter transit crossings (3 across the corpus, post-round-2).**
+  `rep_2b_motor_donante` keeps 2 crossings and `flujo_reparaciones_novotec` 1. The rep_2b
+  pair was proven order-unavoidable in the T6 analysis (`.superpowers/sdd/task-6-report.md`):
+  two flows must both fully transit the same 40px gutter with overlapping vertical extents —
+  every track assignment crosses once. Fixing them needs a router that can move a drop to a
+  DIFFERENT gutter (or a sub-row detour), i.e. the obstacle-avoiding router below, not more
+  sort keys.
 - **Obstacle-avoiding router (visibility-graph / A*).** Today's router is a topology-decided
   heuristic (`laneClear`), not a full obstacle-avoiding pathfinder — see
   `HANDOFF-autolayout.md` §4 item 4 and `graph-layout-ordering-principles` (project memory)
