@@ -718,15 +718,25 @@ function renderMatrix(
       if (fe.name && GATEWAY_TYPES.has(fe.sourceRef?.$type) && nodeBounds.has(fe.sourceRef.id))
         (bySrc.get(fe.sourceRef.id) ?? bySrc.set(fe.sourceRef.id, []).get(fe.sourceRef.id)!).push(fe);
     }
+    const BR_GAP = 10; // comfortable vertical gap between stacked branch labels — a 4px step read
+    // as overlap on rep_2b's 3-way gateway once the Modeler's font metrics grew the text a hair.
     for (const [gid, list] of bySrc) {
       const b = nodeBounds.get(gid)!;
       const cy = b.y + b.height / 2;
       list.sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
-      let y = cy - rowUnit[nodeCell.get(gid)!.l] / 2 + 2; // the gateway's row-top edge
-      for (const fe of list) {
+      // Hug the gateway: centre the label stack on the gateway's own vertical centre, NOT the row's
+      // top edge — a row of tall task nodes makes rowUnit large, which floated the labels ~40px
+      // above the gateway they annotate (estLabelH over-reserves for a possible 2-line wrap). But
+      // keep the stack's bottom above the gateway's lower edge, so a tall 3-branch stack can't push
+      // its last label down onto the gateway's own name label, which bpmn.io renders just below it.
+      const hs = list.map((fe) => estLabelH(fe.name));
+      const stackH = hs.reduce((a, h) => a + h, 0) + BR_GAP * (list.length - 1);
+      const ceilY = b.y + b.height - (stackH - hs[hs.length - 1]) - 14; // 14 = DI label height
+      let y = Math.min(cy - stackH / 2, ceilY);
+      list.forEach((fe, i) => {
         branchLabel.set(fe.id, { x: b.x + b.width + 6, y });
-        y += estLabelH(fe.name) + 4;
-      }
+        y += hs[i] + BR_GAP;
+      });
     }
   }
   for (const pl of plans) {

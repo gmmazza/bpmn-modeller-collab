@@ -417,7 +417,7 @@ async function runSweep(browser: Browser, opts: { updateBaseline: boolean }): Pr
     for (const r of results) if (r.after) diagrams[r.name] = r.after;
     const out: Baseline = {
       generatedAt: new Date().toISOString(),
-      note: "Soft-metric ratchet baseline for layout-qa (per diagram). Hard rules are absolute and never stored here.",
+      note: "Soft-metric ratchet baseline for layout-qa (per diagram). Stores the full MetricsReport, including hard-rule fields - those are kept for reference only and are never used as a gate (hard rules are always checked against 0 directly, not against this file).",
       diagrams,
     };
     writeFileSync(BASELINE_PATH, JSON.stringify(out, null, 2) + "\n");

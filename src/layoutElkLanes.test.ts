@@ -117,3 +117,71 @@ for (const { name, file } of FIXTURES) {
     });
   });
 }
+
+// Gateway branch-label placement (bug-first, 2026-07-22). After the lane fix shipped, the user
+// inspected the PACKAGED exe and found gateway branch labels ("Sí"/"No"/…) floated far ABOVE
+// their gateway — the matrix branch-label column anchored the stack at the row's TOP edge
+// (`cy - rowUnit/2`), which for a row of tall task nodes sits ~40px above the gateway — and on
+// the 3-way gateway in rep_2b_motor_donante two labels sat 4px apart and read as overlapping.
+// Root cause: the stack anchored at the row top and stepped by a fixed 4px gap. Fixed by
+// centering the stack on the gateway's own centre and using a comfortable gap. These invariants
+// work at the DI level (the label bounds ARE what the layouter controls) and reproduced both
+// defects pre-fix. Measured pre-fix (rep_2b gw_decide, gateway centre y=64): the 3 labels landed
+// at DI-y 2/34/52 → stack centre ~36 (28px above the gateway) and a 4px gap between the last two.
+const IS_GATEWAY = (t: string) => /Gateway$/.test(t);
+
+for (const { name, file } of FIXTURES) {
+  describe(`gateway branch-label placement — ${name}`, () => {
+    // Per gateway with named outgoing flows: the gateway's centre y and its branch labels' DI bounds.
+    let gateways: Array<{ gid: string; gcy: number; labels: Array<{ id: string; y: number; h: number; cy: number }> }>;
+
+    beforeAll(async () => {
+      const src = readFileSync(file, "utf8");
+      const out = await layoutDiagramElk(src);
+      const { shapes, edges } = await parseDi(out);
+      const gwBounds = new Map(
+        shapes.filter((s) => IS_GATEWAY(s.bpmnElement.$type)).map((s) => [s.bpmnElement.id, s.bounds]),
+      );
+      const bySrc = new Map<string, Array<{ id: string; y: number; h: number; cy: number }>>();
+      for (const e of edges) {
+        const fe = e.bpmnElement;
+        const sid = fe.sourceRef?.id;
+        if (!e.label?.bounds || !sid || !gwBounds.has(sid)) continue;
+        const lb = e.label.bounds;
+        (bySrc.get(sid) ?? bySrc.set(sid, []).get(sid)!).push({ id: fe.id, y: lb.y, h: lb.height, cy: lb.y + lb.height / 2 });
+      }
+      gateways = [...bySrc].map(([gid, labels]) => {
+        const b = gwBounds.get(gid)!;
+        return { gid, gcy: b.y + b.height / 2, labels: labels.sort((a, z) => a.y - z.y) };
+      });
+    });
+
+    it("has a gateway with branch labels (fixture sanity)", () => {
+      expect(gateways.length).toBeGreaterThan(0);
+    });
+
+    it("the branch-label stack hugs its gateway (stack centre within 15px of the gateway centre)", () => {
+      // 15px: a 2-branch stack centres exactly on the gateway; a 3-branch stack rides slightly high
+      // (~11px) because its bottom is clamped to clear the gateway's own name label. Pre-fix the
+      // stack sat 28-46px above the gateway (anchored to the tall row's top), so 15px still repros.
+      const offenders: string[] = [];
+      for (const g of gateways) {
+        const mean = g.labels.reduce((a, l) => a + l.cy, 0) / g.labels.length;
+        if (Math.abs(mean - g.gcy) > 15)
+          offenders.push(`${g.gid}: labels centre ${Math.round(mean)} vs gateway centre ${Math.round(g.gcy)} (Δ${Math.round(mean - g.gcy)}px)`);
+      }
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+
+    it("stacked branch labels of one gateway keep a >= 8px vertical gap (no cramping/overprint)", () => {
+      const offenders: string[] = [];
+      for (const g of gateways) {
+        for (let i = 0; i < g.labels.length - 1; i++) {
+          const gap = g.labels[i + 1].y - (g.labels[i].y + g.labels[i].h);
+          if (gap < 8) offenders.push(`${g.gid}: ${g.labels[i].id}->${g.labels[i + 1].id} gap ${Math.round(gap)}px`);
+        }
+      }
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+  });
+}
