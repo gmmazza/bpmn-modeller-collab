@@ -703,13 +703,13 @@ function renderMatrix(
   for (const list of gOrder.values()) { list.sort((a, b) => a.k - b.k || a.k2 - b.k2); list.forEach((e, i) => e.set(i)); }
   for (const list of sOrder.values()) { list.sort((a, b) => a.y - b.y); list.forEach((e, i) => e.set(i)); }
 
-  // Gateway branch labels: a clean column just right of the gateway, top-aligned to the row's
-  // top edge (the whitespace above the gateway's vertex, clear of the gateway's own name label
-  // below it), stacked with REAL wrap-height steps — a 120px-clamped label renders ~2 lines
-  // (~28px), so a fixed 18px step made stacked labels overprint (rep_2b). Ordered by exit Y so
-  // the top label belongs to the top branch. The labelPad gutter widening guarantees the column
-  // fits before the next node and the vertical tracks.
-  const estLabelH = (name: string) => 14 * Math.max(1, Math.ceil((name.length * 6.5) / 120));
+  // Gateway branch labels ("Sí"/"No"/…): a clean column just right of the gateway. A gateway's
+  // outgoing edges leave its east face and fan out STAGGERED from the gateway centre downward
+  // (e.g. rep_2b gw_decide exits at y 64/66/82), so the whole label stack must sit just ABOVE the
+  // highest of those exit lines — otherwise a lower branch's label lands right on its own connector
+  // (seen in the exe). Anchoring the stack's bottom just above that line also keeps it hugging the
+  // gateway (an earlier row-top anchor floated the labels ~40px away). Ordered by exit Y so the top
+  // label belongs to the top branch; the labelPad gutter widening reserves the horizontal room.
   const branchLabel = new Map<string, Pt>();
   {
     const bySrc = new Map<string, any[]>();
@@ -718,25 +718,20 @@ function renderMatrix(
       if (fe.name && GATEWAY_TYPES.has(fe.sourceRef?.$type) && nodeBounds.has(fe.sourceRef.id))
         (bySrc.get(fe.sourceRef.id) ?? bySrc.set(fe.sourceRef.id, []).get(fe.sourceRef.id)!).push(fe);
     }
-    const BR_GAP = 10; // comfortable vertical gap between stacked branch labels — a 4px step read
-    // as overlap on rep_2b's 3-way gateway once the Modeler's font metrics grew the text a hair.
+    const LINE_H = 14, BR_GAP = 8, ABOVE = 6; // LINE_H = DI label height; labels render single-line
     for (const [gid, list] of bySrc) {
       const b = nodeBounds.get(gid)!;
       const cy = b.y + b.height / 2;
       list.sort((a, z) => (exitY.get(a.id) ?? cy) - (exitY.get(z.id) ?? cy));
-      // Hug the gateway: centre the label stack on the gateway's own vertical centre, NOT the row's
-      // top edge — a row of tall task nodes makes rowUnit large, which floated the labels ~40px
-      // above the gateway they annotate (estLabelH over-reserves for a possible 2-line wrap). But
-      // keep the stack's bottom above the gateway's lower edge, so a tall 3-branch stack can't push
-      // its last label down onto the gateway's own name label, which bpmn.io renders just below it.
-      const hs = list.map((fe) => estLabelH(fe.name));
-      const stackH = hs.reduce((a, h) => a + h, 0) + BR_GAP * (list.length - 1);
-      const ceilY = b.y + b.height - (stackH - hs[hs.length - 1]) - 14; // 14 = DI label height
-      let y = Math.min(cy - stackH / 2, ceilY);
-      list.forEach((fe, i) => {
+      const topExit = Math.min(...list.map((fe) => exitY.get(fe.id) ?? cy));
+      const stackH = list.length * LINE_H + (list.length - 1) * BR_GAP;
+      // Bottom of the stack sits ABOVE px above the highest exit line; grow upward. Clamp the top to
+      // the lane band so a tall 3-branch stack near the band top can't escape the pool.
+      let y = Math.max(laneY[nodeCell.get(gid)!.l] + 2, topExit - ABOVE - stackH);
+      for (const fe of list) {
         branchLabel.set(fe.id, { x: b.x + b.width + 6, y });
-        y += hs[i] + BR_GAP;
-      });
+        y += LINE_H + BR_GAP;
+      }
     }
   }
   for (const pl of plans) {

@@ -118,22 +118,26 @@ for (const { name, file } of FIXTURES) {
   });
 }
 
-// Gateway branch-label placement (bug-first, 2026-07-22). After the lane fix shipped, the user
-// inspected the PACKAGED exe and found gateway branch labels ("Sí"/"No"/…) floated far ABOVE
-// their gateway — the matrix branch-label column anchored the stack at the row's TOP edge
-// (`cy - rowUnit/2`), which for a row of tall task nodes sits ~40px above the gateway — and on
-// the 3-way gateway in rep_2b_motor_donante two labels sat 4px apart and read as overlapping.
-// Root cause: the stack anchored at the row top and stepped by a fixed 4px gap. Fixed by
-// centering the stack on the gateway's own centre and using a comfortable gap. These invariants
-// work at the DI level (the label bounds ARE what the layouter controls) and reproduced both
-// defects pre-fix. Measured pre-fix (rep_2b gw_decide, gateway centre y=64): the 3 labels landed
-// at DI-y 2/34/52 → stack centre ~36 (28px above the gateway) and a 4px gap between the last two.
+// Gateway branch-label placement (bug-first, 2026-07-22, refined after exe inspection). The
+// matrix branch-label column must sit CLOSE to its gateway but ABOVE the gateway's outgoing
+// connector lines — two failure modes, both seen in the packaged exe:
+//   (1) too FAR: the original stack anchored at the row's top edge (`cy - rowUnit/2`), which for
+//       a row of tall task nodes floats the labels ~40px above the gateway they annotate; and
+//   (2) ON the line: a later fix centred the stack on the gateway, which dropped the lower
+//       branch's label straight onto its horizontal exit segment (rep_2's "Sí, ya la tiene" and
+//       rep_2b's "Descartar" struck through by their own connector).
+// The gateways' exits fan out staggered from cy downward (e.g. rep_2b gw_decide: 64/66/82), so the
+// whole stack must live just ABOVE the highest exit line. These invariants work at the DI level
+// (label bounds + edge waypoints ARE what the layouter controls) and reproduce both modes.
 const IS_GATEWAY = (t: string) => /Gateway$/.test(t);
 
 for (const { name, file } of FIXTURES) {
   describe(`gateway branch-label placement — ${name}`, () => {
-    // Per gateway with named outgoing flows: the gateway's centre y and its branch labels' DI bounds.
-    let gateways: Array<{ gid: string; gcy: number; labels: Array<{ id: string; y: number; h: number; cy: number }> }>;
+    // Per gateway with named outgoing flows: gateway centre, its branch labels' DI boxes, and the
+    // horizontal exit segments of its outgoing edges (first waypoint pair).
+    type Lab = { id: string; x: number; y: number; w: number; h: number };
+    type Seg = { y: number; x0: number; x1: number };
+    let gateways: Array<{ gid: string; gcy: number; labels: Lab[]; exitSegs: Seg[] }>;
 
     beforeAll(async () => {
       const src = readFileSync(file, "utf8");
@@ -142,17 +146,20 @@ for (const { name, file } of FIXTURES) {
       const gwBounds = new Map(
         shapes.filter((s) => IS_GATEWAY(s.bpmnElement.$type)).map((s) => [s.bpmnElement.id, s.bounds]),
       );
-      const bySrc = new Map<string, Array<{ id: string; y: number; h: number; cy: number }>>();
+      const labelsBySrc = new Map<string, Lab[]>();
+      const segsBySrc = new Map<string, Seg[]>();
       for (const e of edges) {
-        const fe = e.bpmnElement;
-        const sid = fe.sourceRef?.id;
-        if (!e.label?.bounds || !sid || !gwBounds.has(sid)) continue;
-        const lb = e.label.bounds;
-        (bySrc.get(sid) ?? bySrc.set(sid, []).get(sid)!).push({ id: fe.id, y: lb.y, h: lb.height, cy: lb.y + lb.height / 2 });
+        const sid = e.bpmnElement?.sourceRef?.id;
+        if (!sid || !gwBounds.has(sid)) continue;
+        const wp = e.waypoint ?? [];
+        if (wp.length >= 2 && Math.abs(wp[0].y - wp[1].y) < 1) // the horizontal exit run
+          (segsBySrc.get(sid) ?? segsBySrc.set(sid, []).get(sid)!).push({ y: wp[0].y, x0: Math.min(wp[0].x, wp[1].x), x1: Math.max(wp[0].x, wp[1].x) });
+        if (e.label?.bounds)
+          (labelsBySrc.get(sid) ?? labelsBySrc.set(sid, []).get(sid)!).push({ id: e.bpmnElement.id, x: e.label.bounds.x, y: e.label.bounds.y, w: e.label.bounds.width, h: e.label.bounds.height });
       }
-      gateways = [...bySrc].map(([gid, labels]) => {
+      gateways = [...labelsBySrc].map(([gid, labels]) => {
         const b = gwBounds.get(gid)!;
-        return { gid, gcy: b.y + b.height / 2, labels: labels.sort((a, z) => a.y - z.y) };
+        return { gid, gcy: b.y + b.height / 2, labels: labels.sort((a, z) => a.y - z.y), exitSegs: segsBySrc.get(gid) ?? [] };
       });
     });
 
@@ -160,15 +167,28 @@ for (const { name, file } of FIXTURES) {
       expect(gateways.length).toBeGreaterThan(0);
     });
 
-    it("the branch-label stack hugs its gateway (stack centre within 15px of the gateway centre)", () => {
-      // 15px: a 2-branch stack centres exactly on the gateway; a 3-branch stack rides slightly high
-      // (~11px) because its bottom is clamped to clear the gateway's own name label. Pre-fix the
-      // stack sat 28-46px above the gateway (anchored to the tall row's top), so 15px still repros.
+    it("the branch-label stack hugs its gateway from just above (lowest label bottom within [cy-24, cy])", () => {
+      // The real criterion: the stack's bottom sits just above the gateway's exit line (≈ cy),
+      // close to the gateway. Catches BOTH failure modes — the row-top anchor left the lowest
+      // bottom far above cy (< cy-24), and centring dropped it below cy (onto/under the line).
       const offenders: string[] = [];
       for (const g of gateways) {
-        const mean = g.labels.reduce((a, l) => a + l.cy, 0) / g.labels.length;
-        if (Math.abs(mean - g.gcy) > 15)
-          offenders.push(`${g.gid}: labels centre ${Math.round(mean)} vs gateway centre ${Math.round(g.gcy)} (Δ${Math.round(mean - g.gcy)}px)`);
+        const lowestBottom = Math.max(...g.labels.map((l) => l.y + l.h));
+        if (lowestBottom < g.gcy - 24 || lowestBottom > g.gcy)
+          offenders.push(`${g.gid}: lowest label bottom ${Math.round(lowestBottom)} not in [${Math.round(g.gcy - 24)}, ${Math.round(g.gcy)}]`);
+      }
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+
+    it("no branch label overprints the gateway's outgoing connector lines", () => {
+      const offenders: string[] = [];
+      for (const g of gateways) {
+        for (const l of g.labels) {
+          for (const s of g.exitSegs) {
+            const onLine = l.y <= s.y && s.y <= l.y + l.h && !(l.x + l.w < s.x0 || l.x > s.x1);
+            if (onLine) { offenders.push(`${g.gid}: label ${l.id} [y ${Math.round(l.y)}..${Math.round(l.y + l.h)}] straddles exit line y=${Math.round(s.y)}`); break; }
+          }
+        }
       }
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
