@@ -18,10 +18,22 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
   **"opciones de organización"** dropdown: **"Reorganizar solo la selección"** and the backup.
   Layout is **horizontal-only** — the earlier selectable vertical / árbol (tree) variants and
   their `localStorage` persistence were removed.
-- **Three diagram shapes handled:**
-  - **Plain single process** → elk layered layout (clean, high quality).
-  - **Swimlanes (pools/lanes, no phase groups)** → `renderProcess` (elk seeded-Y).
-  - **Matrix (lanes × phase groups)** → `renderMatrix` (custom, elk can't do 2-D matrices).
+- **Two diagram shapes handled today** (was three — the seeded-Y lane path was removed, see
+  the fix note right below):
+  - **Plain process, no lanes** → `renderProcess` (elk layered layout, clean, high quality).
+  - **Any laned process** — plain swimlanes or lanes × phase groups alike → `renderMatrix`
+    (hard Y bands by construction; zero phase groups degenerates cleanly to a single phase,
+    no engine fork needed).
+  - **Fixed 2026-07-22** (commit `4413933`, branch `fix/lanes-layout-qa`): laned processes
+    with NO phase groups used to take `renderProcess`'s elk-INTERACTIVE "seeded-Y" path —
+    each node got `y = laneIndex * 200` as a hint, elk's interactive placement could still
+    interleave nodes past that hint, and lane bands were DERIVED afterwards from wherever
+    members actually landed. Real-fixture symptom (`rep_2b_motor_donante`): 5 nodes escaped
+    their lane, one band came out inverted (-61px), and the band union stopped tiling the
+    pool (dead strip below + overflow above). Fix: dispatch every laned process through
+    `renderMatrix` regardless of phase groups; the seeded-Y lane code in `renderProcess` was
+    deleted (it now always returns `laneBands: []`). Standard verification loop for this
+    class of bug is now `npm run layout:qa` — see §5.
 - **Undoable** everywhere: coarse-undo snapshot in the main editor; one-slot snapshot in the
   master pane; `modeling.moveElements` (native) for reorganize-selection. `Ctrl+Z` reverts.
 - **Preserves:** shape colors (`bioc:fill`/`stroke` — reuses old DI shapes), `bpmn:Group`
@@ -41,7 +53,7 @@ history lives in the auto-memory `d-autolayout-status.md` if you need it.
 - **`src/layoutElk.ts`** — the main engine. Key functions:
   - `layoutDiagramElk(xml)` — entry; dispatches collaboration → `layoutCollaborationElk`.
   - `LAYOUT_OPTIONS` — the single horizontal (left→right) elk option set (no variants).
-  - `renderProcess(...)` — single process / plain swimlane (elk seeded-Y + INTERACTIVE nodePlacement).
+  - `renderProcess(...)` — plain process, no lanes (elk layered layout).
   - **`renderMatrix(process, groups, ...)`** — the matrix layouter (see §3). This is where the
     active refinement is.
   - `layoutCollaborationElk(...)` — pools; picks `renderMatrix` when groups exist, else `renderProcess`.
@@ -107,14 +119,37 @@ crossings but re-layouts nodes (~409px drift) → cannot be used to route on fix
 
 1. ~~**Channel bands look dense.**~~ **RESOLVED in RONDA 16** — replaced the top-exit channel
    router with compact side routing (see §3); lane bands no longer inflate.
-2. **14 horizontal-clip crossings** on the real fixture (accepted trade-off for compactness).
+2. ~~**Laned processes without phase groups scrambled lanes (seeded-Y bug).**~~ **RESOLVED
+   2026-07-22** (commit `4413933`) — see §1. All laned processes now route through
+   `renderMatrix`; the seeded-Y lane path in `renderProcess` was deleted. Permanent
+   regression coverage: `src/layoutElkLanes.test.ts` (6 lane invariants × 3 real fixtures)
+   + `npm run layout:qa` (see §5).
+3. **Gateway branch-label overprint on tight matrix fine-columns.** The 2026-07-22 lane fix
+   exposed a residual label class: `branchLabelPos`'s gateway branch labels can overprint the
+   next fine-column's node/label now that lanes route through the tighter matrix columns —
+   measured on `rep_2_diagnostico` (`overlaps.labelNode` 0→3) and `rep_2b_motor_donante`
+   (`overlaps.labelLabel` 1→2). Being worked in a parallel round — see the round log in
+   `layout-qa/README.md`.
+4. **14 horizontal-clip crossings** on the real fixture (accepted trade-off for compactness).
    If zero crossings are wanted back WITHOUT inflating bands, the next step is a real
    obstacle-avoiding router (visibility-graph / A* over the gutter×row grid) — the big piece.
-3. **Backup engine (bpmn-auto-layout) loses colors/groups** — port the old-shape-reuse trick
+   Tracked as `clips.horizontal` (soft) in `layout-qa`; see `layout-qa/reglas.md` rule 11.
+5. **Backup engine (bpmn-auto-layout) loses colors/groups** — port the old-shape-reuse trick
    from `layoutElk` into `layoutTidy` if the backup needs parity.
-4. **Reorganize-selection happy path** is only unit-tested (`layoutSubgraphElk`); the e2e tests
+6. **Reorganize-selection happy path** is only unit-tested (`layoutSubgraphElk`); the e2e tests
    the guard (clicking bpmn-js shapes in e2e is flaky — the Token Simulation `.bts-toggle-mode`
    overlays the top-left). If you want an e2e happy path, drive selection via evaluate/hook.
+7. **Edge×label clip metric not implemented.** `layout-qa`'s `clips.*` only detects a
+   connector clipping through a *node*; a connector clipping through a *label*'s rendered
+   text isn't measured yet (seen visually on pre-fix renders, T4 diagnosis). Deliberate
+   `MetricsReport` contract extension, deferred — see `layout-qa/reglas.md` ("métricas
+   futuras") and `layout-qa/README.md` (backlog).
+8. **Mixed-collaboration `matrixMode` scoping (latent, unexercised).** In a multi-participant
+   collaboration, `layoutCollaborationElk` computes `matrixMode` from the collaboration's
+   phase groups globally and can pass those groups into a participant that only has lanes of
+   its own, no groups. No corpus diagram exercises mixed matrix + lanes-only pools in one
+   collaboration today, so it's harmless — but worth a comment or a per-participant group
+   filter before it is.
 
 ---
 
@@ -123,6 +158,16 @@ crossings but re-layouts nodes (~409px drift) → cannot be used to route on fix
 **QA rule for this account:** validate against the REAL fixture and inspect the real generated
 output — synthetic green tests hid real defects here (see git history). Techniques:
 
+- **Standard loop (2026-07-22 on): `npm run layout:qa`.** Renders EVERY real `qa-workspace`
+  diagram before/after auto-layout with real bpmn-js in headless Chromium, scores each
+  against the 12 rules in `layout-qa/reglas.md` via objective geometry metrics
+  (`src/layoutMetrics.ts`), and gates hard rules (tolerance 0) plus soft-metric regressions
+  against a committed ratchet baseline (`layout-qa/baseline.json`). Produces before/after
+  PNGs and `layout-qa/out/report.md` for eyeball review. This is now the default
+  verification loop for anything already in `qa-workspace` — see `layout-qa/README.md` for
+  the full ratchet workflow (measure → fix → re-measure → eyeball PNGs → update baseline).
+  The techniques below remain useful for a diagram NOT in `qa-workspace`, or a quick one-off
+  probe.
 - **Full checks:** `npm test` (Vitest), `npm run typecheck`, `npm run build`.
 - **Real-fixture regression:** `npx vitest run src/layoutElkReal.test.ts` — asserts: a shape per
   node, an edge per flow, a label per named flow, **0 node/lane/group overlaps**, non-overlapping
