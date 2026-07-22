@@ -232,16 +232,40 @@ async function renderProcess(
     if (!perHostBoundaries.has(hid)) perHostBoundaries.set(hid, []);
     perHostBoundaries.get(hid)!.push({ fe, shape, b });
   }
+  // elk distributes FIXED_SIDE ports evenly across the host's side, so N ports on a narrow
+  // host land closer than a circle's width and the events overlap (flujo: 4 events 26px
+  // apart -> 3 nodeNode overlaps). Re-spread such a host's circles along its bottom edge
+  // with a min centre gap, centred on the host — they may overhang its corners slightly,
+  // like renderMatrix's distribution does.
+  const B_GAP = 44; // 36px circle + clearance
+  for (const [hid, list] of perHostBoundaries) {
+    if (list.length < 2) continue;
+    list.sort((a, z) => a.b.x - z.b.x);
+    const centres = list.map((e) => e.b.x + e.b.width / 2);
+    if (!centres.slice(1).some((c, i) => c - centres[i] < B_GAP - 4)) continue; // elk spacing already clear
+    const hb = nodeBounds.get(hid);
+    if (!hb) continue;
+    const start = hb.x + hb.width / 2 - ((list.length - 1) * B_GAP) / 2;
+    list.forEach((e, i) => {
+      e.b.x = start + i * B_GAP - e.b.width / 2; // b is shared with nodeBounds/boundaryBounds
+      e.shape.bounds = bounds(e.b.x, e.b.y, e.b.width, e.b.height);
+    });
+  }
   // Several boundary events can share one host's edge (a Call Activity with N escalation
   // outcomes). A fixed centred-below label overprints its siblings, so cascade each label a
   // row lower — ordered left→right by the circle's x — so the N outcome names stack readably
-  // instead of piling on one point (mirrors the outcome-pill stagger in masterPane.ts).
-  for (const list of perHostBoundaries.values()) {
+  // instead of piling on one point (mirrors the outcome-pill stagger in masterPane.ts). Each
+  // label is also clamped to the host's x-footprint (+20): a centred label under a re-spread
+  // rightmost circle pokes into the NEXT elk layer's nodes (flujo's "Sigue con alternativo"
+  // onto the end-event column), which sits closer than a label's half-width.
+  for (const [hid, list] of perHostBoundaries) {
+    const hb = nodeBounds.get(hid);
     list.sort((a, z) => a.b.x - z.b.x);
     list.forEach(({ fe, shape, b }, i) => {
       if (!fe?.name) return;
       const lw = labelWidth(fe.name);
-      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(b.x + b.width / 2 - lw / 2, b.y + b.height + 4 + i * BLABEL_STEP, lw, 14) });
+      const lx = Math.min(b.x + b.width / 2 - lw / 2, hb ? hb.x + hb.width + 20 - lw : Infinity);
+      shape.label = moddle.create("bpmndi:BPMNLabel", { bounds: bounds(lx, b.y + b.height + 4 + i * BLABEL_STEP, lw, 14) });
     });
   }
 
@@ -258,7 +282,16 @@ async function renderProcess(
       pts = [{ x: sB.x + sB.width / 2, y: sB.y + sB.height / 2 }, { x: tB.x + tB.width / 2, y: tB.y + tB.height / 2 }];
     }
     const bc = boundaryBounds.get(e.sources[0]);
-    if (bc) pts[0] = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
+    if (bc) {
+      const c = { x: bc.x + bc.width / 2, y: bc.y + bc.height / 2 };
+      // The circle may have been re-spread away from elk's port — carry the move into the
+      // first bend so the opening segment stays orthogonal (the final point never moves).
+      if (pts.length > 2) {
+        if (Math.abs(pts[0].x - pts[1].x) < 1) pts[1] = { x: c.x, y: pts[1].y };
+        else if (Math.abs(pts[0].y - pts[1].y) < 1) pts[1] = { x: pts[1].x, y: c.y };
+      }
+      pts[0] = c;
+    }
     const edge = shapeById.get(e.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${e.id}_di`, bpmnElement: e._fe });
     edge.waypoint = pts.map((p) => moddle.create("dc:Point", { x: Math.round(p.x), y: Math.round(p.y) }));
     if (e._fe.name) {
