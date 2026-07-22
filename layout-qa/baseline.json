@@ -1,0 +1,426 @@
+{
+  "generatedAt": "2026-07-22T02:41:59.188Z",
+  "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Hard rules are absolute and never stored here.",
+  "diagrams": {
+    "Compras": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 75,
+        "totalEdgeLength": 300,
+        "bboxArea": 58692
+      }
+    },
+    "flujo_reparaciones_novotec": {
+      "crossings": {
+        "hv": 1,
+        "hh": 0,
+        "vv": 0,
+        "total": 1
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 3,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 3
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 173.89473684210526,
+        "totalEdgeLength": 3304,
+        "bboxArea": 848514
+      }
+    },
+    "rep_1_recepcion": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 171,
+        "totalEdgeLength": 684,
+        "bboxArea": 358104
+      }
+    },
+    "rep_2_diagnostico": {
+      "crossings": {
+        "hv": 9,
+        "hh": 9,
+        "vv": 3,
+        "total": 21
+      },
+      "clips": {
+        "horizontal": 6,
+        "vertical": 0,
+        "total": 6
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 311.90909090909093,
+        "totalEdgeLength": 3431,
+        "bboxArea": 488536
+      }
+    },
+    "rep_2b_motor_donante": {
+      "crossings": {
+        "hv": 7,
+        "hh": 1,
+        "vv": 0,
+        "total": 8
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 1,
+        "labelNode": 1,
+        "total": 2
+      },
+      "lanes": {
+        "outOfLane": 5,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 5
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 312.06666666666666,
+        "totalEdgeLength": 4681,
+        "bboxArea": 1171110
+      }
+    },
+    "rep_3_presupuesto": {
+      "crossings": {
+        "hv": 2,
+        "hh": 0,
+        "vv": 0,
+        "total": 2
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 361.85714285714283,
+        "totalEdgeLength": 2533,
+        "bboxArea": 956304
+      }
+    },
+    "rep_4_reparacion": {
+      "crossings": {
+        "hv": 2,
+        "hh": 0,
+        "vv": 0,
+        "total": 2
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 0,
+        "sameRowBends": 6,
+        "dodges": 6
+      },
+      "cohesion": {
+        "meanEdgeLength": 205.66666666666666,
+        "totalEdgeLength": 1234,
+        "bboxArea": 263544
+      }
+    },
+    "rep_5_pap_final": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 82,
+        "totalEdgeLength": 164,
+        "bboxArea": 66120
+      }
+    },
+    "rep_6_entrega": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 271,
+        "totalEdgeLength": 1084,
+        "bboxArea": 496904
+      }
+    },
+    "rep_7_garantia": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 303.75,
+        "totalEdgeLength": 1215,
+        "bboxArea": 290252
+      }
+    },
+    "RRHH": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 60,
+        "totalEdgeLength": 120,
+        "bboxArea": 23360
+      }
+    },
+    "B2B": {
+      "crossings": {
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
+      },
+      "clips": {
+        "horizontal": 0,
+        "vertical": 0,
+        "total": 0
+      },
+      "overlaps": {
+        "nodeNode": 0,
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
+      },
+      "lanes": {
+        "outOfLane": 0,
+        "bandOverlaps": 0,
+        "missingLaneShapes": 0,
+        "violations": 0
+      },
+      "straightness": {
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
+      },
+      "cohesion": {
+        "meanEdgeLength": 60,
+        "totalEdgeLength": 120,
+        "bboxArea": 23360
+      }
+    }
+  }
+}
