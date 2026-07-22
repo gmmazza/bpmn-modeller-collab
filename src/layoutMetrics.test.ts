@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   computeMetrics,
   edgeEdgeCrossings,
@@ -382,5 +383,48 @@ describe("computeMetrics", () => {
     expect(report.lanes).toEqual(laneContainment(scene));
     expect(report.straightness).toEqual(straightness(scene));
     expect(report.cohesion).toEqual(cohesion(scene));
+  });
+});
+
+describe("computeMetrics on the real Novotec matrix scene", () => {
+  // Real bpmn-js extraction (elementRegistry geometry + waypoints + real SVG-measured label
+  // boxes) of the layouted src/__fixtures__/novotec-matrix.bpmn — produced by the layout-qa
+  // harness (scripts/layout-qa.ts). Synthetic unit cases pass while real output still has
+  // defects, so this is what actually catches those. `new URL(...)` does NOT resolve under
+  // Vitest for this repo (see src/layoutElkReal.test.ts:12) — cwd-relative readFileSync does.
+  const REAL_SCENE: Scene = JSON.parse(readFileSync("src/__fixtures__/scene-novotec-matrix.json", "utf8"));
+  const report = computeMetrics(REAL_SCENE);
+
+  it("extracted the expected element counts (extraction/contract drift guard)", () => {
+    expect(REAL_SCENE.nodes.length).toBe(42);
+    expect(REAL_SCENE.edges.length).toBe(43);
+    expect(REAL_SCENE.lanes.length).toBe(7);
+    expect(REAL_SCENE.labels.length).toBe(35);
+    expect(Object.keys(REAL_SCENE.laneAssignment).length).toBeGreaterThan(0);
+  });
+
+  it("holds every hard rule (lane containment, node overlap, vertical clips) at zero", () => {
+    // This is a known-good matrix layout (renderMatrix's guaranteed-by-construction rules 1-2).
+    // If any of these is non-zero here, that's a real defect in the layouter/extraction, not a
+    // test problem — the assertion must stay tight at 0, never loosened to "make it pass".
+    expect(report.lanes.violations).toBe(0);
+    expect(report.overlaps.nodeNode).toBe(0);
+    expect(report.clips.vertical).toBe(0);
+  });
+
+  it("pins the measured soft-metric values as a geometry-drift regression guard", () => {
+    // Measured once from this static, committed fixture (via computeMetrics(REAL_SCENE), see
+    // task-2-report.md for the capture command) — pinned so the test fails the moment metric
+    // geometry (crossing/clip logic) drifts, even though the fixture itself never changes.
+    expect(report.crossings).toEqual({ hv: 10, hh: 0, vv: 0, total: 10 });
+    expect(report.clips.horizontal).toBe(0);
+    expect(report.straightness).toEqual({ straightPct: 100, sameRowBends: 0, dodges: 0 });
+  });
+
+  it("keeps the remaining metrics within sane structural bounds", () => {
+    expect(report.straightness.straightPct).toBeGreaterThanOrEqual(0);
+    expect(report.straightness.straightPct).toBeLessThanOrEqual(100);
+    expect(report.cohesion.meanEdgeLength).toBeGreaterThan(0);
+    expect(report.cohesion.bboxArea).toBeGreaterThan(0);
   });
 });
