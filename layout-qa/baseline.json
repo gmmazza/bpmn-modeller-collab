@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T02:41:59.188Z",
+  "generatedAt": "2026-07-22T03:59:00.758Z",
   "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Hard rules are absolute and never stored here.",
   "diagrams": {
     "Compras": {
@@ -50,10 +50,10 @@
         "total": 0
       },
       "overlaps": {
-        "nodeNode": 3,
+        "nodeNode": 0,
         "labelLabel": 0,
         "labelNode": 0,
-        "total": 3
+        "total": 0
       },
       "lanes": {
         "outOfLane": 0,
@@ -102,22 +102,22 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 171,
-        "totalEdgeLength": 684,
-        "bboxArea": 358104
+        "meanEdgeLength": 98,
+        "totalEdgeLength": 392,
+        "bboxArea": 295680
       }
     },
     "rep_2_diagnostico": {
       "crossings": {
-        "hv": 9,
-        "hh": 9,
-        "vv": 3,
-        "total": 21
+        "hv": 0,
+        "hh": 0,
+        "vv": 0,
+        "total": 0
       },
       "clips": {
-        "horizontal": 6,
+        "horizontal": 0,
         "vertical": 0,
-        "total": 6
+        "total": 0
       },
       "overlaps": {
         "nodeNode": 0,
@@ -137,17 +137,17 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 311.90909090909093,
-        "totalEdgeLength": 3431,
-        "bboxArea": 488536
+        "meanEdgeLength": 238.45454545454547,
+        "totalEdgeLength": 2623,
+        "bboxArea": 425716
       }
     },
     "rep_2b_motor_donante": {
       "crossings": {
-        "hv": 7,
-        "hh": 1,
+        "hv": 2,
+        "hh": 0,
         "vv": 0,
-        "total": 8
+        "total": 2
       },
       "clips": {
         "horizontal": 0,
@@ -156,15 +156,15 @@
       },
       "overlaps": {
         "nodeNode": 0,
-        "labelLabel": 1,
-        "labelNode": 1,
-        "total": 2
+        "labelLabel": 0,
+        "labelNode": 0,
+        "total": 0
       },
       "lanes": {
-        "outOfLane": 5,
+        "outOfLane": 0,
         "bandOverlaps": 0,
         "missingLaneShapes": 0,
-        "violations": 5
+        "violations": 0
       },
       "straightness": {
         "straightPct": 100,
@@ -172,17 +172,17 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 312.06666666666666,
-        "totalEdgeLength": 4681,
-        "bboxArea": 1171110
+        "meanEdgeLength": 208.73333333333332,
+        "totalEdgeLength": 3131,
+        "bboxArea": 1022720
       }
     },
     "rep_3_presupuesto": {
       "crossings": {
-        "hv": 2,
+        "hv": 0,
         "hh": 0,
         "vv": 0,
-        "total": 2
+        "total": 0
       },
       "clips": {
         "horizontal": 0,
@@ -207,17 +207,17 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 361.85714285714283,
-        "totalEdgeLength": 2533,
-        "bboxArea": 956304
+        "meanEdgeLength": 199,
+        "totalEdgeLength": 1393,
+        "bboxArea": 637450
       }
     },
     "rep_4_reparacion": {
       "crossings": {
-        "hv": 2,
+        "hv": 0,
         "hh": 0,
         "vv": 0,
-        "total": 2
+        "total": 0
       },
       "clips": {
         "horizontal": 0,
@@ -237,14 +237,14 @@
         "violations": 0
       },
       "straightness": {
-        "straightPct": 0,
-        "sameRowBends": 6,
-        "dodges": 6
+        "straightPct": 100,
+        "sameRowBends": 0,
+        "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 205.66666666666666,
-        "totalEdgeLength": 1234,
-        "bboxArea": 263544
+        "meanEdgeLength": 133,
+        "totalEdgeLength": 798,
+        "bboxArea": 235264
       }
     },
     "rep_5_pap_final": {
@@ -277,9 +277,9 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 82,
-        "totalEdgeLength": 164,
-        "bboxArea": 66120
+        "meanEdgeLength": 62,
+        "totalEdgeLength": 124,
+        "bboxArea": 62720
       }
     },
     "rep_6_entrega": {
@@ -312,9 +312,9 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 271,
-        "totalEdgeLength": 1084,
-        "bboxArea": 496904
+        "meanEdgeLength": 151.5,
+        "totalEdgeLength": 606,
+        "bboxArea": 364980
       }
     },
     "rep_7_garantia": {
@@ -347,9 +347,9 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 303.75,
-        "totalEdgeLength": 1215,
-        "bboxArea": 290252
+        "meanEdgeLength": 136,
+        "totalEdgeLength": 544,
+        "bboxArea": 206298
       }
     },
     "RRHH": {
