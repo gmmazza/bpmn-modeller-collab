@@ -763,22 +763,44 @@ function renderMatrix(
     for (const fe of (inBy.get(targetId) ?? [])) entryY.set(fe.id, exitY.get(fe.id) ?? y);
   }
 
-  // Gateway branch labels ("Sí"/"No"/…): each rides just ABOVE its OWN outgoing connector, right of
-  // the gateway. The fan-out spread above already separated the exits by GW_EXIT_GAP (≥ a label +
-  // gap), so a per-exit label is legible for every fan size and never lands on a line or a sibling.
-  // Clamp the top to the lane band so a label near the band top can't escape the pool.
+  // Gateway branch labels ("Sí"/"No"/…): each hugs its OWN outgoing connector, right of the
+  // gateway — box bottom exactly 1px above the line (6px read as "muy separadas" in the exe). If
+  // the lane top leaves no room above, the box top goes 1px BELOW the line instead (never clamp
+  // the label down onto the line). GW_EXIT_GAP keeps siblings from overprinting either way.
   const branchLabel = new Map<string, Pt>();
   {
-    const LINE_H = 14, ABOVE = 6; // LINE_H = DI label height; labels render single-line
+    const LINE_H = 14, GAP = 1; // LINE_H = DI label height; labels render single-line
     for (const pl of plans) {
       const fe = pl.fe;
       if (!fe.name || !GATEWAY_TYPES.has(fe.sourceRef?.$type)) continue;
       const b = nodeBounds.get(fe.sourceRef.id); if (!b) continue;
       const laneTop = laneY[nodeCell.get(fe.sourceRef.id)!.l];
       const ey = exitY.get(fe.id) ?? b.y + b.height / 2;
-      branchLabel.set(fe.id, { x: b.x + b.width + 6, y: Math.max(laneTop + 2, ey - ABOVE - LINE_H) });
+      const yAbove = ey - GAP - LINE_H;
+      branchLabel.set(fe.id, { x: b.x + b.width + 6, y: yAbove < laneTop + 2 ? ey + GAP : yAbove });
     }
   }
+  // Dock waypoints on the ACTUAL shape outline, not the bounding box. Ports are spread
+  // vertically, and at a y offset from the centre a gateway diamond's (or an event circle's)
+  // east/west boundary is inset from the box corner — a box-docked waypoint floats in
+  // whitespace and the connector reads as DETACHED in the modeler until a manual move makes
+  // bpmn-js re-dock it. Rect shapes (tasks) get inset 0, i.e. unchanged.
+  const dockX = (fe: any, b: Bounds, y: number, east: boolean): number => {
+    const hw = b.width / 2, hh = b.height / 2;
+    const dy = Math.min(hh, Math.abs(y - (b.y + hh)));
+    let inset = 0;
+    if (GATEWAY_TYPES.has(fe.$type)) inset = hw * (dy / hh);
+    else if (EVENT_TYPES.has(fe.$type)) inset = hw - Math.sqrt(Math.max(0, hw * hw - dy * dy));
+    return east ? b.x + b.width - inset : b.x + inset;
+  };
+  const dockY = (fe: any, b: Bounds, x: number, south: boolean): number => {
+    const hw = b.width / 2, hh = b.height / 2;
+    const dx = Math.min(hw, Math.abs(x - (b.x + hw)));
+    let inset = 0;
+    if (GATEWAY_TYPES.has(fe.$type)) inset = hh * (dx / hw);
+    else if (EVENT_TYPES.has(fe.$type)) inset = hh - Math.sqrt(Math.max(0, hh * hh - dx * dx));
+    return south ? b.y + b.height - inset : b.y + inset;
+  };
   for (const pl of plans) {
     const fe = pl.fe;
     const s = nodeBounds.get(fe.sourceRef.id), t = nodeBounds.get(fe.targetRef.id);
@@ -790,14 +812,15 @@ function renderMatrix(
       // different heights because the source or target fans out. A slot hop bends on its
       // allocated gutter track (late, nested); port-fan-out wiggles keep the midpoint.
       const bendX = pl.gX !== undefined ? trackX(pl.gX, pl.tGut!) : (s.x + s.width + t.x) / 2;
+      const sx = dockX(fe.sourceRef, s, sey, true), tx = dockX(fe.targetRef, t, tey, false);
       pts = sey === tey
-        ? [{ x: s.x + s.width, y: sey }, { x: t.x, y: tey }]
-        : [{ x: s.x + s.width, y: sey }, { x: bendX, y: sey }, { x: bendX, y: tey }, { x: t.x, y: tey }];
+        ? [{ x: sx, y: sey }, { x: tx, y: tey }]
+        : [{ x: sx, y: sey }, { x: bendX, y: sey }, { x: bendX, y: tey }, { x: tx, y: tey }];
     } else if (pl.kind === "gutter") {
       // side-exit → gutter drop → side-enter (adjacent columns, short).
       const gx = trackX(pl.gX, pl.tGut);
-      const sx = gx >= s.x + s.width / 2 ? s.x + s.width : s.x;
-      const tx = gx >= t.x + t.width / 2 ? t.x + t.width : t.x;
+      const sx = dockX(fe.sourceRef, s, sey, gx >= s.x + s.width / 2);
+      const tx = dockX(fe.targetRef, t, tey, gx >= t.x + t.width / 2);
       pts = sey === tey
         ? [{ x: sx, y: sey }, { x: tx, y: tey }]
         : [{ x: sx, y: sey }, { x: gx, y: sey }, { x: gx, y: tey }, { x: tx, y: tey }];
@@ -806,13 +829,13 @@ function renderMatrix(
       // node row — still inside the swimlane), run across it, then one vertical in the gutter beside
       // the target and enter WEST. The sub-row is clear (nodes sit on the node row, not here).
       const xS = trackX(pl.gS, pl.tGutS), xT = trackX(pl.gT, pl.tGutT), ry = subRowY(pl.subLane, pl.subDir, pl.subI);
-      pts = [{ x: s.x + s.width, y: sey }, { x: xS, y: sey }, { x: xS, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: t.x, y: tey }];
+      pts = [{ x: dockX(fe.sourceRef, s, sey, true), y: sey }, { x: xS, y: sey }, { x: xS, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: dockX(fe.targetRef, t, tey, false), y: tey }];
     } else {
       // return (back-edge): exit the source's BOTTOM/TOP rear (never the left face), loop back in a
       // source-lane sub-row, rise/drop in the gutter just left of the target, and ENTER from the WEST.
       const xT = trackX(pl.gT, pl.tGutT), ry = subRowY(pl.subLane, pl.subDir, pl.subI);
-      const sBackX = s.x + s.width * 0.3, sBackY = pl.subDir < 0 ? s.y : s.y + s.height;
-      pts = [{ x: sBackX, y: sBackY }, { x: sBackX, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: t.x, y: tey }];
+      const sBackX = s.x + s.width * 0.3, sBackY = dockY(fe.sourceRef, s, sBackX, pl.subDir >= 0);
+      pts = [{ x: sBackX, y: sBackY }, { x: sBackX, y: ry }, { x: xT, y: ry }, { x: xT, y: tey }, { x: dockX(fe.targetRef, t, tey, false), y: tey }];
     }
     const edge = shapeById.get(fe.id) ?? moddle.create("bpmndi:BPMNEdge", { id: `${fe.id}_di`, bpmnElement: fe });
     edge.waypoint = pts.map((pt) => moddle.create("dc:Point", { x: Math.round(pt.x), y: Math.round(pt.y) }));

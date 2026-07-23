@@ -200,6 +200,23 @@ for (const { name, file } of FIXTURES) {
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
 
+    it("branch labels hug their connector: 1px above it (or 1px below when clamped)", () => {
+      // User feedback 2026-07-23: the 6px gap reads as "muy separadas" in the exe. The label box
+      // bottom must sit exactly 1px above its own exit line; if the lane top forces it down, the
+      // box TOP goes 1px below the line instead. ±1px for independent DI rounding.
+      const offenders: string[] = [];
+      for (const g of gateways)
+        for (const br of g.branches) {
+          if (!br.label) continue;
+          const bottom = br.label.y + br.label.h;
+          const above = Math.abs(br.exitY - bottom - 1) <= 1;
+          const below = Math.abs(br.label.y - br.exitY - 1) <= 1;
+          if (!above && !below)
+            offenders.push(`${g.gid}/${br.id}: label box [${Math.round(br.label.y)},${Math.round(bottom)}] not 1px off its exit line ${Math.round(br.exitY)}`);
+        }
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+
     it("a straight branch to a nearby leaf event renders straight — no Z-step", () => {
       // The user's "escalón innecesario" ask: rep_2b's "Reparar con alternativo" → the "Sigue con
       // alternativo" end event stepped (exit y42 ≠ entry y64) because the event wasn't moved to the
@@ -210,6 +227,51 @@ for (const { name, file } of FIXTURES) {
         for (const br of g.branches)
           if (br.targetLeafEvent && Math.abs(br.targetCy - g.cy) <= 44 && br.wp !== 2)
             offenders.push(`${g.gid}/${br.id}: leaf-event branch has ${br.wp} waypoints (Z-step), expected 2 (straight)`);
+      expect(offenders, offenders.join("; ")).toEqual([]);
+    });
+  });
+}
+
+// Connector docking on the gateway DIAMOND (bug-first, 2026-07-23). Fan-out/fan-in ports are
+// spread vertically, but the waypoints docked on the gateway's BOUNDING BOX corner x — at a y
+// offset from the centre the diamond's outline is inset, so the connector started/ended floating
+// in whitespace and read as DISCONNECTED in the exe. (Moving the gateway "fixed" it because
+// bpmn-js re-docks on manual layout — the DI is the truth, cf. layout-qa/reglas.md.) Every
+// waypoint touching a gateway must lie ON the diamond perimeter: |dx|/hw + |dy|/hh = 1.
+for (const { name, file } of FIXTURES) {
+  describe(`gateway connector docking — ${name}`, () => {
+    let touches: Array<{ eid: string; gid: string; pt: { x: number; y: number }; b: any }>;
+
+    beforeAll(async () => {
+      const src = readFileSync(file, "utf8");
+      const out = await layoutDiagramElk(src);
+      const { shapes, edges } = await parseDi(out);
+      const gwBox = new Map(
+        shapes.filter((s) => IS_GATEWAY(s.bpmnElement.$type)).map((s) => [s.bpmnElement.id, s.bounds]),
+      );
+      touches = [];
+      for (const e of edges) {
+        const wp = e.waypoint ?? []; if (wp.length < 2) continue;
+        const sid = e.bpmnElement?.sourceRef?.id, tid = e.bpmnElement?.targetRef?.id;
+        const sb = sid ? gwBox.get(sid) : undefined, tb = tid ? gwBox.get(tid) : undefined;
+        if (sb) touches.push({ eid: e.bpmnElement.id, gid: sid!, pt: wp[0], b: sb });
+        if (tb) touches.push({ eid: e.bpmnElement.id, gid: tid!, pt: wp[wp.length - 1], b: tb });
+      }
+    });
+
+    it("has gateway-touching connectors (fixture sanity)", () => {
+      expect(touches.length).toBeGreaterThan(0);
+    });
+
+    it("every waypoint touching a gateway lies on the diamond outline (no floating gap)", () => {
+      const offenders: string[] = [];
+      for (const { eid, gid, pt, b } of touches) {
+        const hw = b.width / 2, hh = b.height / 2;
+        const dx = Math.abs(pt.x - (b.x + hw)), dy = Math.abs(pt.y - (b.y + hh));
+        const offPx = Math.abs(1 - (dx / hw + dy / hh)) * Math.min(hw, hh); // ~px off the perimeter
+        if (offPx > 2)
+          offenders.push(`${gid}/${eid}: waypoint (${Math.round(pt.x)},${Math.round(pt.y)}) is ${Math.round(offPx)}px off the diamond outline`);
+      }
       expect(offenders, offenders.join("; ")).toEqual([]);
     });
   });

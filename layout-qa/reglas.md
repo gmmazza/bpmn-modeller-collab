@@ -45,6 +45,12 @@ con otro label ni con un nodo que no sea su dueño. Incluye el stagger de labels
 (Sí/No apilados, no en el mismo punto) y la cascada de labels de boundary events con despeje
 real de wrap (un label de 2 líneas mide ~28px, no los 14px que sugiere el DI autorado).
 
+**Cercanía al conector (ronda 6, 2026-07-23):** el label de rama de gateway abraza su propio
+conector: el borde INFERIOR de la caja del label queda exactamente 1px por ARRIBA de la línea
+(6px se leían "muy separados" en el exe); si el techo del carril no deja lugar, el borde
+SUPERIOR de la caja va 1px por DEBAJO de la línea (nunca se clampa el label encima de la
+línea). Invariante en `layoutElkLanes.test.ts`.
+
 **Prioridad:** DURA.
 **Métrica:** `overlaps.labelLabel` + `overlaps.labelNode` (parte de `overlaps.total`).
 
@@ -86,6 +92,14 @@ salen por atrás (nunca por la cara izquierda) y entran por el OESTE, rodeando.
 de `renderMatrix`). No tiene campo propio en `MetricsReport` hoy — una regresión se filtraría
 indirectamente a `crossings.hv` o a `clips.horizontal`. Cubierta por los tests unitarios de
 ruteo.
+
+**Anclaje (docking) sobre el contorno REAL de la figura (ronda 6, 2026-07-23):** el waypoint
+que toca un gateway (rombo) o un evento (círculo) se ancla sobre el CONTORNO de la figura, no
+sobre la esquina del bounding box. Con los puertos repartidos verticalmente, a una altura
+distinta del centro el borde del rombo está metido hacia adentro — anclar en el box dejaba el
+conector "flotando" y se veía DESCONECTADO en el modeler (al mover el gateway a mano bpmn-js
+lo re-anclaba y "se arreglaba", la pista del bug). Invariante en `layoutElkLanes.test.ts`:
+todo waypoint que toca un gateway cae sobre el perímetro del rombo (|dx|/hw + |dy|/hh = 1).
 
 ### 6. Siempre DENTRO del carril
 **Garantiza:** si una fila queda bloqueada, el ruteo abre una sub-fila fina DENTRO del mismo

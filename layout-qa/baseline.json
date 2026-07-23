@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-22T20:54:32.215Z",
+  "generatedAt": "2026-07-23T14:37:26.954Z",
   "note": "Soft-metric ratchet baseline for layout-qa (per diagram). Stores the full MetricsReport, including hard-rule fields - those are kept for reference only and are never used as a gate (hard rules are always checked against 0 directly, not against this file).",
   "diagrams": {
     "Compras": {
@@ -67,9 +67,9 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 173.89473684210526,
-        "totalEdgeLength": 3304,
-        "bboxArea": 848514
+        "meanEdgeLength": 174.55,
+        "totalEdgeLength": 3491,
+        "bboxArea": 635699
       }
     },
     "rep_1_recepcion": {
@@ -137,8 +137,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 235.1818181818182,
-        "totalEdgeLength": 2587,
+        "meanEdgeLength": 244.8181818181818,
+        "totalEdgeLength": 2693,
         "bboxArea": 425716
       }
     },
@@ -172,8 +172,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 206.93333333333334,
-        "totalEdgeLength": 3104,
+        "meanEdgeLength": 213.53333333333333,
+        "totalEdgeLength": 3203,
         "bboxArea": 1022720
       }
     },
@@ -207,8 +207,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 197.28571428571428,
-        "totalEdgeLength": 1381,
+        "meanEdgeLength": 202,
+        "totalEdgeLength": 1414,
         "bboxArea": 637450
       }
     },
@@ -242,9 +242,9 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 132,
-        "totalEdgeLength": 792,
-        "bboxArea": 235264
+        "meanEdgeLength": 141,
+        "totalEdgeLength": 1269,
+        "bboxArea": 274944
       }
     },
     "rep_5_pap_final": {
@@ -312,8 +312,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 151.5,
-        "totalEdgeLength": 606,
+        "meanEdgeLength": 151.75,
+        "totalEdgeLength": 607,
         "bboxArea": 364980
       }
     },
@@ -347,8 +347,8 @@
         "dodges": 0
       },
       "cohesion": {
-        "meanEdgeLength": 133,
-        "totalEdgeLength": 532,
+        "meanEdgeLength": 139,
+        "totalEdgeLength": 556,
         "bboxArea": 206298
       }
     },
