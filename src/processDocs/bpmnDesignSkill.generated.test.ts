@@ -42,4 +42,15 @@ describe("bpmnDesignSkill.generated", () => {
     expect(src).not.toMatch(/module\.exports/);
     expect(src).not.toMatch(/^\s*exports\./m);
   });
+
+  it("documentation.md teaches coverage, templates, wikilinks and the manual rule", () => {
+    const doc = BPMN_DESIGN_FILES["app/documentation.md"];
+    expect(doc).toContain("Elemento significativo");
+    expect(doc).toContain("## Plantilla: `_proceso.md`");
+    expect(doc).toContain("## Plantilla: nota de paso");
+    expect(doc).toContain("[[proceso#elementId]]");
+    expect(doc).toContain("[[idea:idea-3]]");
+    expect(doc).toMatch(/orden de flujo/);
+    expect(doc).toMatch(/Nunca.*`_index\.md`/s);
+  });
 });
