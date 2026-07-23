@@ -74,7 +74,20 @@ export function renderHistoryPanel(
     details.open = true;
     details.className = "history-section";
     const summary = document.createElement("summary");
-    summary.textContent = handlers.title;
+    // "Maestro: mapa" → a muted kind label + a highlighted file-name pill. The text
+    // node keeps textContent as "Maestro: mapa" (tests and a11y read it verbatim).
+    const sep = handlers.title.indexOf(": ");
+    if (sep > 0) {
+      const kind = document.createElement("span");
+      kind.className = "history-section-kind";
+      kind.textContent = handlers.title.slice(0, sep + 1);
+      const name = document.createElement("span");
+      name.className = "history-section-name";
+      name.textContent = handlers.title.slice(sep + 2);
+      summary.append(kind, document.createTextNode(" "), name);
+    } else {
+      summary.textContent = handlers.title;
+    }
     details.appendChild(summary);
     container.appendChild(details);
     host = details;

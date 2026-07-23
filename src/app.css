@@ -251,6 +251,33 @@ body.master-mode.master-no-stage #stage-wrap { display: none; }
 /* History panel: fixed "Actual" row on top + revision rows, each with a compare
    checkbox. Checked rows are highlighted with an izq/der (or arriba/abajo) side badge. */
 #history h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #334155; }
+/* Dual history: one collapsible <details> section per open pane (master + stage). A
+   header strip makes each group scannable; the file name gets a colored pill — teal
+   for the master map, indigo for the subprocess — matching each pane's identity. */
+.history-section { margin: 0 0 6px; }
+.history-section > summary {
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 9px; margin: 0 0 8px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.history-section > summary:hover { border-color: #94a3b8; }
+.history-section-kind {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  color: #64748b;
+}
+.history-section-name {
+  font-size: 12.5px; font-weight: 700;
+  padding: 1px 9px; border-radius: 999px;
+  background: #f1f5f9; border: 1px solid var(--border); color: #0f172a;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+#history-master .history-section-name { background: #ccfbf1; border-color: #5eead4; color: #115e59; }
+#history-stage .history-section-name { background: #e0e7ff; border-color: #a5b4fc; color: #3730a3; }
+/* Blank line + separator rule between the two groups when both are visible. */
+#history-master:not([hidden]) ~ #history-stage:not([hidden]) {
+  border-top: 2px solid var(--border); margin-top: 16px; padding-top: 14px;
+}
 .history-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 8px; border: 1px solid var(--border); border-radius: 7px; margin-bottom: 6px; background: #fff; transition: background .12s, border-color .12s; }
 .history-row:hover { border-color: #99f6e4; }
 .history-row .history-check { margin: 0; cursor: pointer; accent-color: #0d9488; }
