@@ -32,6 +32,23 @@ describe("keepSet", () => {
     expect(lastGap).toBeGreaterThan(firstGap);
   });
 
+  // Regression (2026-07-23): an active session publishes every few minutes; ALL of
+  // those versions must survive prune — before the fix, anything younger than 1h
+  // (except head) fell outside every decay target and was deleted on the next publish.
+  it("keeps every revision of an active session (all younger than baseMs)", () => {
+    const minutes = [0, 5, 12, 20, 40];
+    const revs = minutes.map((m) => rev(`m${m}`, m / 60));
+    const kept = keepSet(revs, now);
+    for (const m of minutes) expect(kept.has(`m${m}`), `m${m} should survive`).toBe(true);
+  });
+
+  it("keeps recent revisions even when the history also has old ones", () => {
+    const revs = [rev("head", 0), rev("m10", 10 / 60), rev("m30", 30 / 60), rev("h5", 5), rev("h50", 50)];
+    const kept = keepSet(revs, now);
+    expect(kept.has("m10")).toBe(true);
+    expect(kept.has("m30")).toBe(true);
+  });
+
   it("never exceeds the pin budget", () => {
     const revs: Revision[] = [];
     for (let h = 0; h <= 10000; h++) revs.push(rev(`r${h}`, h));

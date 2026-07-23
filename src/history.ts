@@ -7,9 +7,11 @@ export interface KeepSetOptions {
 }
 
 /**
- * Exponential-decay retention. Always keeps the newest revision, then keeps
- * the revision nearest each geometrically-growing target age. Result: dense
- * recent restore points, exponentially sparser going back, bounded by budget.
+ * Exponential-decay retention. Every revision younger than baseMs is kept
+ * unconditionally (an active session publishes minutes apart — those are the
+ * restore points that matter most); beyond that, keeps the revision nearest
+ * each geometrically-growing target age. Result: dense recent restore points,
+ * exponentially sparser going back, bounded by budget.
  */
 export function keepSet(
   revisions: Revision[],
@@ -26,6 +28,14 @@ export function keepSet(
     (a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime),
   );
   keep.add(sorted[0].id); // head always kept
+
+  // Recent protection window: nothing younger than baseMs decays (newest-first,
+  // so the break is safe; bounded by budget like everything else).
+  for (const r of sorted) {
+    if (keep.size >= budget) break;
+    if (nowMs - Date.parse(r.modifiedTime) >= baseMs) break;
+    keep.add(r.id);
+  }
 
   const oldestAge = nowMs - Date.parse(sorted[sorted.length - 1].modifiedTime);
   for (let age = baseMs; age <= oldestAge && keep.size < budget; age *= factor) {

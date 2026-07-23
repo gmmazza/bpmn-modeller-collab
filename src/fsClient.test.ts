@@ -94,6 +94,22 @@ describe("fsClient history + retention", () => {
     expect(ids).not.toContain("1000"); // decayed away
     expect(ids).not.toContain("2000");
   });
+
+  // Regression (2026-07-23): real working session — publish several times a few
+  // minutes apart. Every version must still be listed afterwards; prune used to
+  // wipe all but the newest because none reached the 1h decay target.
+  it("a session of publishes minutes apart keeps every version", async () => {
+    let clock = 10_000_000_000_000;
+    const f2 = createFsClient(dir, () => clock);
+    for (let i = 1; i <= 4; i++) {
+      await f2.putXml("proceso.bpmn", `<v${i}/>`, "Ana");
+      clock += 7 * 60 * 1000; // 7 minutes between publishes
+    }
+    const revs = await f2.listRevisions("proceso.bpmn");
+    expect(revs).toHaveLength(4);
+    const xmls = await Promise.all(revs.map((r) => f2.getRevisionXml("proceso.bpmn", r.id)));
+    expect(xmls.sort()).toEqual(["<v1/>", "<v2/>", "<v3/>", "<v4/>"]);
+  });
 });
 
 describe("fsClient sidecars", () => {
