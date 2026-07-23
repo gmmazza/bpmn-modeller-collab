@@ -5,9 +5,15 @@
 // recursively swallow release/ into a multi-GB asar. The programmatic `ignore`
 // function below matches reliably on both separators. App icon is build/icon.ico.
 //
-// Run: node scripts/pack.cjs   (build dist/ first: npm run build)
+// Run: node scripts/pack.cjs [outDir]   (build dist/ first: npm run build)
+//
+// outDir defaults to release/ (the MAIN package). Test/preview builds must go to an
+// alternative folder INSIDE release/ (e.g. `node scripts/pack.cjs release/test-<sha>`)
+// so the main package is only replaced once the user validated the build.
 const path = require("node:path");
 const { packager } = require("@electron/packager");
+
+const out = process.argv[2] || "release";
 
 // Exclude everything that isn't needed at runtime. Anchored at the repo root so
 // dist/ (the built renderer) and electron/ (main+preload) are kept.
@@ -22,7 +28,7 @@ packager({
   name: "BPMN compartida",
   platform: "win32",
   arch: "x64",
-  out: "release",
+  out,
   overwrite: true,
   prune: false,
   icon: path.resolve(__dirname, "..", "build", "icon.ico"),
