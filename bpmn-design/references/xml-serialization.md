@@ -72,6 +72,11 @@ xmlns:camunda="http://camunda.org/schema/1.0/bpmn"          <- OPTIONAL Camunda 
 </bpmn:definitions>
 ```
 - `isExecutable="false"` for documentation diagrams. Use `true` only for an engine.
+- **Sign your writes**: when you (an AI agent) create or modify a `.bpmn`, set the standard
+  `exporter` attribute on `definitions` to `IA — <your agent name>` (e.g.
+  `exporter="IA — Claude"`; plain `exporter="IA"` if you have no distinct name). The
+  BPMN-compartida app reads it to attribute your version in its history panel; never use the
+  app's own value (`BPMN compartida`), which marks human publishes from the app.
 - A **single-pool** diagram may omit `collaboration`/`participant` and just have a `process`; then the
   `BPMNPlane` references the process id. Add a `participant` (pool) when you want a visible pool box or
   lanes, or when there are multiple pools.

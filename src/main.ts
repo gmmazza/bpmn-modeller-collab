@@ -2290,6 +2290,8 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
+    // Same external-baseline capture as openFile — master maps can be AI-generated too.
+    void api.snapshotExternal(fileId).catch(() => { /* best-effort */ });
     try { masterHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
     catch { masterHeadRevisionId = null; }
     closeLinkPopover();
@@ -2560,6 +2562,10 @@ async function bootstrap() {
       else { clearDraft(folderId, fileId); }
       render(); // refresh the "borrador sin publicar" indicator
     }
+    // Baseline for externally-created/edited files (AI agents, other tools): capture the
+    // on-disk content as a revision BEFORE it can be overwritten by a publish, so the
+    // history panel shows the original version from day one.
+    try { await api.snapshotExternal(fileId); } catch { /* history capture is best-effort */ }
     await loadHistory(fileId);
     await loadLayers(fileId);
     await loadDocs(fileId);
@@ -3074,6 +3080,9 @@ async function bootstrap() {
 
   async function handleExternalChange(fileId: string) {
     if (state.kind !== "editing") return;
+    // Version the external content the moment we see it — whatever happens next
+    // (silent reload, keep-mine overwrite, discard) it stays restorable.
+    try { await api.snapshotExternal(fileId); await loadHistory(fileId); } catch { /* best-effort */ }
     // Silent auto-reload is only safe when there is NO unpublished local work —
     // neither pending modeler edits nor a stored draft (which the canvas may be
     // showing). Otherwise raise the conflict bar so the user chooses.

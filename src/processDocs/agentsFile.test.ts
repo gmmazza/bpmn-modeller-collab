@@ -69,6 +69,23 @@ describe("ensureAgentsFile (app-owned, self-heal)", () => {
     await ensureAgentsFile(fs);
     expect(await fs.readPath("AGENTS.pre-v2.md")).toBe("old-backup");
   });
+
+  it("upgrades an app-generated AGENTS.md of an older version WITHOUT backing it up", async () => {
+    const fs = createFsClient(createFakeDir());
+    // an older app-owned generation (v2 marker) — regenerable, not user content
+    await fs.writePath("AGENTS.md", "# guía vieja\n<!-- bpmn-compartida:agents v2 -->\n");
+    await ensureAgentsFile(fs);
+    expect(await fs.readPath("AGENTS.md")).toBe(AGENTS_MD);
+    expect(await fs.readPath("AGENTS.pre-v2.md")).toBeNull();
+  });
+});
+
+describe("AGENTS_MD provenance contract (exporter signature)", () => {
+  it("tells agents to sign .bpmn writes via the exporter attribute", () => {
+    expect(AGENTS_MD).toContain("exporter=");
+    expect(AGENTS_MD).toContain('exporter="IA'); // the expected signature shape
+    expect(AGENTS_MD).toMatch(/definitions/i);
+  });
 });
 
 describe("AGENTS_MD orquestador (anti-duplicación)", () => {

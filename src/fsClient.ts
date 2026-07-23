@@ -1,5 +1,6 @@
 import type { DriveFile, Revision, TreeEntry } from "./types";
 import { keepSet } from "./history";
+import { stampExporter, readExporter, externalAuthorOf, APP_EXPORTER } from "./provenance";
 
 const HISTORY_DIR = ".history";
 
@@ -117,9 +118,9 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     }
     return null;
   }
-  async function appendHistory(id: string, xml: string, editorName: string): Promise<string> {
+  async function appendHistory(id: string, xml: string, editorName: string, atMs?: number): Promise<string> {
     const hdir = await historyDir(id, true);
-    let rid = now();
+    let rid = atMs ?? now();
     while (await findRev(hdir, String(rid))) rid++;
     const fh = await hdir.getFileHandle(`${rid}~${encodeURIComponent(editorName)}.bpmn`, { create: true });
     const w = await fh.createWritable();
@@ -143,6 +144,37 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       });
     }
     return out;
+  }
+  // Capture content that reached the disk WITHOUT going through putXml (AI agents,
+  // other tools, teammates' copies) as a revision, so publishing over it never destroys
+  // it. Dated with the file's real mtime; attributed via the BPMN exporter signature.
+  // No-ops when the disk content is already the newest revision (nothing external
+  // happened) or when a never-published file carries the app's own exporter (our own
+  // freshly-created template, not an external write). Returns the new rid, or null.
+  async function snapshotExternal(id: string): Promise<string | null> {
+    let f: File;
+    try {
+      f = await statAt(id);
+    } catch {
+      return null; // file gone — nothing to capture
+    }
+    const xml = await f.text();
+    let revs: Revision[] = [];
+    try {
+      revs = await revisionsIn(await historyDir(id, false));
+    } catch { /* no history yet */ }
+    if (revs.length === 0) {
+      if (readExporter(xml) === APP_EXPORTER) return null;
+    } else {
+      const newest = revs.reduce((a, b) => (Number(b.id) > Number(a.id) ? b : a));
+      const hdir = await historyDir(id, false);
+      const found = await findRev(hdir, newest.id);
+      if (found) {
+        const cur = await (await hdir.getFileHandle(found.name)).getFile();
+        if ((await cur.text()) === xml) return null; // disk == last published version
+      }
+    }
+    return appendHistory(id, xml, externalAuthorOf(xml), f.lastModified);
   }
   async function prune(id: string): Promise<void> {
     let hdir: FileSystemDirectoryHandle;
@@ -284,8 +316,10 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       return readTextAt(id);
     },
     async putXml(id: string, xml: string, editorName: string): Promise<{ version: string; headRevisionId: string | null }> {
-      const mtime = await writeTextAt(id, xml);
-      await appendHistory(id, xml, editorName);
+      await snapshotExternal(id); // whatever is on disk right now must survive this write
+      const stamped = stampExporter(xml, APP_EXPORTER); // published files self-describe their writer
+      const mtime = await writeTextAt(id, stamped);
+      await appendHistory(id, stamped, editorName);
       await prune(id);
       const version = String(mtime);
       lastWrites.set(id, version);
@@ -293,9 +327,10 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
     },
     async createFile(name: string, xml: string): Promise<DriveFile> {
       const id = name.endsWith(".bpmn") ? name : `${name}.bpmn`;
-      await writeTextAt(id, xml);
+      await writeTextAt(id, stampExporter(xml, APP_EXPORTER));
       return toDriveFile(id);
     },
+    snapshotExternal,
     async setLock(id: string, props: Record<string, string>): Promise<void> {
       const empty = Object.values(props).every((v) => v === "");
       if (empty) {

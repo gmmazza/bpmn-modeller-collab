@@ -1,7 +1,10 @@
 // AGENTS.md es APP-OWNED: orquestador generado (self-heal). Las instrucciones del usuario NO van
 // acá — van en los overlays (AGENTS.local.md de equipo, AGENTS.<slug>.md personal). El marcador de
 // versión permite actualizar AGENTS.md viejos en carpetas existentes.
-const AGENTS_MARKER = "<!-- bpmn-compartida:agents v2 -->";
+const AGENTS_MARKER = "<!-- bpmn-compartida:agents v3 -->";
+// Any generation of this file (old or current) carries this prefix — used to skip the
+// legacy backup for app-owned content that is simply being regenerated.
+const APP_OWNED_PREFIX = "<!-- bpmn-compartida:agents";
 
 export const AGENTS_MD = `# Workspace BPMN-compartida — guía para agentes IA
 ${AGENTS_MARKER}
@@ -44,6 +47,12 @@ Respetá las reservas de humanos:
   que publique). Cuando el \`.lock\` desaparezca o venza, editá y borrá tu \`.req\`.
 
 Firmá tus entradas de markdown como autor \`IA\` (ver \`_bpmn-design/app/ideas.md\`).
+
+**Firmá también tus escrituras de \`.bpmn\`**: al crear o modificar un \`.bpmn\`, poné en la etiqueta
+\`<bpmn:definitions>\` el atributo estándar \`exporter="IA — <tu nombre de agente>"\` (ej.
+\`exporter="IA — Claude"\`). La app usa esa firma para atribuir tu versión en el panel Historial;
+sin ella, tu cambio queda registrado como "externo" anónimo. No uses el exporter de la app
+(\`BPMN compartida\`) — ese identifica lo publicado por humanos desde la app.
 
 ## Fuentes (material de origen)
 
@@ -125,8 +134,9 @@ export async function ensureAgentsFile(api: {
   const existing = await api.readPath("AGENTS.md");
   if (existing !== null && existing.includes(AGENTS_MARKER)) return;
   // Vamos a sobrescribir un AGENTS.md legacy (sin marcador): resguardamos el contenido viejo por si
-  // alguien lo editó a mano, sin pisar un backup ya existente de una corrida anterior.
-  if (existing !== null && existing.trim() !== "") {
+  // alguien lo editó a mano, sin pisar un backup ya existente de una corrida anterior. Las
+  // generaciones viejas de la app (marcador de otra versión) se regeneran sin backup.
+  if (existing !== null && existing.trim() !== "" && !existing.includes(APP_OWNED_PREFIX)) {
     const existingBackup = await api.readPath("AGENTS.pre-v2.md");
     if (existingBackup === null) {
       await api.writePath("AGENTS.pre-v2.md", existing);

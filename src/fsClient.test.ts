@@ -5,6 +5,10 @@ import { createFakeDir, seedFile } from "./testHelpers/fakeDir";
 let dir: ReturnType<typeof createFakeDir>;
 let fs: ReturnType<typeof createFsClient>;
 
+// App-created files always carry a <definitions> tag (so createFile stamps the app
+// exporter on them and later publishes don't mistake them for external content).
+const APP_XML = `<bpmn:definitions xmlns:bpmn="http://x" id="D0"/>`;
+
 beforeEach(async () => {
   dir = createFakeDir();
   fs = createFsClient(dir);
@@ -61,20 +65,23 @@ describe("fsClient history + retention", () => {
   it("putXml creates a revision readable by listRevisions/getRevisionXml", async () => {
     const res = await fs.putXml("proceso.bpmn", "<v1/>", "Ana");
     const revs = await fs.listRevisions("proceso.bpmn");
-    expect(revs).toHaveLength(1);
-    expect(revs[0].lastModifyingUser?.displayName).toBe("Ana");
-    expect(await fs.getRevisionXml("proceso.bpmn", revs[0].id)).toBe("<v1/>");
+    // 2 revisions: the seeded external content is captured as baseline + Ana's publish
+    expect(revs).toHaveLength(2);
+    const mine = revs.find((r) => r.lastModifyingUser?.displayName === "Ana");
+    expect(mine).toBeDefined();
+    expect(await fs.getRevisionXml("proceso.bpmn", mine!.id)).toBe("<v1/>");
     expect(res.version).toMatch(/^\d+$/);
   });
 
   it("setKeepForever toggles the keep flag (and survives renaming)", async () => {
     await fs.putXml("proceso.bpmn", "<v1/>", "Ana");
-    const [rev] = await fs.listRevisions("proceso.bpmn");
+    const rev = (await fs.listRevisions("proceso.bpmn")).find((r) => r.lastModifyingUser?.displayName === "Ana")!;
+    const flagOf = async (id: string) => (await fs.listRevisions("proceso.bpmn")).find((r) => r.id === id)?.keepForever;
     await fs.setKeepForever("proceso.bpmn", rev.id, true);
-    expect((await fs.listRevisions("proceso.bpmn"))[0].keepForever).toBe(true);
+    expect(await flagOf(rev.id)).toBe(true);
     expect(await fs.getRevisionXml("proceso.bpmn", rev.id)).toBe("<v1/>");
     await fs.setKeepForever("proceso.bpmn", rev.id, false);
-    expect((await fs.listRevisions("proceso.bpmn"))[0].keepForever).toBe(false);
+    expect(await flagOf(rev.id)).toBe(false);
   });
 
   it("prune deletes decayed revisions but keeps pinned and newest", async () => {
@@ -106,9 +113,67 @@ describe("fsClient history + retention", () => {
       clock += 7 * 60 * 1000; // 7 minutes between publishes
     }
     const revs = await f2.listRevisions("proceso.bpmn");
-    expect(revs).toHaveLength(4);
+    // 4 publishes + the seeded external baseline captured on the first one
+    expect(revs).toHaveLength(5);
     const xmls = await Promise.all(revs.map((r) => f2.getRevisionXml("proceso.bpmn", r.id)));
-    expect(xmls.sort()).toEqual(["<v1/>", "<v2/>", "<v3/>", "<v4/>"]);
+    for (const v of ["<v1/>", "<v2/>", "<v3/>", "<v4/>"]) expect(xmls).toContain(v);
+  });
+});
+
+// Content that appeared on disk WITHOUT going through Publicar (AI agent, another tool,
+// a teammate's copy) must never be silently lost — it gets captured as an external
+// revision, attributed via the BPMN `exporter` signature when present.
+describe("fsClient external versions + provenance", () => {
+  const DEFS = (body: string) =>
+    `<?xml version="1.0"?>\n<bpmn:definitions xmlns:bpmn="http://x" id="D1">${body}</bpmn:definitions>`;
+
+  it("publishing over an externally-written file preserves the original as an (externo) revision", async () => {
+    // proceso.bpmn was seeded externally (never published) — like rep_4_reparacion.bpmn
+    await fs.putXml("proceso.bpmn", DEFS("<mine/>"), "Ana");
+    const revs = await fs.listRevisions("proceso.bpmn");
+    expect(revs).toHaveLength(2);
+    const ext = revs.find((r) => r.lastModifyingUser?.displayName === "externo");
+    expect(ext).toBeDefined();
+    expect(await fs.getRevisionXml("proceso.bpmn", ext!.id)).toBe("<a/>"); // the original survives
+  });
+
+  it("snapshotExternal creates a baseline dated with the file's mtime, and is idempotent", async () => {
+    const mtime = (await fs.getMeta("proceso.bpmn")).version;
+    await fs.snapshotExternal("proceso.bpmn");
+    await fs.snapshotExternal("proceso.bpmn"); // unchanged content → no duplicate
+    const revs = await fs.listRevisions("proceso.bpmn");
+    expect(revs).toHaveLength(1);
+    expect(revs[0].id).toBe(mtime); // panel date = the file's real modification date
+    expect(revs[0].lastModifyingUser?.displayName).toBe("externo");
+  });
+
+  it("attributes the external snapshot to the exporter signature when the writer signed it", async () => {
+    await seedFile(dir, "firmado.bpmn", `<bpmn:definitions xmlns:bpmn="http://x" exporter="IA — Claude" id="D2"/>`);
+    await fs.snapshotExternal("firmado.bpmn");
+    const revs = await fs.listRevisions("firmado.bpmn");
+    expect(revs[0].lastModifyingUser?.displayName).toBe("IA — Claude");
+  });
+
+  it("captures an external edit made between two publishes", async () => {
+    await fs.putXml("proceso.bpmn", DEFS("<v1/>"), "Ana");
+    await seedFile(dir, "proceso.bpmn", DEFS("<hacked/>")); // external overwrite
+    await fs.putXml("proceso.bpmn", DEFS("<v2/>"), "Ana");
+    const revs = await fs.listRevisions("proceso.bpmn");
+    const xmls = await Promise.all(revs.map((r) => fs.getRevisionXml("proceso.bpmn", r.id)));
+    expect(xmls.some((x) => x.includes("<hacked/>"))).toBe(true);
+  });
+
+  it("putXml stamps the app exporter so published files self-describe their writer", async () => {
+    await fs.putXml("proceso.bpmn", DEFS("<v1/>"), "Ana");
+    expect(await fs.getXml("proceso.bpmn")).toContain(`exporter="BPMN compartida"`);
+  });
+
+  it("an app-created file does NOT get a spurious 'externo' baseline on first publish", async () => {
+    await fs.createFile("nuevo.bpmn", DEFS("<empty/>"));
+    await fs.putXml("nuevo.bpmn", DEFS("<work/>"), "Ana");
+    const revs = await fs.listRevisions("nuevo.bpmn");
+    expect(revs).toHaveLength(1);
+    expect(revs[0].lastModifyingUser?.displayName).toBe("Ana");
   });
 });
 
@@ -138,7 +203,7 @@ describe("fsClient nested paths", () => {
 
 describe("fsClient nested history", () => {
   it("stores history under .history/<dirs>/<base>", async () => {
-    await fs.createFile("Ventas/B2B.bpmn", "<b/>");
+    await fs.createFile("Ventas/B2B.bpmn", APP_XML);
     await fs.putXml("Ventas/B2B.bpmn", "<b2/>", "Ana");
     const revs = await fs.listRevisions("Ventas/B2B.bpmn");
     expect(revs.length).toBe(1);
@@ -197,7 +262,7 @@ describe("fsClient delete + createFolder", () => {
 
 describe("fsClient move/rename/copy/duplicate", () => {
   beforeEach(async () => {
-    await fs.createFile("A.bpmn", "<a/>");
+    await fs.createFile("A.bpmn", APP_XML);
     await fs.writeSidecar("A.bpmn", "layers.json", "{\"v\":1}");
     await fs.putXml("A.bpmn", "<a2/>", "Ana"); // 1 revision
     await fs.createFolder("", "Sub");
@@ -237,7 +302,7 @@ describe("fsClient move/rename/copy/duplicate", () => {
 
 describe("fsClient folder ops", () => {
   beforeEach(async () => {
-    await fs.createFile("Grupo/X.bpmn", "<x/>");
+    await fs.createFile("Grupo/X.bpmn", APP_XML);
     await fs.putXml("Grupo/X.bpmn", "<x2/>", "Ana"); // history at .history/Grupo/X
     await fs.createFolder("", "Destino");
   });
@@ -272,7 +337,7 @@ describe("fsClient folder ops", () => {
     expect(tree.some((e) => e.path === "GrupoRenombrado")).toBe(true);
   });
   it("renameFolder nested keeps parent dir, carries history", async () => {
-    await fs.createFile("Destino/Sub/Y.bpmn", "<y/>");
+    await fs.createFile("Destino/Sub/Y.bpmn", APP_XML);
     await fs.putXml("Destino/Sub/Y.bpmn", "<y2/>", "Ana");
     const np = await fs.renameFolder("Destino/Sub", "SubRen");
     expect(np).toBe("Destino/SubRen");

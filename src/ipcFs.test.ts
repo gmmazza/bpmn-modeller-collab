@@ -119,7 +119,9 @@ describe("ipcFs adapter", () => {
     await fs.putXml("proceso.bpmn", "<b/>", "Ana");
     expect(await fs.getXml("proceso.bpmn")).toBe("<b/>");
     const revs = await fs.listRevisions("proceso.bpmn");
-    expect(revs).toHaveLength(1);
-    expect(await fs.getRevisionXml("proceso.bpmn", revs[0].id)).toBe("<b/>");
+    // 2: the seeded external content is captured as a baseline + Ana's publish
+    expect(revs).toHaveLength(2);
+    const mine = revs.find((r) => r.lastModifyingUser?.displayName === "Ana")!;
+    expect(await fs.getRevisionXml("proceso.bpmn", mine.id)).toBe("<b/>");
   });
 });
