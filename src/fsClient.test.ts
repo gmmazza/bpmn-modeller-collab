@@ -147,6 +147,17 @@ describe("fsClient external versions + provenance", () => {
     expect(revs[0].lastModifyingUser?.displayName).toBe("externo");
   });
 
+  // Regression (2026-07-23): Node/Electron file mtimes are FRACTIONAL ms (e.g.
+  // 1784803511603.8777) — the fake dir's integer clock hid this and a real capture
+  // produced a revision id with decimals. Rids must be integers.
+  it("floors a fractional file mtime when deriving the snapshot rid", async () => {
+    dir._files.get("proceso.bpmn")!.mtime = 5000.8777; // what a real fs stat returns
+    await fs.snapshotExternal("proceso.bpmn");
+    const revs = await fs.listRevisions("proceso.bpmn");
+    expect(revs).toHaveLength(1);
+    expect(revs[0].id).toBe("5000");
+  });
+
   it("attributes the external snapshot to the exporter signature when the writer signed it", async () => {
     await seedFile(dir, "firmado.bpmn", `<bpmn:definitions xmlns:bpmn="http://x" exporter="IA — Claude" id="D2"/>`);
     await fs.snapshotExternal("firmado.bpmn");

@@ -3,10 +3,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { readExporter, stampExporter, externalAuthorOf, APP_EXPORTER } from "./provenance";
 
-// Real AI-generated diagram (multiline <bpmn:definitions> tag, no exporter) — the file
-// whose original version was silently lost, which motivated this module.
+// Real AI-generated diagram (multiline <bpmn:definitions> tag, no exporter) — the
+// ORIGINAL content of the file whose first version was silently lost, which motivated
+// this module. Committed copy: the live qa-workspace file mutates as the app is used
+// (it already gained an exporter on its first post-feature publish).
 const rep4 = readFileSync(
-  join(process.cwd(), "qa-workspace/Procesos Novotec BPMN/rep_4_reparacion.bpmn"),
+  join(process.cwd(), "src/__fixtures__/rep_4_reparacion.original.bpmn"),
   "utf8",
 );
 

@@ -174,7 +174,8 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
         if ((await cur.text()) === xml) return null; // disk == last published version
       }
     }
-    return appendHistory(id, xml, externalAuthorOf(xml), f.lastModified);
+    // Real fs mtimes are fractional ms (Node stat) — rids must be integers.
+    return appendHistory(id, xml, externalAuthorOf(xml), Math.floor(f.lastModified));
   }
   async function prune(id: string): Promise<void> {
     let hdir: FileSystemDirectoryHandle;
