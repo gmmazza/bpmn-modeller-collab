@@ -56,6 +56,8 @@ addressable (each file has a table of contents) — read the *section*, not the 
 | **A BPMN-compartida workspace** (element profile, publish lint) | `profile.md` §1–2 + §5 |
 | **Master + drillable stages / subprocess outcomes** | `profile.md` §3 (Call Activity, escalation-code pairing) |
 | **Forms / storage / tools per step** | `profile.md` §4 (`.datos.json` + standard data anchors) |
+| **Docs & ideas of a workspace process** (read as input; write docs of what you design) | `app/documentation.md` (formats + plantillas) + `app/ideas.md` (frontmatter, firma IA) |
+| **Multi-layer operations** (rename/delete documented elements, review→idea, idea→mejora) | `app/cross-layer-workflows.md` |
 
 ## Core rules (always apply — the safety net)
 
@@ -113,6 +115,8 @@ and a worked example in `profile.md`.
 
 1. **Understand first.** Pin down: what one *instance* is, the trigger(s), the end state(s), the
    participants, the happy path, the exceptions. Ask only if a choice materially changes the model.
+   **In a workspace**, also read the existing docs/ideas layer as input: `<d>.docs/_proceso.md`,
+   `_index.md`, and the process's ideas (skip whatever doesn't exist yet).
 2. **Happy path first** — start event → verb+object tasks → end state, one straight spine. Names before geometry.
 3. **Add decisions & exceptions** — explicit gateways (question + labeled gates); boundary events for
    fail/timeout; a labeled end event per distinct outcome. Match each split with the correct join.
@@ -125,6 +129,11 @@ and a worked example in `profile.md`.
 7. **In a workspace:** apply the project profile & subprocess contract (`profile.md`) — type every task,
    `default` on every XOR split, master = Call Activities, subprocess = one none-start + escalation-end
    outcomes, data/tools in `<d>.datos.json`. The diagram must pass the publish lint (`profile.md` §5).
+8. **In a workspace: document what you designed.** Create/update `_proceso.md` + one
+   `<elementId>.md` note per significant element (criterion + plantillas: `app/documentation.md`),
+   linking related steps and motivating ideas with wikilinks. If your change resolves/affects an
+   idea, leave an `IA`-signed comment in its thread (`app/ideas.md`) — never change its `estado:`
+   (that's a human decision).
 
 Deliver the `.bpmn` plus a short note on choices, palette, and any assumptions/open questions.
 
@@ -136,6 +145,9 @@ Deliver the `.bpmn` plus a short note on choices, palette, and any assumptions/o
 4. **Report findings ranked by severity** (correctness before style): rule, *why*, concrete fix. If
    fixing, re-serialize both layers, preserve IDs, and sign your edit
    (`exporter="IA — <your name>"` on `definitions`).
+5. **In a workspace**, deliver findings as **anchored ideas** signed `IA`
+   (`app/cross-layer-workflows.md` §2) instead of silently editing the `.bpmn`; if you do fix
+   something, update the affected `<d>.docs/` notes too.
 
 ## Validate before delivering
 
@@ -173,3 +185,5 @@ via `correctness.md` §3. Treat the script as the mechanical floor, not the whol
   than one start; put a decision gateway in the master after a stage instead of escalation ends inside
   the subprocess; write a JotForm/ClickUp URL or id (or any color/doc/source data) into the `.bpmn`
   instead of the sidecar.
+  Never edit the derived `_index.md` / `_ideas.md`, never change an idea's `estado:`, and don't
+  deliver a redesign that leaves the `<d>.docs/` notes stale.

@@ -60,4 +60,14 @@ describe("bpmnDesignSkill.generated", () => {
     expect(x).toMatch(/Después de diseñar/);
     expect(x).toContain("No cambies su `estado:`");
   });
+
+  it("SKILL.md routes to the app docs/ideas layer and integrates it in both workflows", () => {
+    const skill = BPMN_DESIGN_FILES["SKILL.md"];
+    expect(skill).toContain("app/documentation.md");
+    expect(skill).toContain("app/ideas.md");
+    expect(skill).toContain("app/cross-layer-workflows.md");
+    expect(skill).toMatch(/read the existing docs\/ideas layer/i);
+    expect(skill).toMatch(/document what you designed/i);
+    expect(skill).toMatch(/never change its `estado:`/i);
+  });
 });
