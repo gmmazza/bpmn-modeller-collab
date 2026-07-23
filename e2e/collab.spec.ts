@@ -162,7 +162,7 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   await page.locator("#history .history-row", { hasText: "Beto" }).locator(".history-check").check();
 
   // Split + compare bar + a mounted second viewer.
-  await expect(page.locator("#canvasarea.split")).toHaveCount(1);
+  await expect(page.locator("#stage-split.split")).toHaveCount(1);
   await expect(page.locator(".compare-bar")).toBeVisible();
   await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
   // The checked history rows are highlighted; side-by-side badges read izq / der.
@@ -176,33 +176,33 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   await expect(page.locator('#canvas2 .djs-element.diff-moved[data-element-id="TaskA"]')).toHaveCount(1);
   // Compare is pure visualization → both panes read-only, so Publicar stays disabled.
   await expect(page.locator("#save")).toBeDisabled();
-  await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
+  await expect(page.locator("#stage-split.vertical")).toHaveCount(0);
 
   // Orientation toggle → stacks the panes (adds .vertical); button relabels AND the
   // History badges switch from izq/der to arriba/abajo.
   await page.locator(".compare-orient").click();
-  await expect(page.locator("#canvasarea.vertical")).toHaveCount(1);
+  await expect(page.locator("#stage-split.vertical")).toHaveCount(1);
   await expect(page.locator(".compare-orient")).toContainText("Lado a lado");
   await expect(page.locator("#history .history-side.izq")).toHaveText("arriba");
   await expect(page.locator("#history .history-side.der")).toHaveText("abajo");
   await page.locator(".compare-orient").click(); // back to side-by-side
-  await expect(page.locator("#canvasarea.vertical")).toHaveCount(0);
+  await expect(page.locator("#stage-split.vertical")).toHaveCount(0);
   await expect(page.locator("#history .history-side.izq")).toHaveText("izq");
 
   // Draggable separator → dragging #canvassplit changes the --split ratio.
-  const splitBefore = await page.locator("#canvasarea").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
+  const splitBefore = await page.locator("#stage-split").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
   const sep = (await page.locator("#canvassplit").boundingBox())!;
   await page.mouse.move(sep.x + sep.width / 2, sep.y + sep.height / 2);
   await page.mouse.down();
   await page.mouse.move(sep.x - 120, sep.y + sep.height / 2, { steps: 6 });
   await page.mouse.up();
-  const splitAfter = await page.locator("#canvasarea").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
+  const splitAfter = await page.locator("#stage-split").evaluate((el) => getComputedStyle(el).getPropertyValue("--split").trim());
   expect(splitAfter).not.toBe(splitBefore);
 
   // Exit → single canvas back, no split, no overflow.
   await page.locator(".compare-exit").click();
   await expect(page.locator(".compare-bar")).toHaveCount(0);
-  await expect(page.locator("#canvasarea.split")).toHaveCount(0);
+  await expect(page.locator("#stage-split.split")).toHaveCount(0);
   await expect(page.locator("#canvas2")).toBeHidden();
   const overflow = await page.evaluate(() => document.documentElement.scrollHeight - document.documentElement.clientHeight);
   expect(overflow).toBeLessThanOrEqual(0);
@@ -272,7 +272,7 @@ test("compare: left pane read-only, right pane pans, and selecting + copying a h
 
   // Exit → single canvas back; the copied element stays and Publicar is still enabled.
   await page.locator(".compare-exit").click();
-  await expect(page.locator("#canvasarea.split")).toHaveCount(0);
+  await expect(page.locator("#stage-split.split")).toHaveCount(0);
   await expect(page.locator("#save")).toBeEnabled();
 });
 

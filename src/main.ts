@@ -823,11 +823,12 @@ async function bootstrap() {
     });
   }
 
-  // Draggable separator between the two compare panes. Sets --split (a %) on the area;
-  // the axis follows the orientation (row → width, column → height). Clamped 15–85%.
-  function setupCanvasSplitResize(): void {
-    const area = document.getElementById("canvasarea");
-    const resizer = document.getElementById("canvassplit");
+  // Draggable separator between a pane's two compare canvases. Sets --split (a %) on the
+  // pane's .pane-split element (NOT the shared #canvasarea, so the master's and stage's
+  // compares don't fight over one variable). Axis follows the pane's own orientation.
+  function setupPaneSplitResize(splitId: string, resizerId: string): void {
+    const area = document.getElementById(splitId);
+    const resizer = document.getElementById(resizerId);
     if (!area || !resizer) return;
     let dragging = false;
     const onMove = (e: MouseEvent): void => {
@@ -1161,8 +1162,6 @@ async function bootstrap() {
       </div>
       <div id="sync"></div>
       <div id="conflict"></div>
-      <div id="preview"></div>
-      <div id="compare"></div>
       <div id="master-bar" hidden></div>
       <div id="map-offer" hidden></div>
       <div id="appupdate"></div>
@@ -1170,12 +1169,24 @@ async function bootstrap() {
         <aside id="files"><div class="files-tree"></div></aside>
         <section id="canvasarea">
           <button id="navpills-toggle" type="button" hidden aria-pressed="true" title="Ocultar vínculos de navegación"><span class="npt-ico">🔗</span><span class="npt-lbl">Vínculos</span></button>
-          <section id="master-canvas" hidden></section>
-          <div id="master-split-resizer" class="master-split-resizer" hidden></div>
-          <section id="canvas"></section>
           <div id="stage-hint" hidden>Doble-clic en una etapa para abrirla</div>
-          <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
-          <section id="canvas2" hidden></section>
+          <div id="master-wrap" class="pane-wrap" hidden>
+            <div id="master-pane-bar" class="pane-bar"></div>
+            <div id="master-split" class="pane-split">
+              <section id="master-canvas"></section>
+              <div class="canvas-resizer" id="master-canvassplit" title="Arrastrá para ajustar el split"></div>
+              <section id="master-canvas2" hidden></section>
+            </div>
+          </div>
+          <div id="master-split-resizer" class="master-split-resizer" hidden></div>
+          <div id="stage-wrap" class="pane-wrap">
+            <div id="stage-pane-bar" class="pane-bar"></div>
+            <div id="stage-split" class="pane-split">
+              <section id="canvas"></section>
+              <div class="canvas-resizer" id="canvassplit" title="Arrastrá para ajustar el split"></div>
+              <section id="canvas2" hidden></section>
+            </div>
+          </div>
         </section>
         <div id="inspector"></div>
       </main>`;
@@ -1208,7 +1219,8 @@ async function bootstrap() {
     setupInspectorResize();
     setupFilesResize();
     setupMasterSplitResize();
-    setupCanvasSplitResize();
+    setupPaneSplitResize("stage-split", "canvassplit");
+    setupPaneSplitResize("master-split", "master-canvassplit");
     // Navigation-pills show/hide toggle (floating over the canvas). Apply the persisted
     // choice once so the body class + button reflect it from the first render.
     document.getElementById("navpills-toggle")?.addEventListener("click", () => toggleNavPills());
@@ -1885,8 +1897,6 @@ async function bootstrap() {
     if (!editing) {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
-      if (el("preview")) (el("preview") as HTMLElement).innerHTML = "";
-      if (el("compare")) (el("compare") as HTMLElement).innerHTML = "";
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
     // Never publish from a read-only preview / read-only compare (would push an old version).
@@ -2282,8 +2292,8 @@ async function bootstrap() {
     catch { masterHeadRevisionId = null; }
     closeLinkPopover();
     document.body.classList.add("master-mode");
+    (document.getElementById("master-wrap") as HTMLElement | null)?.removeAttribute("hidden");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
-    if (mc) mc.hidden = false;
     (document.getElementById("map-offer") as HTMLElement | null)?.setAttribute("hidden", "");
     renderBreadcrumb(null);
     showStageHint(true);
@@ -2327,8 +2337,9 @@ async function bootstrap() {
     masterHeadRevisionId = null;
     document.body.classList.remove("master-mode");
     showStageHint(false);
+    (document.getElementById("master-wrap") as HTMLElement | null)?.setAttribute("hidden", "");
     const mc = document.getElementById("master-canvas") as HTMLElement | null;
-    if (mc) { mc.hidden = true; mc.innerHTML = ""; }
+    if (mc) mc.innerHTML = "";
     const split = document.getElementById("master-split-resizer");
     if (split) (split as HTMLElement).hidden = true;
     const bar = document.getElementById("master-bar") as HTMLElement | null;
@@ -2651,6 +2662,11 @@ async function bootstrap() {
 
   // Close the file and go back to browsing. Flush the draft, release any reservation.
   async function closeFile(fileId: string) {
+    // Drop any active preview/compare with the file (the pane bars live inside the
+    // stage wrap now — render() no longer clears them globally).
+    stageHistory?.clearPreviewUI();
+    stageHistory?.clearCompareUI();
+    syncHistoryBodyClasses();
     await flushDraft();
     if (state.kind === "editing" && state.lock === "mine") {
       try { await api.setLock(fileId, clearProps()); } catch { /* best-effort */ }
@@ -2731,10 +2747,10 @@ async function bootstrap() {
       editor: () => editor,
       modeler: () => modeler,
       els: {
-        wrap: document.getElementById("canvasarea")!,
-        splitHost: document.getElementById("canvasarea")!,
+        wrap: document.getElementById("stage-wrap")!,
+        splitHost: document.getElementById("stage-split")!,
         canvas2: document.getElementById("canvas2")!,
-        bar: document.getElementById("preview")!,
+        bar: document.getElementById("stage-pane-bar")!,
       },
       createViewer: async (c) => {
         const v = await createCompareModeler(c); // BpmnModeler: select + copyPaste + pan

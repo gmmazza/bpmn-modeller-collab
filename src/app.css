@@ -164,7 +164,7 @@ body.app-editing .djs-container { box-shadow: inset 0 0 0 2px var(--accent); }
 /* Revision preview: a calm-but-notorious indigo frame + banner (distinct from the
    blue reservation frame, the amber sync bar and the red conflict bar) so it's
    unmistakable you're viewing an OLD version, without being strident. */
-body.app-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
+.pane-wrap.pane-previewing .djs-container { box-shadow: inset 0 0 0 3px #6366f1; }
 .preview-bar { display: flex; align-items: center; gap: 10px; background: #e0e7ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
 .preview-bar .preview-spacer { flex: 1; }
 .preview-bar .preview-restore { background: #fff; color: #3730a3; border: 1px solid #6366f1; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-family: inherit; font-size: 13px; }
@@ -183,19 +183,28 @@ main.app { display: flex; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .files-resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; margin-right: -4px; cursor: col-resize; z-index: 6; }
 .files-resizer:hover, body.col-resizing .files-resizer { background: var(--accent); opacity: .35; }
 #canvasarea { flex: 1; min-width: 0; display: flex; position: relative; }
-#canvasarea.vertical { flex-direction: column; }
-#canvas { flex: 1; min-width: 0; min-height: 0; }
-#canvasarea.split #canvas { flex: 0 0 var(--split, 50%); }
-#canvas2 { flex: 1 1 0; min-width: 0; min-height: 0; }
-#canvas2[hidden] { display: none; }
-/* Draggable split separator between the two compare panes (shown only while comparing). */
+/* Per-pane wraps (dual history): each editor pane is a self-contained column of
+   [pane-bar (preview/compare banner) + pane-split (canvas | resizer | compare canvas)].
+   The compare split and its frame live INSIDE the wrap, so the master's and the
+   stage's preview/compare never interfere with each other or with the master-mode
+   column layout of #canvasarea. */
+.pane-wrap { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
+.pane-wrap[hidden] { display: none; }
+.pane-bar { flex: none; }
+.pane-split { flex: 1; display: flex; min-width: 0; min-height: 0; position: relative; }
+.pane-split.vertical { flex-direction: column; }
+#canvas, #master-canvas { flex: 1; min-width: 0; min-height: 0; }
+.pane-split.split #canvas, .pane-split.split #master-canvas { flex: 0 0 var(--split, 50%); }
+#canvas2, #master-canvas2 { flex: 1 1 0; min-width: 0; min-height: 0; }
+#canvas2[hidden], #master-canvas2[hidden] { display: none; }
+/* Draggable split separator between a pane's two compare canvases (only while comparing). */
 .canvas-resizer { display: none; flex: none; background: var(--border); z-index: 4; }
-#canvasarea.split .canvas-resizer { display: block; }
-#canvasarea:not(.vertical) .canvas-resizer { width: 6px; cursor: col-resize; }
-#canvasarea.vertical .canvas-resizer { height: 6px; cursor: row-resize; }
+.pane-split.split .canvas-resizer { display: block; }
+.pane-split:not(.vertical) .canvas-resizer { width: 6px; cursor: col-resize; }
+.pane-split.vertical .canvas-resizer { height: 6px; cursor: row-resize; }
 .canvas-resizer:hover, body.col-resizing .canvas-resizer { background: #0d9488; }
-/* Compare mode: teal frame on both panes + banner (distinct from indigo preview). */
-body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
+/* Compare mode: teal frame on the comparing pane (distinct from indigo preview). */
+.pane-wrap.pane-comparing .pane-split { box-shadow: inset 0 0 0 2px #0d9488; }
 .compare-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #ccfbf1; color: #115e59; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #99f6e4; }
 .compare-bar .compare-spacer { flex: 1; }
 .compare-bar .compare-title { font-weight: 600; }
@@ -215,13 +224,12 @@ body.app-comparing #canvasarea { box-shadow: inset 0 0 0 2px #0d9488; }
 #map-offer { display: flex; align-items: center; gap: 12px; background: #eef2ff; color: #3730a3; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid #c7d2fe; }
 #map-offer[hidden] { display: none; }
 body.master-mode #canvasarea { flex-direction: column; }
-#master-canvas { flex: 0 0 40%; min-height: 0; min-width: 0; position: relative; border-bottom: 1px solid var(--border); }
-#master-canvas[hidden] { display: none; }
+#master-wrap { border-bottom: 1px solid var(--border); }
 /* Draggable split between the master map (top) and the open stage (bottom) — only
-   meaningful once a stage is open (:not(.master-no-stage)); overrides the 40% fallback. */
-body.master-mode:not(.master-no-stage) #master-canvas { flex: 0 0 var(--master-split, 40%); }
+   meaningful once a stage is open (:not(.master-no-stage)); overrides the default. */
+body.master-mode:not(.master-no-stage) #master-wrap { flex: 0 0 var(--master-split, 40%); }
 /* No stage open → the editable master map takes the whole editing area (full-screen). */
-body.master-mode.master-no-stage #master-canvas { flex: 1 1 auto; }
+body.master-mode.master-no-stage #master-wrap { flex: 1 1 auto; }
 .master-split-resizer { flex: none; height: 6px; cursor: row-resize; background: var(--border); z-index: 4; }
 .master-split-resizer[hidden] { display: none; }
 .master-split-resizer:hover, body.col-resizing .master-split-resizer { background: #0d9488; }
@@ -235,7 +243,7 @@ body.master-mode.master-no-stage #stage-hint {
   box-shadow: var(--shadow); color: var(--text); opacity: .85; font-size: 13px;
   pointer-events: none; z-index: 5; white-space: nowrap;
 }
-body.master-mode.master-no-stage #canvas { display: none; }
+body.master-mode.master-no-stage #stage-wrap { display: none; }
 .compare-bar .compare-hint { color: #0f766e; font-size: 12px; opacity: .8; }
 .compare-bar .compare-exit { background: #0d9488; color: #fff; border: none; border-radius: 5px; padding: 5px 12px; cursor: pointer; font-family: inherit; font-size: 13px; }
 .compare-bar .compare-exit:hover { filter: brightness(1.08); }
@@ -255,13 +263,15 @@ body.master-mode.master-no-stage #canvas { display: none; }
 .history-row.previewing { background: #eef2ff; border-color: #6366f1; }
 /* Historical (right) compare pane is a read-only viewer; hide any editing chrome just in
    case. (Keep .bjs-powered-by visible — bpmn.io attribution must stay.) */
-#canvas2 .djs-palette, #canvas2 .djs-context-pad { display: none; }
+#canvas2 .djs-palette, #canvas2 .djs-context-pad,
+#master-canvas2 .djs-palette, #master-canvas2 .djs-context-pad { display: none; }
 /* Self-drawn rubber-band selection box in the historical pane (Shift+drag). */
 .compare-lasso { position: absolute; border: 1px solid #0d9488; background: rgba(13, 148, 136, .12); pointer-events: none; z-index: 5; }
-/* While previewing/comparing the MAIN canvas is read-only too — hide its editing chrome
-   (the interaction veto in editor.ts blocks the actual edits; this hides the affordances). */
-body.app-previewing #canvas .djs-palette, body.app-previewing #canvas .djs-context-pad,
-body.app-comparing #canvas .djs-palette, body.app-comparing #canvas .djs-context-pad { display: none; }
+/* While a pane previews/compares, its working canvas is read-only too — hide its editing
+   chrome (the interaction veto in editor.ts blocks the actual edits; this hides the
+   affordances). Scoped to the wrap so the OTHER pane keeps its palette. */
+.pane-wrap.pane-previewing .djs-palette, .pane-wrap.pane-previewing .djs-context-pad,
+.pane-wrap.pane-comparing .djs-palette, .pane-wrap.pane-comparing .djs-context-pad { display: none; }
 /* Activity-bar layout: a fixed icon rail on the left edge of the inspector + a pane
    area that collapses independently (the rail stays visible when collapsed). */
 .inspector { position: relative; box-sizing: border-box; flex: none; border-left: 1px solid var(--border); background: var(--surface); display: flex; flex-direction: row; }
