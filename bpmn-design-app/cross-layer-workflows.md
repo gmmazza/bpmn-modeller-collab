@@ -4,15 +4,21 @@ Estos procedimientos cruzan las tres capas. **Todos** respetan el protocolo prop
 firma IA (ver `AGENTS.md` y `ideas.md`).
 
 ## 1. Diseñar / editar integrado
-Al agregar un elemento significativo (task / subproceso / gateway relevante) al diagrama →
-creá o actualizá su nota `<elementId>.md` en `<nombre>.docs/` con el frontmatter correcto
-(`element`, `name`, `type`, `diagram`). El `name` de la nota concuerda con el label del elemento.
+**Antes de diseñar**, leé la capa existente como input: `<nombre>.docs/_proceso.md`, `_index.md`
+y las ideas del proceso (lo que no exista, saltealo). **Después de diseñar**, documentá lo que
+tocaste: creá/actualizá `_proceso.md` + la nota `<elementId>.md` de cada elemento significativo
+— criterio de cobertura y plantillas en `documentation.md` — con el frontmatter correcto
+(`element`, `name`, `type`, `diagram`); el `name` concuerda con el label del elemento.
 Nunca edites `_index.md` / `_ideas.md` (derivados).
 
 ## 2. Revisar integrado (proponer, no pisar)
 Un hallazgo de revisión → por defecto una **idea** anclada al elemento (`estado: pendiente`, firma
 `IA`), **no** una edición silenciosa del `.bpmn`. Editá el `.bpmn` directo solo cuando corresponde y
 respetando la reserva `.lock`/`.req` (ver `AGENTS.md`).
+
+Si tu cambio de diseño **resuelve o afecta una idea existente**, dejá una viñeta firmada en su
+`## Comentarios` (`- IA, YYYY-MM-DD: <qué hiciste>`). No cambies su `estado:` — eso lo decide
+un humano.
 
 ## 3. Idea → mejora
 Cuando una idea madura, promovela: creá `mejoras/<id>.md` con `desde-idea: <id>`, enlazá

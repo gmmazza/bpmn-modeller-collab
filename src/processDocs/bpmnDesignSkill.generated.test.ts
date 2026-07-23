@@ -53,4 +53,11 @@ describe("bpmnDesignSkill.generated", () => {
     expect(doc).toMatch(/orden de flujo/);
     expect(doc).toMatch(/Nunca.*`_index\.md`/s);
   });
+
+  it("cross-layer-workflows.md integrates read-before/write-after and keeps idea estado human", () => {
+    const x = BPMN_DESIGN_FILES["app/cross-layer-workflows.md"];
+    expect(x).toMatch(/Antes de diseñar/);
+    expect(x).toMatch(/Después de diseñar/);
+    expect(x).toContain("No cambies su `estado:`");
+  });
 });
