@@ -179,6 +179,7 @@ async function bootstrap() {
   let linkPopoverEl: HTMLElement | null = null; // currently open link popover (Vincular/Crear/Ir/Desvincular), if any
   let masterPaneFocused = false; // true → the master pane is the active editor for Publicar/Ctrl+S
   let masterDraftTimer: number | null = null; // debounce for the master pane's local-draft autosave
+  let masterDraftPending = false; // master edits not yet written to the local draft (mirrors draftPending)
 
   // File-tree 🗺 "maestro" badges (Task 7): which .bpmn paths are masters, mirroring the
   // registry's re-parse-only-what-changed pattern so a large folder doesn't re-read every
@@ -983,14 +984,19 @@ async function bootstrap() {
   // Publicar button — skips the confirm dialog, same precedent as linkMasterBox/unlinkMasterBox),
   // then stamps the created anchor's id back onto the sidecar entry so the button hides.
   async function mostrarEnDiagrama(category: DatosCategory, entry: DatosEntry): Promise<void> {
-    if (state.kind !== "editing" || !selectedId) return;
+    // The anchor is created in the STAGE modeler (selectedId is a stage selection), so
+    // this is only coherent when the stage is the active pane. With the master focused,
+    // docsFileId points at the MASTER — saving there would overwrite the shared map
+    // with the stage's XML. Guard hard and save to the stage's own file id.
+    if (state.kind !== "editing" || !selectedId || activePane() === "master") return;
+    const stageFileId = state.fileId;
     const el = (modeler.get("elementRegistry") as any).get(selectedId);
     if (!el) { showToast("No se encontró el elemento en el diagrama"); return; }
     const anchor =
       category === "formularios" ? anchorFormulario(modeler, el, entry.nombre) : anchorAlmacenamiento(modeler, el, entry.nombre);
-    await save(docsFileId);
+    await save(stageFileId);
     if (state.kind === "editing" && state.conflict) return; // conflict bar showing — let the user resolve it normally
-    const client = createDatosClient(api, docsFileId);
+    const client = createDatosClient(api, stageFileId);
     await client.markAnchored(selectedId, category, entry.id, anchor.id);
     await refreshDatosBadges();
   }
@@ -1226,6 +1232,8 @@ async function bootstrap() {
     document.getElementById("navpills-toggle")?.addEventListener("click", () => toggleNavPills());
     applyNavPillsVisibility();
     mountStageHistory(); // per-pane history controller — needs the shell DOM above
+    // Focus tracking for the stage pane (the master pane wires its own via onFocus).
+    document.getElementById("stage-wrap")?.addEventListener("pointerdown", () => focusStagePane(), true);
 
     await mountModeler();
 
@@ -1657,8 +1665,8 @@ async function bootstrap() {
       const { html } = await buildManual(manualDeps());
       showManualModal(html);
     })().catch(onError));
-    $("undo").addEventListener("click", () => void doUndo().catch(onError));
-    $("redo").addEventListener("click", () => void doRedo().catch(onError));
+    $("undo").addEventListener("click", () => void (activePane() === "master" ? doUndoMaster() : doUndo()).catch(onError));
+    $("redo").addEventListener("click", () => void (activePane() === "master" ? doRedoMaster() : doRedo()).catch(onError));
     // Primary "Auto-organizar" now runs elk (high quality); bpmn-auto-layout is a backup.
     $("autolayout").addEventListener("click", () => void doAutoLayout("elk").catch(onError));
     // "Opciones de organización" dropdown: reorganize-selection + backup engine.
@@ -1686,11 +1694,18 @@ async function bootstrap() {
       if (elkPop && !elkPop.hidden && !document.getElementById("autolayout-menu")?.contains(e.target as Node)) elkPop.hidden = true;
     });
     $("save").addEventListener("click", guard(async () => {
-      if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
+      if (activePane() === "master") { void publishMaster().catch(onError); return; }
       if (state.kind === "editing") await publish(state.fileId);
     }));
-    // Local group: manual draft save + autosave on/off toggle.
+    // Local group: manual draft save + autosave on/off toggle. Targets the active pane.
     $("savedraft").addEventListener("click", guard(async () => {
+      if (activePane() === "master") {
+        await flushMasterDraft();
+        masterDraftPending = false;
+        render();
+        showToast("Guardado local");
+        return;
+      }
       if (state.kind !== "editing") return;
       await flushDraft();
       render();
@@ -1738,7 +1753,7 @@ async function bootstrap() {
       if (!(ev.ctrlKey || ev.metaKey)) return;
       if (ev.key.toLowerCase() === "s") {
         ev.preventDefault();
-        if (masterPaneFocused && currentMasterFile && !isStageOpen()) { void publishMaster().catch(onError); return; }
+        if (activePane() === "master") { void publishMaster().catch(onError); return; }
         if (state.kind === "editing") void publish(state.fileId).catch(onError);
       }
     });
@@ -1755,19 +1770,14 @@ async function bootstrap() {
       const k = ev.key.toLowerCase();
       const isRedo = k === "y" || (k === "z" && ev.shiftKey);
       const isUndo = k === "z" && !ev.shiftKey;
-      // Master pane: revert the last auto-organize (its own modeler has no coarse stack).
-      if (isUndo && masterPaneFocused && currentMasterFile && !isStageOpen() && masterLayoutUndo != null) {
-        ev.preventDefault(); ev.stopPropagation();
-        const snap = masterLayoutUndo;
-        masterLayoutUndo = null;
-        void (async () => {
-          await masterHandle!.load(snap);
-          masterPaneFocused = true;
-          saveDraft(folderId, currentMasterFile!, snap);
-          scheduleMasterDraftSave();
-          render();
-          showToast("Se deshizo la reorganización del mapa");
-        })().catch(onError);
+      // Route by the active pane; each pane falls back to ITS coarse stack only once
+      // its own native stack is exhausted (native Ctrl+Z reaches the focused canvas).
+      if (activePane() === "master") {
+        if (isUndo && !canNativeUndoMaster() && masterCoarseUndo.length) {
+          ev.preventDefault(); ev.stopPropagation(); void doUndoMaster().catch(onError);
+        } else if (isRedo && !canNativeRedoMaster() && masterCoarseRedo.length) {
+          ev.preventDefault(); ev.stopPropagation(); void doRedoMaster().catch(onError);
+        }
         return;
       }
       if (isUndo && !canNativeUndo() && coarseUndo.length) {
@@ -1858,10 +1868,10 @@ async function bootstrap() {
     // Compare is pure visualization — both panes read-only, so editing/publishing is off.
     const compareRO = stageHistory?.isComparing() ?? false;
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
-    // Editable master pane (full-screen, no stage): app state is "browsing" but Publicar/
-    // Ctrl+S target the master via publishMaster(). Keep the button live + the dot on while
-    // it has unpublished edits (mirrors the stage's `dirty || hasDraft`).
-    const masterActive = masterPaneFocused && !!currentMasterFile && !isStageOpen();
+    // Editable master pane: the toolbar targets whichever pane was last clicked
+    // (activePane) — full-screen OR in the split. App state may be "browsing" (master
+    // only) while Publicar/Ctrl+S/undo/Guardar act on the master via its own paths.
+    const masterActive = activePane() === "master";
     const masterUnpublished = masterActive
       && (!!masterHandle?.isDirty() || (currentMasterFile ? hasDraft(folderId, currentMasterFile) : false));
     // Notorious frame means "you hold a reservation" — suppressed while previewing or
@@ -1870,7 +1880,12 @@ async function bootstrap() {
     document.body.classList.remove("app-readonly");
     const chip = el("filechip");
     if (chip) {
-      if (st) {
+      if (masterActive && currentMasterFile) {
+        // The chip follows the active pane: show the master file + its draft state.
+        const draft = masterUnpublished ? "✏️ Borrador sin publicar" : "";
+        chip.textContent = [`🗺 ${currentMasterFile}`, draft].filter(Boolean).join(" · ");
+        chip.classList.remove("lock-mine", "lock-theirs");
+      } else if (st) {
         const who = openLock.lockedByName || openLock.lockedByEmail || "otra persona";
         const reserva = mine ? `🔒 Reservado por vos${untilLabel(openLock)}`
           : theirs ? `🔒 Reservado por ${who}${untilLabel(openLock)}`
@@ -1899,15 +1914,22 @@ async function bootstrap() {
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
-    // Never publish from a read-only preview / read-only compare (would push an old version).
-    if (saveBtn) saveBtn.disabled = (!unpublished && !masterUnpublished) || previewing || compareRO;
+    // Never publish from a read-only preview / read-only compare (would push an old
+    // version). The gate follows the ACTIVE pane — the stage comparing must not block
+    // publishing the master, and vice versa.
+    if (saveBtn) saveBtn.disabled = masterActive ? !masterUnpublished : (!unpublished || previewing || compareRO);
     const dot = document.getElementById("savedot");
     if (dot) (dot as HTMLElement).hidden = !unpublished && !masterUnpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
     const editable = editing && !previewing && !compareRO;
-    if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
-    if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
+    if (masterActive) {
+      if (undo) undo.disabled = !canNativeUndoMaster() && masterCoarseUndo.length === 0;
+      if (redo) redo.disabled = !canNativeRedoMaster() && masterCoarseRedo.length === 0;
+    } else {
+      if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
+      if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
+    }
     // Auto-organizar works on the stage/plain editor OR the editable master pane.
     const canLayout = editable || masterActive;
     const autolayout = document.getElementById("autolayout") as HTMLButtonElement | null;
@@ -1924,7 +1946,7 @@ async function bootstrap() {
                       : "Autoguardado del borrador local: desactivado (clic para activar)";
     }
     const savedraft = document.getElementById("savedraft") as HTMLButtonElement | null;
-    if (savedraft) savedraft.disabled = !editable;
+    if (savedraft) savedraft.disabled = masterActive ? false : !editable;
     updateLocalStatus();
     reflowToolbar(); // button visibility/label changes may alter the toolbar's width
     armIdle(); // (re)start the inactivity timer when we hold a reservation; clears otherwise
@@ -2007,9 +2029,15 @@ async function bootstrap() {
     }
   }
   // Refresh the small "Local" section status: ✓ Guardado local vs ● Sin guardar.
+  // Follows the active pane (master or stage).
   function updateLocalStatus(): void {
     const s = document.getElementById("localstatus");
     if (!s) return;
+    if (activePane() === "master") {
+      s.textContent = masterDraftPending ? "● Sin guardar" : "✓ Guardado local";
+      s.classList.toggle("dirty", masterDraftPending);
+      return;
+    }
     if (state.kind !== "editing") { s.textContent = ""; s.classList.remove("dirty"); return; }
     s.textContent = draftPending ? "● Sin guardar" : "✓ Guardado local";
     s.classList.toggle("dirty", draftPending);
@@ -2017,17 +2045,27 @@ async function bootstrap() {
 
   // ---- Editable master pane: focus tracking + its own local-draft autosave + publish ----
   // Two editable modelers can be alive at once (master top pane + stage bottom pane). The
-  // "focused" pane owns docsFileId and is the target of Publicar/Ctrl+S. openStage() flips
-  // focus to the stage; a pointerdown in the master pane (onFocus) flips it back.
-  // A stage is "open" when master-mode is on but NOT the full-screen no-stage layout.
-  function isStageOpen(): boolean {
-    return document.body.classList.contains("master-mode") && !document.body.classList.contains("master-no-stage");
+  // "focused" pane owns docsFileId and is the target of the toolbar. openStage() flips
+  // focus to the stage; a pointerdown in either pane flips it (onFocus / focusStagePane).
+  // Which pane the toolbar targets (Publicar/Ctrl+S, undo/redo, Guardar local,
+  // Auto-organizar, filechip): the last-clicked one. With no master open it's always
+  // the stage/plain editor.
+  function activePane(): "master" | "stage" {
+    return masterPaneFocused && currentMasterFile ? "master" : "stage";
   }
-  // The master pane became the active editor: docsFileId + Publicar/Ctrl+S target the master.
+  // The master pane became the active editor: docsFileId + the toolbar target it. Unlike
+  // the pre-dual-history behavior, this also applies while a stage is open (split view).
   function focusMasterPane(): void {
-    if (!currentMasterFile || isStageOpen()) return;
+    if (!currentMasterFile) return;
     masterPaneFocused = true;
     void loadDocsSidecarsForFocus(currentMasterFile).catch(onError);
+    render();
+  }
+  // Clicking into the stage pane flips the toolbar target back to the stage.
+  function focusStagePane(): void {
+    if (!masterPaneFocused) return;
+    masterPaneFocused = false;
+    if (state.kind === "editing") void loadDocsSidecarsForFocus(state.fileId).catch(onError);
     render();
   }
   // Point the docs/fuentes/datos panels at the focused file WITHOUT reloading the editor.
@@ -2044,6 +2082,8 @@ async function bootstrap() {
       void (async () => {
         if (masterHandle && currentMasterFile && masterHandle.isDirty()) {
           saveDraft(folderId, currentMasterFile, await masterHandle.getXml());
+          masterDraftPending = false;
+          updateLocalStatus();
         }
       })().catch(onError);
     }, 800);
@@ -2052,6 +2092,8 @@ async function bootstrap() {
     if (masterDraftTimer) { clearTimeout(masterDraftTimer); masterDraftTimer = null; }
     if (masterHandle && currentMasterFile && masterHandle.isDirty()) {
       saveDraft(folderId, currentMasterFile, await masterHandle.getXml());
+      masterDraftPending = false;
+      updateLocalStatus();
     }
   }
   // Publish the master pane's live edits. Mirrors save() (conflict guard + putXml + prune),
@@ -2132,7 +2174,7 @@ async function bootstrap() {
   }
   async function doAutoLayout(engine: LayoutEngine): Promise<void> {
     // The editable master pane is a separate modeler — route there when it's the active one.
-    if (masterPaneFocused && currentMasterFile && !isStageOpen()) { await doAutoLayoutMaster(engine); return; }
+    if (activePane() === "master") { await doAutoLayoutMaster(engine); return; }
     if (state.kind !== "editing" || (stageHistory?.isBusy() ?? false)) return;
     const fileId = state.fileId;
     const current = await editor.getXml();
@@ -2154,9 +2196,37 @@ async function bootstrap() {
     render();
     showToast(engine === "auto" ? "Diagrama reorganizado (modo rápido) · Ctrl+Z para deshacer" : "Diagrama reorganizado · Ctrl+Z para deshacer");
   }
-  // Master pane has its own modeler and no coarse stack; keep ONE pre-layout snapshot so the
-  // re-layout stays revertible (Ctrl+Z, handled below). Cleared by any later native edit.
-  let masterLayoutUndo: string | null = null;
+  // ---- Master-pane coarse undo/redo: same snapshot layer as the stage's, on the master's
+  // own modeler. Covers auto-organize, history-restore and copy-from-history (all wipe the
+  // master's native command stack via importXML). ----
+  const masterCoarseUndo: string[] = [];
+  const masterCoarseRedo: string[] = [];
+  const canNativeUndoMaster = (): boolean => { try { return !!masterHandle?.modeler.get("commandStack").canUndo(); } catch { return false; } };
+  const canNativeRedoMaster = (): boolean => { try { return !!masterHandle?.modeler.get("commandStack").canRedo(); } catch { return false; } };
+  async function applyCoarseSnapshotMaster(snap: string): Promise<void> {
+    if (!masterHandle || !currentMasterFile) return;
+    await masterHandle.load(snap); // reparses links + badges
+    masterHandle.setReadOnly(false);
+    saveDraft(folderId, currentMasterFile, snap);
+    masterDraftPending = false;
+    render();
+  }
+  async function doUndoMaster(): Promise<void> {
+    if (!masterHandle || !currentMasterFile) return;
+    if (canNativeUndoMaster()) { try { masterHandle.modeler.get("commandStack").undo(); } catch { /* noop */ } return; }
+    if (!masterCoarseUndo.length) return;
+    masterCoarseRedo.push(await masterHandle.getXml());
+    await applyCoarseSnapshotMaster(masterCoarseUndo.pop() as string);
+    showToast("Se deshizo el cambio del mapa");
+  }
+  async function doRedoMaster(): Promise<void> {
+    if (!masterHandle || !currentMasterFile) return;
+    if (canNativeRedoMaster()) { try { masterHandle.modeler.get("commandStack").redo(); } catch { /* noop */ } return; }
+    if (!masterCoarseRedo.length) return;
+    masterCoarseUndo.push(await masterHandle.getXml());
+    await applyCoarseSnapshotMaster(masterCoarseRedo.pop() as string);
+    showToast("Se rehizo el cambio del mapa");
+  }
   async function doAutoLayoutMaster(engine: LayoutEngine): Promise<void> {
     if (!masterHandle || !currentMasterFile) return;
     const current = await masterHandle.getXml();
@@ -2167,8 +2237,9 @@ async function bootstrap() {
       toastLayoutError(e, engine);
       return;
     }
+    masterCoarseUndo.push(current);
+    masterCoarseRedo.length = 0;
     await masterHandle.load(laidOut);
-    masterLayoutUndo = current;
     masterPaneFocused = true;
     saveDraft(folderId, currentMasterFile, laidOut);
     scheduleMasterDraftSave();
@@ -2286,6 +2357,9 @@ async function bootstrap() {
 
   async function enterMasterMode(fileId: string, masterXml: string): Promise<void> {
     currentMasterFile = fileId;
+    masterCoarseUndo.length = 0; // coarse undo is per-master-open
+    masterCoarseRedo.length = 0;
+    masterDraftPending = false;
     // Same external-baseline capture as openFile — master maps can be AI-generated too.
     void api.snapshotExternal(fileId, me.name).catch(() => { /* best-effort */ });
     try { masterHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
@@ -2309,7 +2383,12 @@ async function bootstrap() {
       masterHandle = await mountMasterPane(mc, {
         registry, openStage, onError, onElementClick: onMasterElementClick,
         onDrill: (info) => { const entry = registry.resolve(info.calledElement); if (entry) void openStage(entry.file).catch(onError); },
-        onDirty: () => { masterPaneFocused = true; masterLayoutUndo = null; scheduleMasterDraftSave(); render(); },
+        onDirty: (d) => {
+          masterPaneFocused = true;
+          if (d) { masterCoarseRedo.length = 0; masterDraftPending = true; } // a fresh edit branches history
+          scheduleMasterDraftSave();
+          render();
+        },
         onFocus: () => { focusMasterPane(); },
         resolveDestinationName: (id) => masterNodeNames.get(id) ?? "",
       });
@@ -2335,6 +2414,9 @@ async function bootstrap() {
     masterNodeNames = new Map(); masterNodeTypes = new Map();
     currentMasterFile = null;
     masterHeadRevisionId = null;
+    masterCoarseUndo.length = 0;
+    masterCoarseRedo.length = 0;
+    masterDraftPending = false;
     document.body.classList.remove("master-mode");
     showStageHint(false);
     (document.getElementById("master-wrap") as HTMLElement | null)?.setAttribute("hidden", "");

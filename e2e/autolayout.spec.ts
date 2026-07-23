@@ -195,10 +195,10 @@ test("Auto-organizar is enabled on the master map and re-lays it (with Ctrl+Z re
   await expect(page.locator(".toast")).toContainText("Mapa reorganizado");
   expect(await mx("CA1")).toBeLessThan(await mx("CA2")); // separated left-to-right
 
-  // Ctrl+Z reverts the master re-layout (the pane's own one-slot snapshot).
+  // Ctrl+Z reverts the master re-layout (the master's own coarse-undo stack).
   await page.locator("#master-canvas").click();
   await page.keyboard.press("Control+z");
-  await expect(page.locator(".toast").last()).toContainText("deshizo la reorganización del mapa");
+  await expect(page.locator(".toast").last()).toContainText("deshizo el cambio del mapa");
   expect(Math.abs((await mx("CA1")) - (await mx("CA2")))).toBeLessThan(5); // overlapping again
 });
 

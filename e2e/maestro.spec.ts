@@ -134,7 +134,12 @@ test("publishing a master succeeds after drilling into a stage and closing it (m
   await expect(page.locator("#save")).toBeDisabled(); // published — nothing pending anymore
 });
 
-test("clicking the master pane in split view does not steal docs focus from the open stage", async ({ page }) => {
+test("clicking a pane in split view moves the toolbar/docs focus to THAT pane", async ({ page }) => {
+  // Dual-history contract (2026-07-23): the last-clicked pane is the active one — the
+  // toolbar AND the docs/manual follow it. (The old data-loss hazard this spec used to
+  // pin — "Mostrar en el diagrama" saving the stage's XML over the master via a stolen
+  // docsFileId — is now guarded inside mostrarEnDiagrama itself, which hard-returns
+  // when the master is the active pane and always saves to state.fileId.)
   await openApp(page, { "mapa.bpmn": MAPA_BPMN, "etapa1.bpmn": ETAPA1_BPMN });
 
   await page.getByText("📄 mapa.bpmn").click();
@@ -143,19 +148,19 @@ test("clicking the master pane in split view does not steal docs focus from the 
 
   await expect(page.locator(".master-crumb")).toContainText("etapa1");
 
-  // Click an empty spot in the master pane (top-left, clear of the call activity box and
-  // its badge) — this fires the pointerdown → onFocus wiring in masterPane.ts.
+  // Click an empty spot in the master pane → the master becomes the active pane and the
+  // filechip reflects it.
   const mc = await page.locator("#master-canvas").boundingBox();
   expect(mc).not.toBeNull();
   await page.mouse.click(mc!.x + mc!.width * 0.08, mc!.y + mc!.height * 0.15);
+  await expect(page.locator("#filechip")).toContainText("mapa.bpmn");
 
-  // Regression proof: "Manual del proceso" reads docsFileId for its process name. If
-  // focusMasterPane stole docsFileId to the master (the bug), the manual would title
-  // itself "Manual: mapa" instead of the still-open stage, "Manual: etapa1" — and, more
-  // seriously, "Mostrar en el diagrama" would go on to overwrite the shared master with
-  // the stage's XML (see save(docsFileId) at mostrarEnDiagrama, main.ts ~1076).
-  // The extra master-mode toolbar controls push #manual into the "⋯ Más herramientas"
-  // overflow at this viewport width (reflowToolbar) — open it before clicking if so.
+  // Click back into the stage pane → focus (and the chip) return to the stage.
+  const sc = await page.locator("#canvas").boundingBox();
+  await page.mouse.click(sc!.x + sc!.width * 0.9, sc!.y + sc!.height * 0.9);
+  await expect(page.locator("#filechip")).toContainText("etapa1.bpmn");
+
+  // The manual follows the focused (stage) pane.
   if (!(await page.locator("#manual").isVisible())) await page.locator("#more").click();
   await page.locator("#manual").click();
   await expect(page.locator(".manual-body")).toContainText("etapa1");

@@ -43,6 +43,13 @@ export interface MasterPaneHandle {
   setCurrentStage(processId: string | null): void; // highlight the box whose calledElement === processId
   highlightElement(elementId: string | null): void; // highlight ANY master element by id (null clears)
   refreshBadges(): void; // re-classify against the current registry
+  // Dual history: the per-pane HistoryController drives the master's preview/compare
+  // through the same editor/modeler the pane edits with. setReadOnly ALSO suppresses the
+  // link popover and the drill dblclick — navigating away mid-preview would desync the
+  // previewed content from the app state.
+  setReadOnly(ro: boolean): void;
+  editor: Editor;
+  modeler: Awaited<ReturnType<typeof createBpmnModeler>>;
   destroy(): void;
 }
 
@@ -52,6 +59,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
   const modeler = await createBpmnModeler(container);
   const editor: Editor = createEditor(modeler);
   editor.onDirtyChange((d) => deps.onDirty?.(d));
+  let readOnly = false; // preview/compare: suppress popover + drill (see MasterPaneHandle)
 
   const eventBus = modeler.get("eventBus");
 
@@ -61,6 +69,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
 
   // Single-click on a linkable box → link popover (Vincular / Crear / Desvincular).
   eventBus.on("element.click", (e: any) => {
+    if (readOnly) return;
     const el = e?.element;
     if (!el || el.type === "bpmn:Process" || el.type === "label" || el === canvas().getRootElement()) return;
     if (!isLinkableBoxType(el.type ?? "")) return;
@@ -78,6 +87,7 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
   // and call activities WITHOUT a calledElement — fall through to native label editing.
   // (Rename a linked call activity via F2 / the Propiedades tab; see Task 5.)
   eventBus.on("element.dblclick", 1600, (e: any) => {
+    if (readOnly) return undefined;
     const el = e?.element;
     const called = el?.businessObject?.calledElement;
     if (el && (el.type ?? "").endsWith("CallActivity") && called) {
@@ -177,6 +187,12 @@ export async function mountMasterPane(container: HTMLElement, deps: MasterPaneDe
     },
     highlightElement,
     refreshBadges,
+    setReadOnly(ro: boolean) {
+      readOnly = ro;
+      editor.setReadOnly(ro);
+    },
+    editor,
+    modeler,
     destroy() {
       try { (modeler as any).destroy?.(); } catch { /* already gone */ }
     },

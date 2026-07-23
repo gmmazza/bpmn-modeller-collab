@@ -75,6 +75,33 @@ describe("mountMasterPane (editable)", () => {
   });
 });
 
+describe("mountMasterPane read-only + exposed internals (dual history)", () => {
+  it("exposes the inner editor and modeler for the history controller", async () => {
+    const host = document.createElement("div");
+    const handle = await mountMasterPane(host, { registry, openStage: async () => {}, onError: () => {} });
+    expect(handle.editor).toBeTruthy();
+    expect(typeof handle.editor.setReadOnly).toBe("function");
+    expect(handle.modeler).toBe(fakeModeler);
+  });
+
+  it("setReadOnly suppresses the link popover and the drill while previewing", async () => {
+    const host = document.createElement("div");
+    const onElementClick = vi.fn();
+    const onDrill = vi.fn();
+    const handle = await mountMasterPane(host, { registry, openStage: async () => {}, onError: () => {}, onElementClick, onDrill });
+    const clickEvt = { element: { id: "A", type: "bpmn:CallActivity", businessObject: { calledElement: "p1", name: "Etapa" } }, gfx: { getBoundingClientRect: () => new DOMRect() } };
+    handle.setReadOnly(true);
+    expect(handle.editor.setReadOnly).toHaveBeenCalledWith(true);
+    handlers["element.click"](clickEvt);
+    handlers["element.dblclick"](clickEvt);
+    expect(onElementClick).not.toHaveBeenCalled();
+    expect(onDrill).not.toHaveBeenCalled();
+    handle.setReadOnly(false);
+    handlers["element.dblclick"](clickEvt);
+    expect(onDrill).toHaveBeenCalledWith({ elementId: "A", calledElement: "p1" });
+  });
+});
+
 describe("mountMasterPane onElementClick hook", () => {
   const anchorFor = () => ({ getBoundingClientRect: () => new DOMRect(1, 2, 3, 4) });
 
