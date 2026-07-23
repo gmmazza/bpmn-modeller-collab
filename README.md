@@ -47,12 +47,21 @@ historial. La barra separa lo **Local** de lo **Compartido**.
 
 ### Historial: previsualizar, comparar y rescatar
 Cada publicación queda como versión en `.history/<nombre>/` (con **poda
-automática**). El panel Historial usa **casillas** como selector: 1 marcada →
-**previsualizás** (solo lectura, marco índigo); 2 marcadas → **comparás** en un
-split sincronizado con diff a color (🟢 nuevo · 🔴 eliminado · 🟡 cambiado ·
-🔵 movido). Podés **Restaurar** una versión a tu borrador, o **copiar elementos
-sueltos** de una versión histórica a la actual (clic / **Shift+arrastre**,
-conservando el *drag-hand*). Todo es **deshacible** con `Ctrl+Z`.
+automática** que **protege todo lo de la última hora**). El panel Historial usa
+**casillas** como selector: 1 marcada → **previsualizás** (solo lectura, marco
+índigo); 2 marcadas → **comparás** en un split sincronizado con diff a color
+(🟢 nuevo · 🔴 eliminado · 🟡 cambiado · 🔵 movido). Podés **Restaurar** una
+versión a tu borrador, o **copiar elementos sueltos** de una versión histórica a
+la actual (clic / **Shift+arrastre**, conservando el *drag-hand*). Todo es
+**deshacible** con `Ctrl+Z`.
+
+Con un mapa maestro abierto el historial es **dual**: una sección para el
+**maestro** y otra para el **subproceso**, cada una resolviendo vista previa y
+comparación **dentro de su propio panel**, de forma simultánea e independiente;
+la barra superior actúa sobre el **panel activo**. Las versiones **externas**
+(agentes de IA u otras herramientas) se **capturan automáticamente** antes de
+que puedan perderse y se **atribuyen por su firma** (`exporter="IA — Claude"` →
+"Claude-Matias" en el historial).
 
 ![Vista previa de una revisión, en solo-lectura](docs/screenshots/04-preview.png)
 ![Comparación con diff coloreado y "Copiar al actual"](docs/screenshots/05-comparar.png)

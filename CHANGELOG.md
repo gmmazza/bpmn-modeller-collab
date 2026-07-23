@@ -4,6 +4,48 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.6.6] — 2026-07-23
+
+**Historial robusto y dual**: cada panel del split (mapa maestro y subproceso)
+resuelve su propio historial; las versiones creadas fuera de la app (agentes de
+IA u otras herramientas) se capturan y atribuyen; y la poda ya no borra las
+versiones recientes.
+
+### Agregado
+- **Historial dual maestro/subproceso.** Con un mapa abierto, la pestaña
+  Historial muestra **dos secciones apiladas** (Maestro arriba, Subproceso
+  abajo), colapsables y con paridad total por panel: **vista previa**,
+  **comparación lado a lado** con diff y **"Copiar al actual"** funcionan dentro
+  de cada split, **simultáneos e independientes** (hasta 4 lienzos a la vez).
+  El maestro gana **deshacer/rehacer** propio para restauraciones y re-layouts.
+- **La barra superior sigue al panel activo.** Publicar/`Ctrl+S`,
+  deshacer/rehacer, Guardar local + estado, Auto-organizar y el chip de archivo
+  actúan sobre el maestro o el subproceso según el último panel clickeado.
+- **Captura de versiones externas.** Un `.bpmn` creado o editado **fuera de la
+  app** queda versionado automáticamente: baseline al abrirlo (con la fecha real
+  del archivo), captura al detectar el cambio externo y **siempre antes de
+  publicar encima** — la versión original ya no se pierde nunca.
+- **Atribución por firma (exporter BPMN).** La app firma sus publicaciones
+  (`exporter="BPMN compartida"`); los agentes IA firman
+  `exporter="IA — <agente>"` (contrato en `AGENTS.md` v3 + skill `bpmn-design`
+  + aviso del validador) y el historial atribuye **"Claude-Matias"** (agente +
+  usuario); sin firma queda "(externo)".
+
+### Corregido
+- **La poda del historial borraba las versiones recientes**: publicar varias
+  veces en una sesión dejaba solo la última versión. Ahora **todo lo de la
+  última hora se conserva siempre**; el decaimiento aplica solo hacia atrás.
+- En modo maestro, el historial **no reaccionaba** (maestro solo) o **rompía el
+  layout** del split al comparar, y publicar el maestro pisaba el panel del
+  subproceso. Los tres casos quedaron resueltos con el historial dual.
+- Guardia de seguridad: "Mostrar en el diagrama" ya no puede sobreescribir el
+  mapa maestro con el XML del subproceso cuando el foco está en el maestro.
+
+### Cambiado
+- Panel Historial rediseñado para el modo dual: cabecera por grupo con el
+  **nombre del archivo resaltado** (pill verde = maestro, índigo = subproceso)
+  y separador entre secciones.
+
 ## [0.6.5] — 2026-07-18
 
 **Auto-organizar**: layout automático de diagramas (flujo horizontal, con

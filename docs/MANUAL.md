@@ -156,6 +156,21 @@ Cada versión tiene una casilla. Lo que marcás decide el modo:
 
 **Leyenda del diff:** 🟢 nuevo · 🔴 eliminado · 🟡 cambiado · 🔵 movido. Los dos paneles (pan/zoom) están sincronizados; podés cambiar la orientación (lado a lado ↔ apilado).
 
+### Historial dual: maestro y subproceso a la vez
+
+Con un **mapa maestro** abierto, la pestaña Historial muestra **dos secciones apiladas**: **Maestro** arriba (pill verde) y **Subproceso** abajo (pill índigo), cada una colapsable y con su propia fila "Actual". Cada sección resuelve **dentro de su propio panel**: podés previsualizar una versión del maestro arriba **mientras** comparás versiones del subproceso abajo — cada split funciona como una ventana independiente, con su barra de vista previa/comparación propia.
+
+La **barra superior sigue al panel activo** (el último que clickeaste): Publicar, deshacer/rehacer, Guardar local, Auto-organizar y el chip de archivo actúan sobre el maestro o el subproceso según cuál tenga el foco.
+
+### Versiones externas y de agentes IA
+
+Si un `.bpmn` fue creado o modificado **fuera de la app** (un agente de IA, otra herramienta, la copia de un compañero), la app **captura esa versión automáticamente** — al abrir el archivo, al detectar el cambio externo y siempre **antes de publicar encima** — así la versión original nunca se pierde. En el historial aparece con la fecha real del archivo:
+
+- **"Claude-Matias"** — un agente IA firmado (`exporter="IA — Claude"`) capturado por el usuario Matias.
+- **"(externo)"** — contenido sin firma o de otra herramienta.
+
+Los agentes que siguen el `AGENTS.md` del workspace firman sus ediciones automáticamente.
+
 ![Vista previa de una revisión en solo-lectura, con banner índigo y "Restaurar esta versión"](screenshots/04-preview.png)
 
 ![Comparación lado a lado con el diff coloreado y el botón "Copiar al actual"](screenshots/05-comparar.png)
@@ -173,7 +188,7 @@ En **comparación** con "Actual" a la izquierda, podés tomar elementos de la ve
 
 ### Retención
 
-El historial se poda solo con una política de decaimiento (más densidad en lo reciente, menos en lo viejo; tope ~150 versiones). Para que una versión **no se borre nunca**, marcala como "guardar siempre" (queda con sufijo `.keep`).
+El historial se poda solo con una política de decaimiento: **todo lo de la última hora se conserva siempre** (una sesión activa no pierde ninguna versión), y hacia atrás la densidad baja gradualmente (tope ~150 versiones). Para que una versión **no se borre nunca**, marcala como "guardar siempre" (queda con sufijo `.keep`).
 
 ---
 
