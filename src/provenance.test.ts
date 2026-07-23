@@ -59,4 +59,22 @@ describe("externalAuthorOf", () => {
   it("is 'externo' when the exporter is the app itself (not a foreign edit signature)", () => {
     expect(externalAuthorOf(stampExporter(rep4, APP_EXPORTER))).toBe("externo");
   });
+
+  // An AI edit runs on the app user's machine at their request — the capture combines
+  // the agent name with the operating user: "Claude-Matias".
+  it("combines an IA signature with the capturing app user", () => {
+    expect(externalAuthorOf(stampExporter(rep4, "IA — Claude"), "Matias")).toBe("Claude-Matias");
+  });
+
+  it("uses IA-<user> when the signature has no distinct agent name", () => {
+    expect(externalAuthorOf(stampExporter(rep4, "IA"), "Matias")).toBe("IA-Matias");
+  });
+
+  it("does NOT attribute the user to a non-IA foreign tool (could be a teammate's edit)", () => {
+    expect(externalAuthorOf(stampExporter(rep4, "Camunda Modeler"), "Matias")).toBe("Camunda Modeler");
+  });
+
+  it("does NOT attribute the user to unsigned external content", () => {
+    expect(externalAuthorOf(rep4, "Matias")).toBe("externo");
+  });
 });

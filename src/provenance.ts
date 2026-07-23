@@ -33,10 +33,19 @@ export function stampExporter(xml: string, exporter: string): string {
   return xml.slice(0, m.index) + stamped + xml.slice(m.index + tag.length);
 }
 
+// IA signature convention (AGENTS.md contract): exporter="IA — <agent>" or plain "IA".
+const IA_SIGNATURE = /^IA(\s*[—–-]\s*(.+))?$/;
+
 // Author label for a revision captured from an EXTERNAL write (content that appeared on
 // disk without going through Publicar). A foreign signature identifies the writer; the
 // app's own exporter (or none) tells us nothing about who edited outside → "externo".
-export function externalAuthorOf(xml: string): string {
+// An IA signature combines with the capturing app user ("Claude-Matias"): the agent ran
+// on that user's machine at their request. Non-IA tools and unsigned content do NOT get
+// the user appended — they may be a teammate's edit that merely synced in.
+export function externalAuthorOf(xml: string, capturedBy?: string): string {
   const exporter = readExporter(xml);
-  return exporter && exporter !== APP_EXPORTER ? exporter : "externo";
+  if (!exporter || exporter === APP_EXPORTER) return "externo";
+  const ia = exporter.match(IA_SIGNATURE);
+  if (ia && capturedBy) return `${ia[2]?.trim() || "IA"}-${capturedBy}`;
+  return exporter;
 }

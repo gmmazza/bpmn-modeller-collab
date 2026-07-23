@@ -165,6 +165,21 @@ describe("fsClient external versions + provenance", () => {
     expect(revs[0].lastModifyingUser?.displayName).toBe("IA — Claude");
   });
 
+  it("combines the IA signature with the capturing user when one is given", async () => {
+    await seedFile(dir, "firmado.bpmn", `<bpmn:definitions xmlns:bpmn="http://x" exporter="IA — Claude" id="D2"/>`);
+    await fs.snapshotExternal("firmado.bpmn", "Matias");
+    const revs = await fs.listRevisions("firmado.bpmn");
+    expect(revs[0].lastModifyingUser?.displayName).toBe("Claude-Matias");
+  });
+
+  it("publish-time capture attributes the IA edit to <agent>-<publisher>", async () => {
+    await seedFile(dir, "firmado.bpmn", `<bpmn:definitions xmlns:bpmn="http://x" exporter="IA — Claude" id="D2"/>`);
+    await fs.putXml("firmado.bpmn", DEFS("<v2/>"), "Matias");
+    const revs = await fs.listRevisions("firmado.bpmn");
+    const ai = revs.find((r) => r.lastModifyingUser?.displayName === "Claude-Matias");
+    expect(ai).toBeDefined();
+  });
+
   it("captures an external edit made between two publishes", async () => {
     await fs.putXml("proceso.bpmn", DEFS("<v1/>"), "Ana");
     await seedFile(dir, "proceso.bpmn", DEFS("<hacked/>")); // external overwrite

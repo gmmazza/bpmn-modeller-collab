@@ -151,7 +151,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
   // No-ops when the disk content is already the newest revision (nothing external
   // happened) or when a never-published file carries the app's own exporter (our own
   // freshly-created template, not an external write). Returns the new rid, or null.
-  async function snapshotExternal(id: string): Promise<string | null> {
+  async function snapshotExternal(id: string, capturedBy?: string): Promise<string | null> {
     let f: File;
     try {
       f = await statAt(id);
@@ -175,7 +175,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       }
     }
     // Real fs mtimes are fractional ms (Node stat) — rids must be integers.
-    return appendHistory(id, xml, externalAuthorOf(xml), Math.floor(f.lastModified));
+    return appendHistory(id, xml, externalAuthorOf(xml, capturedBy), Math.floor(f.lastModified));
   }
   async function prune(id: string): Promise<void> {
     let hdir: FileSystemDirectoryHandle;
@@ -317,7 +317,7 @@ export function createFsClient(dir: FileSystemDirectoryHandle, now: () => number
       return readTextAt(id);
     },
     async putXml(id: string, xml: string, editorName: string): Promise<{ version: string; headRevisionId: string | null }> {
-      await snapshotExternal(id); // whatever is on disk right now must survive this write
+      await snapshotExternal(id, editorName); // whatever is on disk right now must survive this write
       const stamped = stampExporter(xml, APP_EXPORTER); // published files self-describe their writer
       const mtime = await writeTextAt(id, stamped);
       await appendHistory(id, stamped, editorName);
