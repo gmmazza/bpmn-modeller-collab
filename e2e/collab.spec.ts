@@ -82,8 +82,10 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  // Checking a SINGLE revision (nth 0 is "Actual") previews it — no "Vista previa" button.
-  const revCheck = page.locator("#history .history-check").nth(1);
+  // Checking a SINGLE revision previews it — no "Vista previa" button. Select Beto's
+  // seeded revision by author: the app also auto-captures an "externo" baseline of the
+  // current content on open, so positional nth() indices are not stable.
+  const revCheck = page.locator("#history .history-row", { hasText: "Beto" }).locator(".history-check");
   await revCheck.check();
 
   // Preview: banner + indigo frame, publish disabled, the OLD revision loaded, 👁 badge.
@@ -115,7 +117,7 @@ test("previewing a revision shows a read-only banner + frame and exiting restore
   await expect(page.locator(".preview-bar")).toHaveCount(0);
   await expect(page.locator("body.app-previewing")).toHaveCount(0);
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toHaveCount(0);
-  await expect(page.locator("#history .history-check").nth(1)).not.toBeChecked();
+  await expect(revCheck).not.toBeChecked();
 });
 
 test("preview: 'Restaurar esta versión' brings the revision into the draft and enables Publicar", async ({ page }) => {
@@ -125,7 +127,8 @@ test("preview: 'Restaurar esta versión' brings the revision into the draft and 
   });
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
-  await page.locator("#history .history-check").nth(1).check(); // preview the revision
+  const revCheck = page.locator("#history .history-row", { hasText: "Beto" }).locator(".history-check");
+  await revCheck.check(); // preview the revision
   await expect(page.locator("body.app-previewing")).toHaveCount(1);
 
   // Restaurar from the preview bar → revision becomes the editable draft; leaves preview.
@@ -134,7 +137,7 @@ test("preview: 'Restaurar esta versión' brings the revision into the draft and 
   await expect(page.locator(".preview-bar")).toHaveCount(0);
   await expect(page.locator('[data-element-id="Task_DRAFT"]')).toBeVisible(); // restored content stays
   await expect(page.locator("#save")).toBeEnabled(); // it's an unpublished draft now
-  await expect(page.locator("#history .history-check").nth(1)).not.toBeChecked();
+  await expect(revCheck).not.toBeChecked();
 });
 
 test("compare mode: split with diff on both panes (incl. moved), orientation toggle + draggable separator, exit restores", async ({ page }) => {
@@ -156,7 +159,7 @@ test("compare mode: split with diff on both panes (incl. moved), orientation tog
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
   // Select "Actual (editable)" + the revision (checkboxes) → 2 checked enters compare.
   await page.locator('#history [data-compare="actual"]').check();
-  await page.locator("#history .history-check").nth(1).check();
+  await page.locator("#history .history-row", { hasText: "Beto" }).locator(".history-check").check();
 
   // Split + compare bar + a mounted second viewer.
   await expect(page.locator("#canvasarea.split")).toHaveCount(1);
@@ -219,7 +222,7 @@ test("compare: left pane read-only, right pane pans, and selecting + copying a h
   await page.getByText("📄 test.bpmn").click();
   await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
   await page.locator('#history [data-compare="actual"]').check();
-  await page.locator("#history .history-check").nth(1).check();
+  await page.locator("#history .history-row", { hasText: "Beto" }).locator(".history-check").check();
   await expect(page.locator("#canvas2 .djs-container")).toBeVisible();
 
   // Copy button is present (comparing "Actual") but disabled until something is selected.
@@ -238,13 +241,16 @@ test("compare: left pane read-only, right pane pans, and selecting + copying a h
   expect(Math.abs(taskAStill.x - taskABefore.x) + Math.abs(taskAStill.y - taskABefore.y)).toBeLessThan(3);
 
   // A PLAIN drag on the right pane's empty canvas PANS it (drag-hand preserved), and the
-  // sync mirrors the pan to the left pane. Start top-center, away from the watermark link.
+  // sync mirrors the pan to the left pane. Start bottom-LEFT: guaranteed empty background
+  // (the small centered diagram sits in the upper area at any pane width; the watermark
+  // link lives bottom-right) — a start point over a shape would drag the element (vetoed)
+  // instead of panning.
   const before = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
   const leftBefore = (await page.locator('#canvas .djs-element[data-element-id="TaskA"]').boundingBox())!;
   const pane = (await page.locator("#canvas2 .djs-container").boundingBox())!;
-  await page.mouse.move(pane.x + pane.width / 2, pane.y + 15);
+  await page.mouse.move(pane.x + 40, pane.y + pane.height - 60);
   await page.mouse.down();
-  await page.mouse.move(pane.x + pane.width / 2, pane.y + 145, { steps: 8 });
+  await page.mouse.move(pane.x + 40, pane.y + pane.height - 190, { steps: 8 });
   await page.mouse.up();
   const after = (await page.locator('#canvas2 .djs-element[data-element-id="TaskB"]').boundingBox())!;
   expect(Math.abs(after.x - before.x) + Math.abs(after.y - before.y)).toBeGreaterThan(20); // it panned
@@ -257,9 +263,12 @@ test("compare: left pane read-only, right pane pans, and selecting + copying a h
   await expect(page.locator(".compare-copy")).toBeEnabled();
   await page.locator(".compare-copy").click();
 
-  // The element lands in the current diagram (one more shape) and it becomes publishable.
+  // The element lands in the current diagram (one more shape). The draft is now
+  // publishable (unpublished dot ON) but Publicar stays gated while compare is open —
+  // both panes are read-only visualization; you publish after exiting.
   await expect.poll(async () => page.locator("#canvas .djs-element[data-element-id]").count()).toBe(shapesBefore + 1);
-  await expect(page.locator("#save")).toBeEnabled();
+  await expect(page.locator("#savedot")).toBeVisible();
+  await expect(page.locator("#save")).toBeDisabled();
 
   // Exit → single canvas back; the copied element stays and Publicar is still enabled.
   await page.locator(".compare-exit").click();

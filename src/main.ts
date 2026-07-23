@@ -72,24 +72,20 @@ import { getPresets, getLastPresetId, setLastPresetId } from "./terminalPresets"
 import { openExternalTerminal, hasTermApi } from "./termApi";
 import { showConfigModal, type ConfigSection } from "./configModal";
 import { buildAiMenu } from "./aiMenu";
-import type { User, TreeEntry, LockInfo, LockState, RestorePoint } from "./types";
+import type { User, TreeEntry, LockInfo, LockState } from "./types";
 import { renderFileTree } from "./fileTree";
 import { openContextMenu } from "./contextMenu";
 import { pickFolder } from "./folderPicker";
 import {
-  renderHistoryPanel,
   renderConflictBar,
   renderSyncWarning,
-  toRestorePoint,
   showToast,
   promptText,
   confirmModal,
   pickReservationDuration,
-  renderPreviewBar,
-  renderCompareBar,
 } from "./ui";
-import { createCompareModeler, syncViewport, installViewSelectGuard, enableRubberBandSelect, type ViewerLike } from "./compareView";
-import { applyDiffMarkers, clearDiffMarkers } from "./diffMarkers";
+import { createCompareModeler, installViewSelectGuard, enableRubberBandSelect } from "./compareView";
+import { createHistoryController, type HistoryController } from "./historyPane";
 // A.2 master mode (subprocesos): process registry + read-only master map pane.
 import { parseDiagramInfo, parseCallLinks } from "./processDocs/diagramInfo";
 import { callLinksFromEls, linkBox, unlinkBox, newSubprocessSkeleton } from "./subprocesos/callActivityLinks";
@@ -134,22 +130,9 @@ async function bootstrap() {
   let pollTimer: number | null = null;
   let openLock: LockInfo = {}; // reservation info for the currently-open file (display + expiry)
   let folderId = "default"; // stable id of the current shared folder; namespaces local drafts
-  let previewingRid: string | null = null; // revision id being previewed (read-only), or null
-  let prePreviewXml: string | null = null; // working state snapshot to restore on exit-preview
-  // ---- compare mode (side-by-side version diff, driven by History checkboxes) ----
-  let comparing = false;
-  let compareSel: string[] = []; // up to 2 checked ids: "actual" or a revision id
-  let compareLeft = "actual"; // derived: the NEWER of the two (left/top pane)
-  let compareRight: string | null = null; // derived: the OLDER of the two (a revision id)
-  let compareOrientation: "h" | "v" = (localStorage.getItem("bpmn-compartida.compareOrientation") as "h" | "v") || "h";
-  let compareViewer: ViewerLike | null = null; // right pane read-only viewer
-  let compareUnsync: (() => void) | null = null; // viewport-sync teardown
-  let compareMarkedLeft: string[] = [];
-  let compareMarkedRight: string[] = [];
-  let preCompareXml: string | null = null; // working version snapshot (restored on exit; updated on paste)
-  let compareEdited = false; // did we paste historical elements into the working version this compare session?
-  let comparePoints: Array<{ id: string; label: string }> = []; // revisions (for labels)
-  let historyPoints: RestorePoint[] = []; // cached so the History panel re-renders on checkbox toggle
+  // History preview/compare lives in a per-pane controller (src/historyPane.ts) — the
+  // stage editor's instance; a master-pane instance joins it in the dual-history phases.
+  let stageHistory: HistoryController | null = null;
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
   let modeler: ModelerLike;
@@ -1230,6 +1213,7 @@ async function bootstrap() {
     // choice once so the body class + button reflect it from the first render.
     document.getElementById("navpills-toggle")?.addEventListener("click", () => toggleNavPills());
     applyNavPillsVisibility();
+    mountStageHistory(); // per-pane history controller — needs the shell DOM above
 
     await mountModeler();
 
@@ -1858,9 +1842,9 @@ async function bootstrap() {
     // optional advisory "Reserva", not a gate. `unpublished` drives Publicar.
     const mine = st?.lock === "mine";
     const theirs = st?.lock === "theirs";
-    const previewing = previewingRid !== null;
+    const previewing = stageHistory?.isPreviewing() ?? false;
     // Compare is pure visualization — both panes read-only, so editing/publishing is off.
-    const compareRO = comparing;
+    const compareRO = stageHistory?.isComparing() ?? false;
     const unpublished = st !== null && (st.dirty || hasDraft(folderId, st.fileId));
     // Editable master pane (full-screen, no stage): app state is "browsing" but Publicar/
     // Ctrl+S target the master via publishMaster(). Keep the button live + the dot on while
@@ -1870,7 +1854,7 @@ async function bootstrap() {
       && (!!masterHandle?.isDirty() || (currentMasterFile ? hasDraft(folderId, currentMasterFile) : false));
     // Notorious frame means "you hold a reservation" — suppressed while previewing or
     // comparing, where the indigo preview / teal compare frame takes over instead.
-    document.body.classList.toggle("app-editing", mine && !previewing && !comparing);
+    document.body.classList.toggle("app-editing", mine && !previewing && !compareRO);
     document.body.classList.remove("app-readonly");
     const chip = el("filechip");
     if (chip) {
@@ -2074,7 +2058,9 @@ async function bootstrap() {
     masterHeadRevisionId = res.headRevisionId ?? masterHeadRevisionId;
     masterHandle.markSaved();
     clearDraft(folderId, fileId);
-    await loadHistory(fileId);
+    // Refresh the stage's history section (the master gets its own controller in the
+    // dual-history phases — until then, publishing the master no longer clobbers it).
+    await stageHistory?.loadHistory();
     // Re-sync registry so badges/masters reflect any new/removed links.
     await registry.sync(lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => ({ path: e.path, version: e.version ?? "" })));
     masterHandle.refreshBadges();
@@ -2102,7 +2088,7 @@ async function bootstrap() {
     render();
   }
   async function doUndo(): Promise<void> {
-    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (state.kind !== "editing" || (stageHistory?.isBusy() ?? false)) return;
     if (canNativeUndo()) { try { modeler.get("commandStack").undo(); } catch { /* noop */ } return; }
     if (!coarseUndo.length) return;
     coarseRedo.push(await editor.getXml());
@@ -2110,7 +2096,7 @@ async function bootstrap() {
     showToast("Se deshizo la restauración");
   }
   async function doRedo(): Promise<void> {
-    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (state.kind !== "editing" || (stageHistory?.isBusy() ?? false)) return;
     if (canNativeRedo()) { try { modeler.get("commandStack").redo(); } catch { /* noop */ } return; }
     if (!coarseRedo.length) return;
     coarseUndo.push(await editor.getXml());
@@ -2137,7 +2123,7 @@ async function bootstrap() {
   async function doAutoLayout(engine: LayoutEngine): Promise<void> {
     // The editable master pane is a separate modeler — route there when it's the active one.
     if (masterPaneFocused && currentMasterFile && !isStageOpen()) { await doAutoLayoutMaster(engine); return; }
-    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (state.kind !== "editing" || (stageHistory?.isBusy() ?? false)) return;
     const fileId = state.fileId;
     const current = await editor.getXml();
     let laidOut: string;
@@ -2184,7 +2170,7 @@ async function bootstrap() {
   // then move only those (native + undoable) into the region they occupied — the rest of the
   // diagram (colors, groups, other nodes) is untouched.
   async function reorganizeSelection(): Promise<void> {
-    if (state.kind !== "editing" || previewingRid !== null || comparing) return;
+    if (state.kind !== "editing" || (stageHistory?.isBusy() ?? false)) return;
     let selection: any, registry: any, modeling: any;
     try {
       selection = modeler.get("selection").get();
@@ -2524,8 +2510,9 @@ async function bootstrap() {
     // Optimistic model: opening a file is immediately editable (no lock needed).
     // Flush the previous file's draft and drop any reservation we still hold.
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
-    clearPreviewUI(); // leaving any active revision preview
-    clearCompareUI(); // leaving any active compare
+    stageHistory?.clearPreviewUI(); // leaving any active revision preview
+    stageHistory?.clearCompareUI(); // leaving any active compare
+    syncHistoryBodyClasses();
     await flushDraft();
     coarseUndo.length = 0; coarseRedo.length = 0; // coarse undo is per-file
     draftPending = false; // fresh file: whatever we load is already the saved state
@@ -2566,7 +2553,7 @@ async function bootstrap() {
     // on-disk content as a revision BEFORE it can be overwritten by a publish, so the
     // history panel shows the original version from day one.
     try { await api.snapshotExternal(fileId, me.name); } catch { /* history capture is best-effort */ }
-    await loadHistory(fileId);
+    await stageHistory?.loadHistory();
     await loadLayers(fileId);
     await loadDocs(fileId);
     void renderFuentes();
@@ -2632,7 +2619,7 @@ async function bootstrap() {
     clearDraft(folderId, fileId); // published → the local draft is no longer needed
     dispatch({ type: "dirtyChanged", dirty: false });
     // Retention/prune runs inside fsClient.putXml (decay = deletion); nothing to do here.
-    await loadHistory(fileId);
+    await stageHistory?.loadHistory();
     showToast("Publicado");
   }
 
@@ -2733,281 +2720,60 @@ async function bootstrap() {
     })().catch(onError), IDLE_RELEASE_MS);
   }
 
-  // ---- Revision preview (read-only, with a notorious banner + canvas frame) ----
-  // Enter loads a past revision read-only; exit restores the working version you had
-  // before (your draft if any, else the shared latest). Publicar/undo/redo are
-  // disabled while previewing so you can't accidentally publish an old version.
-  async function enterPreview(fileId: string, rid: string, label: string): Promise<void> {
-    if (state.kind !== "editing") return;
-    if (previewingRid === null) {
-      await flushDraft(); // persist any pending edits before the canvas shows the revision
-      prePreviewXml = await editor.getXml(); // snapshot the working version once
-    }
-    const xml = await api.getRevisionXml(fileId, rid);
-    await loadIntoEditor(xml);
-    editor.setReadOnly(true);
-    previewingRid = rid;
-    document.body.classList.add("app-previewing");
-    renderPreviewBar(document.getElementById("preview")!, label, {
-      onExit: () => void exitPreview(fileId).catch(onError),
-      onRestore: () => void restoreRevisionToDraft(fileId, rid).catch(onError),
+  // ---- Stage history controller (preview/compare) — flows live in src/historyPane.ts ----
+  // Constructed in startApp() once the shell DOM exists. Phase 1 of the dual-history work:
+  // one instance for the stage editor; a master-pane instance joins it later.
+  function mountStageHistory(): void {
+    stageHistory = createHistoryController({
+      title: () => "", // untitled → classic "<h3>Historial</h3>" panel (dual sections come later)
+      getFileId: () => (state.kind === "editing" ? state.fileId : null),
+      api: () => api,
+      editor: () => editor,
+      modeler: () => modeler,
+      els: {
+        wrap: document.getElementById("canvasarea")!,
+        splitHost: document.getElementById("canvasarea")!,
+        canvas2: document.getElementById("canvas2")!,
+        bar: document.getElementById("preview")!,
+      },
+      createViewer: async (c) => {
+        const v = await createCompareModeler(c); // BpmnModeler: select + copyPaste + pan
+        installViewSelectGuard(v as unknown as { get(n: string): any }); // no editing
+        enableRubberBandSelect(v as unknown as { get(n: string): any }); // Shift+drag = box-select
+        return v;
+      },
+      loadWorking: (xml) => loadIntoEditor(xml),
+      flushWorking: () => flushDraft(),
+      getWorkingFallback: async () =>
+        state.kind === "editing" ? (loadDraft(folderId, state.fileId) ?? (await api.getXml(state.fileId))) : null,
+      onWorkingReplaced: (xml) => {
+        if (state.kind !== "editing") return;
+        saveDraft(folderId, state.fileId, xml); // becomes your unpublished draft
+        draftPending = false;
+        dispatch({ type: "dirtyChanged", dirty: true });
+        updateLocalStatus();
+      },
+      pushCoarseUndo: (xml) => {
+        coarseUndo.push(xml);
+        coarseRedo.length = 0;
+      },
+      me: () => me,
+      orientationKey: "bpmn-compartida.compareOrientation",
+      onChanged: () => {
+        syncHistoryBodyClasses();
+        render();
+      },
+      onError,
     });
-    render();
-  }
-  // Silently return the editor to the working version (draft/shared) and drop the preview
-  // banner, WITHOUT touching the selection or toasting. Used by mode transitions
-  // (preview→compare, preview→working). Callers own the checkbox state and any toast.
-  async function restoreWorking(): Promise<void> {
-    if (previewingRid === null) return;
-    const fileId = state.kind === "editing" ? state.fileId : null;
-    const xml = prePreviewXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
-    clearPreviewUI(); // drops banner/frame + nulls previewingRid/prePreviewXml
-    if (xml != null) { await loadIntoEditor(xml); editor.setReadOnly(false); }
-  }
-  // "Volver a la versión actual" (preview bar): restore working, untick the checkbox, toast.
-  async function exitPreview(_fileId: string): Promise<void> {
-    if (previewingRid === null) return;
-    await restoreWorking();
-    compareSel = [];
-    renderHistoryPanelNow();
-    render();
-    showToast("Volviste a la versión actual");
-  }
-  // "↩ Restaurar esta versión" (preview bar): bring the previewed revision into your draft
-  // (replacing the working version), then leave preview.
-  async function restoreRevisionToDraft(fileId: string, rid: string): Promise<void> {
-    const xml = await api.getRevisionXml(fileId, rid);
-    // Snapshot the working version you had BEFORE going into history, so Ctrl+Z / the
-    // Deshacer button can revert this restore even though importXML wipes the native
-    // command stack. prePreviewXml holds it (read it before clearPreviewUI nulls it).
-    const preRestore = prePreviewXml ?? loadDraft(folderId, fileId) ?? (await api.getXml(fileId));
-    coarseUndo.push(preRestore);
-    coarseRedo.length = 0;
-    clearPreviewUI(); // leaving preview WITHOUT restoring the old working — we replace it
-    compareSel = [];
-    await loadIntoEditor(xml);
-    editor.setReadOnly(false);
-    saveDraft(folderId, fileId, xml); // becomes your unpublished draft
-    draftPending = false;
-    dispatch({ type: "dirtyChanged", dirty: true });
-    updateLocalStatus();
-    renderHistoryPanelNow();
-    render();
-    showToast("Restaurado en tu borrador — Ctrl+Z para deshacer, o Publicá para compartir");
-  }
-  // Drop the preview banner/frame WITHOUT restoring (used by restoreWorking + file switch).
-  function clearPreviewUI(): void {
-    previewingRid = null;
-    prePreviewXml = null;
-    document.body.classList.remove("app-previewing");
-    const pv = document.getElementById("preview");
-    if (pv) pv.innerHTML = "";
+    stageHistory.renderSection(document.getElementById("history")!);
   }
 
-  // ---- Compare mode: side-by-side revision diff (left = actual/latest, right = a
-  // revision), viewport-synced, coloured on both panes; the "actual" left is editable. ----
-  const $el = (id: string): HTMLElement | null => document.getElementById(id);
-  // Ordering: "actual" is the newest; revision ids are numeric timestamps.
-  const recencyOf = (id: string): number => (id === "actual" ? Infinity : Number(id) || 0);
-  const compareLabelOf = (id: string): string =>
-    id === "actual" ? "Actual (editable)" : (comparePoints.find((p) => p.id === id)?.label ?? id);
-  function applyCompareOrientation(): void {
-    $el("canvasarea")?.classList.toggle("vertical", compareOrientation === "v");
-  }
-  function toggleCompareOrientation(): void {
-    compareOrientation = compareOrientation === "h" ? "v" : "h";
-    try { localStorage.setItem("bpmn-compartida.compareOrientation", compareOrientation); } catch { /* ignore */ }
-    applyCompareOrientation();
-    renderCompareBarNow();
-    renderHistoryPanelNow(); // badges follow orientation (izq/der ↔ arriba/abajo)
-  }
-  // History checkbox toggled: keep at most 2 (FIFO), then compare (2) or exit (<2).
-  function toggleCompareSel(id: string, checked: boolean): void {
-    if (checked) {
-      if (!compareSel.includes(id)) compareSel.push(id);
-      while (compareSel.length > 2) compareSel.shift();
-    } else {
-      compareSel = compareSel.filter((x) => x !== id);
-    }
-    renderHistoryPanelNow();
-    void applyCompareSelection().catch(onError);
-  }
-  // The single dispatcher for the checkbox selection. It routes to one of three modes by
-  // how many rows are checked: 2 → compare, 1 revision → preview, 0/only-"Actual" → working.
-  async function applyCompareSelection(): Promise<void> {
-    if (state.kind !== "editing") return;
-    const fileId = state.fileId;
-
-    // --- 2 checked → compare ---
-    if (compareSel.length === 2) {
-      // Coming from preview? Restore the working version first, so the "Actual" left pane
-      // and the exit-restore use the real working version — not the previewed revision.
-      if (previewingRid !== null) await restoreWorking();
-      const [a, b] = [...compareSel].sort((x, y) => recencyOf(y) - recencyOf(x)); // a newer, b older
-      compareLeft = a;
-      compareRight = b; // always a revision id ("actual" is newest → always left)
-      if (!comparing) {
-        await flushDraft();
-        preCompareXml = await editor.getXml();
-        compareEdited = false;
-        comparing = true;
-        const c2 = $el("canvas2")!;
-        c2.hidden = false;
-        $el("canvasarea")?.classList.add("split");
-        applyCompareOrientation();
-        document.body.classList.add("app-comparing");
-        if (!compareViewer) {
-          compareViewer = await createCompareModeler(c2); // BpmnModeler: select + copyPaste + pan
-          installViewSelectGuard(compareViewer as unknown as { get(n: string): any }); // no editing
-          enableRubberBandSelect(compareViewer as unknown as { get(n: string): any }); // Shift+drag = box-select
-          compareViewer.get("eventBus").on("selection.changed", () => renderCompareBarNow()); // live copy count
-        }
-      }
-      await renderCompare();
-      renderCompareBarNow();
-      render();
-      return;
-    }
-
-    // --- <2 checked → not comparing (restores the working version, keeps the checks) ---
-    if (comparing) await exitCompare({ clearChecks: false });
-
-    // --- 1 revision checked → preview it (works from working OR just-exited compare) ---
-    const singleRev = compareSel.length === 1 && compareSel[0] !== "actual" ? compareSel[0] : null;
-    if (singleRev) {
-      await enterPreview(fileId, singleRev, compareLabelOf(singleRev));
-      return;
-    }
-    // --- 0 checked, or only "Actual" → back to the editable working version ---
-    if (previewingRid !== null) { await restoreWorking(); render(); showToast("Volviste a la versión actual"); }
-  }
-  async function renderCompare(): Promise<void> {
-    if (!comparing || state.kind !== "editing" || !compareRight || !compareViewer) return;
-    const fileId = state.fileId;
-    const rightXml = await api.getRevisionXml(fileId, compareRight);
-    const leftXml = compareLeft === "actual" ? (preCompareXml ?? (await api.getXml(fileId))) : (await api.getRevisionXml(fileId, compareLeft));
-    await editor.load(leftXml);
-    editor.setReadOnly(true); // compare is pure visualization — the left pane is read-only too
-    try { modeler.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
-    await compareViewer.importXML(rightXml);
-    try { compareViewer.get("canvas").zoom("fit-viewport"); } catch { /* ok */ }
-    await applyCompareDiff(rightXml, leftXml);
-    if (compareUnsync) compareUnsync();
-    compareUnsync = syncViewport(modeler, compareViewer as unknown as { get(n: string): any });
-  }
-  async function applyCompareDiff(oldXml: string, newXml: string): Promise<void> {
-    if (!compareViewer) return;
-    const changes = await computeDiff(oldXml, newXml); // old = right (older), new = left (newer)
-    const leftCanvas = modeler.get("canvas");
-    const rightCanvas = compareViewer.get("canvas");
-    clearDiffMarkers(leftCanvas, compareMarkedLeft);
-    clearDiffMarkers(rightCanvas, compareMarkedRight);
-    compareMarkedLeft = applyDiffMarkers(leftCanvas, changes, "new"); // left = newer
-    compareMarkedRight = applyDiffMarkers(rightCanvas, changes, "old"); // right = older
-  }
-  function renderCompareBarNow(): void {
-    if (!comparing || !compareRight) return;
-    let copyCount = 0;
-    try { copyCount = compareViewer ? compareViewer.get("selection").get().length : 0; } catch { copyCount = 0; }
-    renderCompareBar($el("compare")!, {
-      leftLabel: compareLabelOf(compareLeft),
-      rightLabel: compareLabelOf(compareRight),
-      orientation: compareOrientation,
-      copyCount,
-      canCopy: compareLeft === "actual", // paste only into the editable "Actual" pane
-      onOrientation: toggleCompareOrientation,
-      onCopy: () => void copySelectionToActual().catch(onError),
-      onExit: () => void exitCompare().catch(onError),
-    });
-  }
-  // Copy the elements selected in the historical (right) pane into the current working
-  // diagram, with all their properties — reusing bpmn-js copyPaste. Valid only when the
-  // left pane is "Actual" (= the working version underlies the main modeler). The paste is
-  // a native command (undoable while comparing); on the FIRST paste we also push a coarse
-  // snapshot so it stays undoable AFTER exit (importXML on exit wipes the native stack).
-  async function copySelectionToActual(): Promise<void> {
-    if (state.kind !== "editing" || !compareViewer || compareLeft !== "actual") return;
-    const selected = compareViewer.get("selection").get();
-    if (!selected.length) return;
-    if (!compareEdited) { coarseUndo.push(preCompareXml ?? (await editor.getXml())); coarseRedo.length = 0; }
-    const tree = compareViewer.get("copyPaste").copy(selected); // serializable descriptor
-    const targetCanvas = modeler.get("canvas");
-    modeler.get("clipboard").set(tree);
-    const vb = targetCanvas.viewbox();
-    const pasted = modeler.get("copyPaste").paste({ element: targetCanvas.getRootElement(), point: { x: vb.x + vb.width / 2, y: vb.y + vb.height / 2 } });
-    try { if (Array.isArray(pasted) && pasted.length) modeler.get("selection").select(pasted); } catch { /* ok */ }
-    compareEdited = true;
-    preCompareXml = await editor.getXml(); // exit keeps the paste
-    saveDraft(folderId, state.fileId, preCompareXml); // unpublished draft survives exit (drives Publicar)
-    draftPending = false;
-    dispatch({ type: "dirtyChanged", dirty: true });
-    updateLocalStatus();
-    renderCompareBarNow();
-    showToast(`${selected.length} elemento(s) copiados a tu versión actual — Publicá para compartir`);
-  }
-  function teardownCompare(): void {
-    comparing = false;
-    if (compareUnsync) { compareUnsync(); compareUnsync = null; }
-    try { clearDiffMarkers(modeler.get("canvas"), compareMarkedLeft); } catch { /* ok */ }
-    compareMarkedLeft = [];
-    compareMarkedRight = [];
-    if (compareViewer) { try { compareViewer.destroy(); } catch { /* ok */ } compareViewer = null; }
-    const c2 = $el("canvas2");
-    if (c2) { c2.hidden = true; c2.innerHTML = ""; }
-    $el("canvasarea")?.classList.remove("split");
-    document.body.classList.remove("app-comparing");
-    const bar = $el("compare");
-    if (bar) bar.innerHTML = "";
-  }
-  async function exitCompare(opts: { clearChecks?: boolean } = {}): Promise<void> {
-    if (!comparing) return;
-    const fileId = state.kind === "editing" ? state.fileId : null;
-    // Bring back the working version. preCompareXml carries any elements copied from the
-    // historical pane (copySelectionToActual updates it), so those survive exit; the draft
-    // was already persisted at copy time so Publicar stays enabled afterwards.
-    const restore = preCompareXml ?? (fileId ? (loadDraft(folderId, fileId) ?? (await api.getXml(fileId))) : null);
-    teardownCompare();
-    preCompareXml = null;
-    compareEdited = false;
-    compareRight = null;
-    if (opts.clearChecks !== false) compareSel = []; // "Salir" clears checks; unchecking keeps them
-    if (restore != null) { await loadIntoEditor(restore); editor.setReadOnly(false); }
-    renderHistoryPanelNow(); // reflect cleared/kept checkboxes
-    render();
-    showToast("Saliste de la comparación");
-  }
-  // Drop compare state without restoring (used on file switch).
-  function clearCompareUI(): void {
-    if (!comparing) return;
-    teardownCompare();
-    preCompareXml = null;
-    compareEdited = false;
-    compareRight = null;
-    compareSel = [];
-  }
-
-  // Render the History panel from the cached points + current checkbox state. The
-  // checkbox IS the version picker: toggleCompareSel routes to preview (1) / compare (2).
-  // Per-version actions (Restaurar) live in the preview bar, not the rows.
-  function renderHistoryPanelNow(): void {
-    const panel = document.getElementById("history");
-    if (!panel) return;
-    renderHistoryPanel(panel, historyPoints, {
-      compare: { selected: compareSel, onToggle: toggleCompareSel, orientation: compareOrientation },
-    });
-  }
-
-  async function loadHistory(fileId: string) {
-    const revs = await api.listRevisions(fileId);
-    historyPoints = revs
-      .map((r) => toRestorePoint(r, me))
-      .sort((a, b) => Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime));
-    comparePoints = historyPoints.map((p) => ({
-      id: p.id,
-      label: `${new Date(p.modifiedTime).toLocaleString()} — ${p.authorName}${p.isExternal ? " (externo)" : ""}`,
-    }));
-    // Don't force the pane visible — the inspector owns tab visibility (setTab).
-    renderHistoryPanelNow();
+  // Body-class union across pane controllers: legacy CSS frames + the app-editing
+  // suppression in render() key off these; with two controllers each class is ON when
+  // ANY pane is in that mode.
+  function syncHistoryBodyClasses(): void {
+    document.body.classList.toggle("app-previewing", stageHistory?.isPreviewing() ?? false);
+    document.body.classList.toggle("app-comparing", stageHistory?.isComparing() ?? false);
   }
 
   async function showConflictBar(fileId: string) {
@@ -3082,7 +2848,7 @@ async function bootstrap() {
     if (state.kind !== "editing") return;
     // Version the external content the moment we see it — whatever happens next
     // (silent reload, keep-mine overwrite, discard) it stays restorable.
-    try { await api.snapshotExternal(fileId, me.name); await loadHistory(fileId); } catch { /* best-effort */ }
+    try { await api.snapshotExternal(fileId, me.name); await stageHistory?.loadHistory(); } catch { /* best-effort */ }
     // Silent auto-reload is only safe when there is NO unpublished local work —
     // neither pending modeler edits nor a stored draft (which the canvas may be
     // showing). Otherwise raise the conflict bar so the user chooses.

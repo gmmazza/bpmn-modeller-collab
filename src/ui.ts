@@ -62,9 +62,25 @@ export function renderHistoryPanel(
     // `orientation` labels the compare sides: "h" (side-by-side) → izq/der, "v" (stacked)
     // → arriba/abajo.
     compare?: { selected: string[]; onToggle: (id: string, checked: boolean) => void; orientation?: "h" | "v" };
+    // Dual-history: when `title` is given the panel renders as a collapsible <details>
+    // section (one per open pane) instead of the single "<h3>Historial</h3>" panel.
+    title?: string;
   },
 ): void {
-  container.innerHTML = "<h3>Historial</h3>";
+  let host: HTMLElement = container;
+  if (handlers.title) {
+    container.innerHTML = "";
+    const details = document.createElement("details");
+    details.open = true;
+    details.className = "history-section";
+    const summary = document.createElement("summary");
+    summary.textContent = handlers.title;
+    details.appendChild(summary);
+    container.appendChild(details);
+    host = details;
+  } else {
+    container.innerHTML = "<h3>Historial</h3>";
+  }
   const cmp = handlers.compare;
   const sel = cmp ? cmp.selected : [];
   const stacked = cmp?.orientation === "v";
@@ -112,12 +128,12 @@ export function renderHistoryPanel(
   };
 
   // Fixed "Actual (editable)" row on top (only when comparing is available).
-  if (cmp) container.appendChild(rowHead("actual", "Actual (editable)"));
+  if (cmp) host.appendChild(rowHead("actual", "Actual (editable)"));
 
   for (const p of points) {
     const who = p.isExternal ? " (externo)" : p.authorEmail ? " (vos)" : "";
     const when = (() => { const d = new Date(p.modifiedTime); return isNaN(d.getTime()) ? p.modifiedTime : d.toLocaleString(); })();
-    container.appendChild(rowHead(p.id, `${when} — ${p.authorName}${who}`));
+    host.appendChild(rowHead(p.id, `${when} — ${p.authorName}${who}`));
   }
 }
 
