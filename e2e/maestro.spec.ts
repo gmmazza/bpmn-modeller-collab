@@ -166,3 +166,96 @@ test("clicking a pane in split view moves the toolbar/docs focus to THAT pane", 
   await expect(page.locator(".manual-body")).toContainText("etapa1");
   await expect(page.locator(".manual-body")).not.toContainText("Manual: mapa");
 });
+
+// ---- Dual history (2026-07-23): each pane resolves its Historial independently ----
+
+// Older revisions carry an extra task so previewed/restored content is distinguishable.
+const MAPA_OLD = MAPA_BPMN
+  .replace("</bpmn:process>", '<bpmn:task id="Task_OLD_MAPA" name="Viejo"/></bpmn:process>')
+  .replace(
+    "</bpmndi:BPMNPlane>",
+    '<bpmndi:BPMNShape id="Task_OLD_MAPA_di" bpmnElement="Task_OLD_MAPA"><dc:Bounds x="360" y="80" width="100" height="80"/></bpmndi:BPMNShape></bpmndi:BPMNPlane>',
+  );
+const ETAPA_OLD = ETAPA1_BPMN
+  .replace("</bpmn:process>", '<bpmn:task id="Task_OLD_ETAPA" name="Paso viejo"/></bpmn:process>')
+  .replace(
+    "</bpmndi:BPMNPlane>",
+    '<bpmndi:BPMNShape id="Task_OLD_ETAPA_di" bpmnElement="Task_OLD_ETAPA"><dc:Bounds x="250" y="200" width="100" height="80"/></bpmndi:BPMNShape></bpmndi:BPMNPlane>',
+  );
+
+test("master-only mode: the Historial works — preview in the master pane, Restaurar + Ctrl+Z", async ({ page }) => {
+  await openApp(page, {
+    "mapa.bpmn": MAPA_BPMN,
+    "etapa1.bpmn": ETAPA1_BPMN,
+    ".history/mapa/1782700000000~Beto.bpmn": MAPA_OLD,
+  });
+  await page.getByText("📄 mapa.bpmn").click();
+  await expect(page.locator("#master-canvas .djs-container")).toBeVisible();
+
+  // The Historial tab shows the MASTER section (app state is "browsing", but the pane works).
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  await expect(page.locator("#history-master summary")).toContainText("Maestro: mapa");
+
+  // Check Beto's revision → preview INSIDE the master wrap (indigo frame + its bar).
+  await page.locator("#history-master .history-row", { hasText: "Beto" }).locator(".history-check").check();
+  await expect(page.locator("#master-wrap.pane-previewing")).toHaveCount(1);
+  await expect(page.locator("#master-wrap .preview-bar")).toContainText("versión anterior");
+  await expect(page.locator('#master-canvas [data-element-id="Task_OLD_MAPA"]')).toBeVisible();
+
+  // Restaurar → the old content becomes the master draft; Publicar arms.
+  await page.locator("#master-wrap .preview-restore").click();
+  await expect(page.locator("#master-wrap.pane-previewing")).toHaveCount(0);
+  await expect(page.locator('#master-canvas [data-element-id="Task_OLD_MAPA"]')).toBeVisible();
+  await expect(page.locator("#save")).toBeEnabled();
+
+  // Ctrl+Z (master focused) reverts the restore via the master coarse stack.
+  await page.locator("#master-canvas").click();
+  await page.keyboard.press("Control+z");
+  await expect(page.locator(".toast").last()).toContainText("deshizo el cambio del mapa");
+  await expect(page.locator('#master-canvas [data-element-id="Task_OLD_MAPA"]')).toHaveCount(0);
+});
+
+test("split view: two stacked sections; master compare inside its wrap while the stage previews — independent exits", async ({ page }) => {
+  await openApp(page, {
+    "mapa.bpmn": MAPA_BPMN,
+    "etapa1.bpmn": ETAPA1_BPMN,
+    ".history/mapa/1782700000000~Beto.bpmn": MAPA_OLD,
+    ".history/etapa1/1782700000001~Beto.bpmn": ETAPA_OLD,
+  });
+  await page.getByText("📄 mapa.bpmn").click();
+  await page.locator("#master-canvas .subproc-badge.subproc-resolved").click(); // drill etapa1
+
+  await page.locator(".inspector").getByRole("button", { name: "Historial" }).click();
+  // Two titled sections, one "Actual (editable)" row EACH.
+  await expect(page.locator("#history-master summary")).toContainText("Maestro: mapa");
+  await expect(page.locator("#history-stage summary")).toContainText("Subproceso: etapa1");
+  await expect(page.locator('#history [data-compare="actual"]')).toHaveCount(2);
+
+  // MASTER compare: actual + Beto → split INSIDE #master-wrap; the stage pane intact below.
+  await page.locator('#history-master [data-compare="actual"]').check();
+  await page.locator("#history-master .history-row", { hasText: "Beto" }).locator(".history-check").check();
+  await expect(page.locator("#master-split.split")).toHaveCount(1);
+  await expect(page.locator("#master-canvas2 .djs-container")).toBeVisible();
+  await expect(page.locator("#master-wrap .compare-bar")).toBeVisible();
+  await expect(page.locator('#master-canvas2 [data-element-id="Task_OLD_MAPA"]')).toBeVisible();
+  await expect(page.locator("#stage-split.split")).toHaveCount(0); // stage untouched
+  await expect(page.locator("#canvas .djs-container")).toBeVisible();
+
+  // SIMULTANEOUSLY preview an old stage revision in the stage pane.
+  await page.locator("#history-stage .history-row", { hasText: "Beto" }).locator(".history-check").check();
+  await expect(page.locator("#stage-wrap.pane-previewing")).toHaveCount(1);
+  await expect(page.locator('#canvas [data-element-id="Task_OLD_ETAPA"]')).toBeVisible();
+  await expect(page.locator("#master-wrap .compare-bar")).toBeVisible(); // master still comparing
+
+  // Exit the MASTER compare → the stage preview must survive.
+  await page.locator("#master-wrap .compare-exit").click();
+  await expect(page.locator("#master-split.split")).toHaveCount(0);
+  await expect(page.locator("#stage-wrap.pane-previewing")).toHaveCount(1);
+  await expect(page.locator('#canvas [data-element-id="Task_OLD_ETAPA"]')).toBeVisible();
+
+  // And exiting the stage preview returns everything to working state.
+  await page.locator("#stage-wrap .preview-exit").click();
+  await expect(page.locator("#stage-wrap.pane-previewing")).toHaveCount(0);
+  await expect(page.locator("body.app-previewing")).toHaveCount(0);
+  await expect(page.locator("body.app-comparing")).toHaveCount(0);
+});

@@ -96,6 +96,12 @@ export function createHistoryController(deps: HistoryPaneDeps) {
 
   function renderSection(container: HTMLElement): void {
     sectionEl = container;
+    if (!deps.getFileId()) {
+      // Inert (no file behind this pane): render nothing — a hidden-but-present
+      // "Actual" row would still match selectors and confuse checkbox wiring.
+      container.innerHTML = "";
+      return;
+    }
     renderHistoryPanel(container, points, {
       title: deps.title(),
       compare: { selected: compareSel, onToggle: (id, checked) => void toggleSel(id, checked).catch(deps.onError), orientation },

@@ -237,6 +237,14 @@ describe("historyPane: independence", () => {
 });
 
 describe("historyPane: section rendering", () => {
+  it("renders an EMPTY section while inert (no file) — no stray 'Actual' row", async () => {
+    const { deps, section } = makeDeps({ getFileId: () => null });
+    const c = createHistoryController(deps);
+    c.renderSection(section);
+    expect(section.querySelectorAll(".history-check")).toHaveLength(0);
+    expect(section.textContent).toBe("");
+  });
+
   it("renders a titled collapsible section with its own Actual row", async () => {
     const { deps, section } = makeDeps();
     const c = createHistoryController(deps);

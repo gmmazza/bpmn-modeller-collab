@@ -130,9 +130,11 @@ async function bootstrap() {
   let pollTimer: number | null = null;
   let openLock: LockInfo = {}; // reservation info for the currently-open file (display + expiry)
   let folderId = "default"; // stable id of the current shared folder; namespaces local drafts
-  // History preview/compare lives in a per-pane controller (src/historyPane.ts) — the
-  // stage editor's instance; a master-pane instance joins it in the dual-history phases.
+  // History preview/compare lives in per-pane controllers (src/historyPane.ts): one for
+  // the stage editor, one for the master map — each resolves its history in its own pane.
   let stageHistory: HistoryController | null = null;
+  let masterHistory: HistoryController | null = null;
+  let currentStagePid: string | null = null; // open stage's process id — re-highlight after master reloads
   let editor: ReturnType<typeof createEditor>;
   let diffView: DiffView;
   let modeler: ModelerLike;
@@ -1909,23 +1911,39 @@ async function bootstrap() {
       else { em.textContent = "🔒 Reservar"; em.title = "Avisar al equipo que estás editando esto (opcional)"; }
     }
     if (cl) (cl as HTMLElement).hidden = !editing;
-    if (!editing) {
+    // Historial sections: master iff a master is open; stage iff a stage/plain file is
+    // being edited AND not hidden behind the full-screen master. The whole pane only
+    // force-hides when NEITHER is available (the inspector owns tab visibility).
+    const stageSectionVisible = editing
+      && !(document.body.classList.contains("master-mode") && document.body.classList.contains("master-no-stage"));
+    const hm = el("history-master");
+    if (hm) (hm as HTMLElement).hidden = !currentMasterFile;
+    const hs = el("history-stage");
+    if (hs) (hs as HTMLElement).hidden = !stageSectionVisible;
+    if (!editing && !currentMasterFile) {
       if (el("history")) (el("history") as HTMLElement).hidden = true;
+    }
+    if (!editing) {
       if (el("conflict")) (el("conflict") as HTMLElement).innerHTML = "";
     }
     const saveBtn = document.getElementById("save") as HTMLButtonElement | null;
     // Never publish from a read-only preview / read-only compare (would push an old
     // version). The gate follows the ACTIVE pane — the stage comparing must not block
     // publishing the master, and vice versa.
-    if (saveBtn) saveBtn.disabled = masterActive ? !masterUnpublished : (!unpublished || previewing || compareRO);
+    if (saveBtn) {
+      saveBtn.disabled = masterActive
+        ? (!masterUnpublished || (masterHistory?.isBusy() ?? false))
+        : (!unpublished || previewing || compareRO);
+    }
     const dot = document.getElementById("savedot");
     if (dot) (dot as HTMLElement).hidden = !unpublished && !masterUnpublished;
     const undo = document.getElementById("undo") as HTMLButtonElement | null;
     const redo = document.getElementById("redo") as HTMLButtonElement | null;
     const editable = editing && !previewing && !compareRO;
     if (masterActive) {
-      if (undo) undo.disabled = !canNativeUndoMaster() && masterCoarseUndo.length === 0;
-      if (redo) redo.disabled = !canNativeRedoMaster() && masterCoarseRedo.length === 0;
+      const mBusy = masterHistory?.isBusy() ?? false;
+      if (undo) undo.disabled = mBusy || (!canNativeUndoMaster() && masterCoarseUndo.length === 0);
+      if (redo) redo.disabled = mBusy || (!canNativeRedoMaster() && masterCoarseRedo.length === 0);
     } else {
       if (undo) undo.disabled = !editable || (!canNativeUndo() && coarseUndo.length === 0);
       if (redo) redo.disabled = !editable || (!canNativeRedo() && coarseRedo.length === 0);
@@ -2110,9 +2128,7 @@ async function bootstrap() {
     masterHeadRevisionId = res.headRevisionId ?? masterHeadRevisionId;
     masterHandle.markSaved();
     clearDraft(folderId, fileId);
-    // Refresh the stage's history section (the master gets its own controller in the
-    // dual-history phases — until then, publishing the master no longer clobbers it).
-    await stageHistory?.loadHistory();
+    await masterHistory?.loadHistory(); // refresh the MASTER's own section — not the stage's
     // Re-sync registry so badges/masters reflect any new/removed links.
     await registry.sync(lastTree.filter((e) => e.kind === "file" && e.path.endsWith(".bpmn")).map((e) => ({ path: e.path, version: e.version ?? "" })));
     masterHandle.refreshBadges();
@@ -2337,6 +2353,12 @@ async function bootstrap() {
   // drop the stage overlays + current-stage highlight, and refocus the master pane. The
   // stage editor content is left mounted but hidden — reopening a stage reloads it.
   function closeStage(): void {
+    // The stage editor stays mounted but hidden — drop its preview/compare so a hidden
+    // split/read-only editor can't linger behind the full-screen master.
+    stageHistory?.clearPreviewUI();
+    stageHistory?.clearCompareUI();
+    syncHistoryBodyClasses();
+    currentStagePid = null;
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     showStageHint(true); // hides #canvas, shows the hint, hides the split divider
     masterHandle?.setCurrentStage(null);
@@ -2360,8 +2382,15 @@ async function bootstrap() {
     masterCoarseUndo.length = 0; // coarse undo is per-master-open
     masterCoarseRedo.length = 0;
     masterDraftPending = false;
-    // Same external-baseline capture as openFile — master maps can be AI-generated too.
-    void api.snapshotExternal(fileId, me.name).catch(() => { /* best-effort */ });
+    masterHistory?.clearPreviewUI();
+    masterHistory?.clearCompareUI();
+    syncHistoryBodyClasses();
+    // External-baseline capture (master maps can be AI-generated too), then load the
+    // master's own history section.
+    void api.snapshotExternal(fileId, me.name)
+      .catch(() => { /* best-effort */ })
+      .then(() => masterHistory?.loadHistory())
+      .catch(() => { /* history is best-effort here; surfaced on publish */ });
     try { masterHeadRevisionId = (await api.getMeta(fileId))?.headRevisionId ?? null; }
     catch { masterHeadRevisionId = null; }
     closeLinkPopover();
@@ -2412,11 +2441,18 @@ async function bootstrap() {
     if (masterHandle) { try { masterHandle.destroy(); } catch { /* gone */ } masterHandle = null; }
     stageOverlaysHandle?.clear(); stageOverlaysHandle = null;
     masterNodeNames = new Map(); masterNodeTypes = new Map();
+    // Drop any master preview/compare BEFORE the handle is destroyed (the controller's
+    // teardown touches the master modeler's canvas markers).
+    masterHistory?.clearCompareUI();
+    masterHistory?.clearPreviewUI();
     currentMasterFile = null;
     masterHeadRevisionId = null;
     masterCoarseUndo.length = 0;
     masterCoarseRedo.length = 0;
     masterDraftPending = false;
+    currentStagePid = null;
+    void masterHistory?.loadHistory(); // fid is null now → clears the master section
+    syncHistoryBodyClasses();
     document.body.classList.remove("master-mode");
     showStageHint(false);
     (document.getElementById("master-wrap") as HTMLElement | null)?.setAttribute("hidden", "");
@@ -2524,6 +2560,7 @@ async function bootstrap() {
     try {
       stageXml = await api.getXml(file);
       pid = (await parseDiagramInfo(stageXml)).processId;
+      currentStagePid = pid; // master history reloads re-apply this highlight
       masterHandle?.setCurrentStage(pid);
     } catch { /* highlight is best-effort */ }
     stageOverlaysHandle?.clear();
@@ -2823,7 +2860,9 @@ async function bootstrap() {
   // one instance for the stage editor; a master-pane instance joins it later.
   function mountStageHistory(): void {
     stageHistory = createHistoryController({
-      title: () => "", // untitled → classic "<h3>Historial</h3>" panel (dual sections come later)
+      // Untitled (classic single panel) for a plain file; a titled collapsible section
+      // once a master is open alongside.
+      title: () => (currentMasterFile && state.kind === "editing" ? `Subproceso: ${shortName(state.fileId)}` : ""),
       getFileId: () => (state.kind === "editing" ? state.fileId : null),
       api: () => api,
       editor: () => editor,
@@ -2863,15 +2902,86 @@ async function bootstrap() {
       },
       onError,
     });
-    stageHistory.renderSection(document.getElementById("history")!);
+    // The master pane's controller. Inert until a master is open (getFileId → null);
+    // masterHandle is recreated per enterMasterMode, hence the lazy accessors. Its
+    // editor facade routes setReadOnly through the handle so previews also suppress
+    // the link popover / drill navigation.
+    masterHistory = createHistoryController({
+      title: () => (currentMasterFile ? `Maestro: ${shortName(currentMasterFile)}` : ""),
+      getFileId: () => currentMasterFile,
+      api: () => api,
+      editor: () => ({
+        load: (xml: string) => masterHandle!.editor.load(xml),
+        getXml: () => masterHandle!.editor.getXml(),
+        setReadOnly: (ro: boolean) => masterHandle!.setReadOnly(ro),
+      }),
+      modeler: () => masterHandle!.modeler,
+      els: {
+        wrap: document.getElementById("master-wrap")!,
+        splitHost: document.getElementById("master-split")!,
+        canvas2: document.getElementById("master-canvas2")!,
+        bar: document.getElementById("master-pane-bar")!,
+      },
+      createViewer: async (c) => {
+        const v = await createCompareModeler(c);
+        installViewSelectGuard(v as unknown as { get(n: string): any });
+        enableRubberBandSelect(v as unknown as { get(n: string): any });
+        return v;
+      },
+      // handle.load reparses call links + redraws badges; re-apply the open stage's
+      // highlight, which the reload wipes.
+      loadWorking: async (xml) => {
+        if (!masterHandle) return;
+        await masterHandle.load(xml);
+        masterHandle.setCurrentStage(currentStagePid);
+      },
+      flushWorking: () => flushMasterDraft(),
+      getWorkingFallback: async () =>
+        currentMasterFile ? (loadDraft(folderId, currentMasterFile) ?? (await api.getXml(currentMasterFile))) : null,
+      onWorkingReplaced: (xml) => {
+        if (!currentMasterFile) return;
+        saveDraft(folderId, currentMasterFile, xml); // unpublished master draft (drives Publicar)
+        masterDraftPending = false;
+        render();
+      },
+      pushCoarseUndo: (xml) => {
+        masterCoarseUndo.push(xml);
+        masterCoarseRedo.length = 0;
+      },
+      me: () => me,
+      orientationKey: "bpmn-compartida.compareOrientation.master",
+      onChanged: () => {
+        syncHistoryBodyClasses();
+        render();
+      },
+      onError,
+    });
+    // Two stacked sections inside the Historial pane: master on top, stage below —
+    // matching the panes' visual order. Each controller owns its div, so re-renders
+    // never clobber the other section. Visibility is driven from render().
+    const hist = document.getElementById("history")!;
+    hist.innerHTML = "";
+    const hm = document.createElement("div");
+    hm.id = "history-master";
+    hm.hidden = true;
+    const hs = document.createElement("div");
+    hs.id = "history-stage";
+    hist.append(hm, hs);
+    masterHistory.renderSection(hm);
+    stageHistory.renderSection(hs);
   }
 
   // Body-class union across pane controllers: legacy CSS frames + the app-editing
-  // suppression in render() key off these; with two controllers each class is ON when
-  // ANY pane is in that mode.
+  // suppression in render() key off these; each class is ON when ANY pane is in that mode.
   function syncHistoryBodyClasses(): void {
-    document.body.classList.toggle("app-previewing", stageHistory?.isPreviewing() ?? false);
-    document.body.classList.toggle("app-comparing", stageHistory?.isComparing() ?? false);
+    document.body.classList.toggle(
+      "app-previewing",
+      (stageHistory?.isPreviewing() ?? false) || (masterHistory?.isPreviewing() ?? false),
+    );
+    document.body.classList.toggle(
+      "app-comparing",
+      (stageHistory?.isComparing() ?? false) || (masterHistory?.isComparing() ?? false),
+    );
   }
 
   async function showConflictBar(fileId: string) {
