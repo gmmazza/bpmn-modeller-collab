@@ -4,6 +4,33 @@ Todas las versiones notables de **BPMN compartida**. Formato basado en
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/); versionado
 [SemVer](https://semver.org/lang/es/).
 
+## [0.6.7] — 2026-07-24
+
+**El skill de IA documenta lo que diseña**: la guía `_bpmn-design/` que la app
+emite en cada carpeta compartida ahora integra la capa de documentación e ideas
+como parte del flujo de diseño de los agentes.
+
+### Agregado
+- **Diseño integrado con documentación.** El skill `bpmn-design` ahora indica a
+  los agentes IA **leer la documentación e ideas existentes** (`_proceso.md`,
+  `_index.md`, ideas del proceso) antes de diseñar, y **escribir la
+  documentación de lo que diseñan** al terminar: `_proceso.md` + una nota por
+  elemento significativo (tareas, subprocesos, gateways de decisión).
+- **Guía de formato completa.** `_bpmn-design/app/documentation.md` suma el
+  criterio de cobertura, plantillas de `_proceso.md` y de nota de paso, la
+  sintaxis de **wikilinks** (`[[proceso#elemento]]`, `[[idea:idea-N]]`,
+  `[[nota]]`) y la regla del **manual en orden de flujo** (notas autocontenidas,
+  sin duplicar el título del paso).
+- **Política de ideas para agentes.** Un hallazgo de revisión se propone como
+  **idea anclada firmada `IA`**; si un cambio resuelve o afecta una idea, el
+  agente lo comenta en el hilo — el `estado:` de la idea lo cambia siempre un
+  humano.
+
+### Cambiado
+- `_bpmn-design/SKILL.md` rutea los archivos `app/` (antes existían pero ningún
+  flujo los referenciaba) e integra la capa docs/ideas en los workflows de
+  generación y revisión.
+
 ## [0.6.6] — 2026-07-23
 
 **Historial robusto y dual**: cada panel del split (mapa maestro y subproceso)
