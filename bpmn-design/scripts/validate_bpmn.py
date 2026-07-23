@@ -49,7 +49,7 @@ def local(tag):
 
 
 def validate(path):
-    report = {"file": path, "ok": False, "checks": {}, "stats": {}, "errors": []}
+    report = {"file": path, "ok": False, "checks": {}, "stats": {}, "errors": [], "warnings": []}
     try:
         root = ET.parse(path).getroot()
     except Exception as e:  # noqa: BLE001
@@ -83,6 +83,15 @@ def validate(path):
         return [c.text for c in el if local(c.tag) == tag]
 
     c, s = report["checks"], report["stats"]
+
+    # Provenance (warning, not a failure — reviewed third-party files may be unsigned).
+    # If YOU (an AI agent) wrote or modified this file, sign it: exporter="IA — <name>"
+    # on <definitions>. "BPMN compartida" is the app's own stamp — replace it.
+    exporter = root.get("exporter")
+    if not exporter or exporter == "BPMN compartida":
+        report["warnings"].append(
+            'unsigned: set exporter="IA — <agent name>" on <definitions> if an AI wrote/modified this file'
+        )
 
     c["has_di_layer"] = has_di
 

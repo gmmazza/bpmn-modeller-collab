@@ -74,6 +74,11 @@ addressable (each file has a table of contents) — read the *section*, not the 
 - **Layout:** left-to-right; happy path a straight horizontal spine; exceptions branch off (downward);
   don't cross flows. Sizes: task 100×80, event 36×36, gateway 50×50.
 - **Both layers, every element:** every node → a `BPMNShape`; every flow → a `BPMNEdge` (≥2 waypoints).
+- **Sign your work.** Whenever you create **or modify** a `.bpmn`, set
+  `exporter="IA — <your agent name>"` (e.g. `IA — Claude`) on `<bpmn:definitions>` — replacing
+  whatever exporter is there (`BPMN compartida` is the app's stamp, not yours). The BPMN-compartida
+  app attributes your version in its history panel from this signature; unsigned edits show up as
+  anonymous "externo". The validator warns when it's missing.
 
 ## Project profile & subprocess contract (BPMN-compartida workspaces)
 
@@ -115,6 +120,7 @@ and a worked example in `profile.md`.
    external participant.
 5. **Serialize both layers** from `assets/skeleton.bpmn`; keep IDs stable; every node a shape, every flow
    an edge. Standard sizes; left-to-right; nodes inside their lane band. (`xml-serialization.md` §3–5.)
+   Sign it: `exporter="IA — <your name>"` on `definitions`.
 6. **Validate** (see below), fix every failure, then **self-review** against the core rules.
 7. **In a workspace:** apply the project profile & subprocess contract (`profile.md`) — type every task,
    `default` on every XOR split, master = Call Activities, subprocess = one none-start + escalation-end
@@ -128,7 +134,8 @@ Deliver the `.bpmn` plus a short note on choices, palette, and any assumptions/o
 2. **Correctness pass** — `correctness.md` §9: reachability, cross-pool flow, gateway pairing/deadlock, DI.
 3. **Style pass** — `style.md` §10: naming, happy-path clarity, gateway-as-decision, crossings, altitude.
 4. **Report findings ranked by severity** (correctness before style): rule, *why*, concrete fix. If
-   fixing, re-serialize both layers and preserve IDs.
+   fixing, re-serialize both layers, preserve IDs, and sign your edit
+   (`exporter="IA — <your name>"` on `definitions`).
 
 ## Validate before delivering
 
@@ -160,6 +167,8 @@ via `correctness.md` §3. Treat the script as the mechanical floor, not the whol
 - Branch/merge on a task; cross a pool boundary with a sequence flow; connect same-pool nodes with a message flow.
 - Label parallel/inclusive/event-based gateways as questions (only XOR gateways are questions).
 - Reach for the executable palette (formal conditions, service bindings) for a documentation diagram.
+- Deliver a `.bpmn` you created/modified **without your IA exporter signature** (or with the app's
+  `BPMN compartida` exporter left in place) — your version becomes anonymous "externo" in the app's history.
 - **(Workspace)** Leave a task untyped, or a diverging XOR without a `default`; give a subprocess more
   than one start; put a decision gateway in the master after a stage instead of escalation ends inside
   the subprocess; write a JotForm/ClickUp URL or id (or any color/doc/source data) into the `.bpmn`
