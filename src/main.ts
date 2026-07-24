@@ -21,6 +21,7 @@ import { createInspector, type Inspector } from "./inspector";
 import { mountResizer } from "./ui/resizer";
 
 import { evaluateUpdate } from "./appUpdate";
+import { renderUpdateBanner } from "./updateSectionUi";
 import { createFsClient, type FsClient } from "./fsClient";
 import { createDocsClient, type DocsClient } from "./processDocs/docsClient";
 import { createIdeasClient } from "./processDocs/ideasClient";
@@ -436,15 +437,7 @@ async function bootstrap() {
       if (!r.updateAvailable) return;
       const el = document.getElementById("appupdate");
       if (!el) return;
-      el.innerHTML = `<div class="appupdate-bar">Versión ${r.latest} disponible.
-        <button id="appupdate-get" type="button">Descargar</button>
-        <button id="appupdate-later" type="button">Después</button></div>`;
-      document.getElementById("appupdate-get")?.addEventListener("click", () => {
-        window.appUpdate?.openDownload(r.url);
-      });
-      document.getElementById("appupdate-later")?.addEventListener("click", () => {
-        el.innerHTML = "";
-      });
+      renderUpdateBanner(el, r.latest, r.asset, r.url);
     } catch {
       /* silent: no feed / offline */
     }

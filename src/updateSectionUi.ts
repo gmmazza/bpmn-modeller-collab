@@ -32,6 +32,23 @@ export function wireAppUpdateSection(scope: ParentNode = document): void {
   });
 }
 
+// Startup banner (used by main.ts's maybeShowUpdateBanner). Delegates the action to
+// renderUpdateAvailable so the banner installs in-place exactly like Configuración → App
+// (the release page is only the no-asset fallback), and adds a "Después" dismiss that
+// clears the host element.
+export function renderUpdateBanner(el: HTMLElement, latest: string, asset: string, releaseUrl: string): void {
+  el.replaceChildren();
+  const bar = document.createElement("div");
+  bar.className = "appupdate-bar";
+  renderUpdateAvailable(bar, latest, asset, releaseUrl);
+  const later = document.createElement("button");
+  later.type = "button";
+  later.textContent = "Después";
+  later.addEventListener("click", () => { el.replaceChildren(); });
+  (bar.firstElementChild ?? bar).appendChild(later);
+  el.appendChild(bar);
+}
+
 // Render the "vX available" state: an install button (in-place self-update) when the
 // release has a .zip asset, otherwise a fallback that opens the release page. `asset` is
 // only used to DECIDE which button to show — the actual download URL is re-derived in the
